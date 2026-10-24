@@ -367,7 +367,8 @@ def test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json(
     assert HOSTILE_RULE not in report
     data = json.loads(report)
     assert data["allow_removed"] == 1
-    assert data["ignore_region_removed"] is True
+    # `detach` withdraws nothing from `.gitignore`, because `attach` writes nothing there.
+    assert "ignore_region_removed" not in data
 
 
 def test_detachs_line_says_what_went_without_naming_any_of_it(
@@ -855,11 +856,6 @@ PAST_THE_GATES = {
         .replace('groups = ["developer", "project-stable"]', 'groups = ["../../escape"]'),
         encoding="utf-8",
     ),
-    "gitignore-region-doubled": lambda root, _: (root / ".gitignore").write_text(
-        "# stayfixed:ignore:begin\n# stayfixed:ignore:begin\n# stayfixed:ignore:end\n",
-        encoding="utf-8",
-    ),
-    "gitignore-not-text": lambda root, _: (root / ".gitignore").write_bytes(b"\xff\xfe\n"),
     "exclude-block-doubled": lambda root, _: _exclude_file(root).write_text(
         "# stayfixed:attach:begin\n# stayfixed:attach:begin\n# stayfixed:attach:end\n",
         encoding="utf-8",

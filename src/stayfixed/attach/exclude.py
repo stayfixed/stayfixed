@@ -5,9 +5,10 @@ rule copies under `.codex/rules/` and `.claude/settings.local.json`. None of the
 collaborator should see, and none was ignored, so every `git status` listed them and a
 `git add -A` committed the owner's personal links and rules. `.gitignore` is the wrong place to
 hide them: it is committed, so the hiding would itself be a change every collaborator gets, and
-`init` already owns the one region `attach` may keep there. `info/exclude` is the repository's own
-exclude file, which no clone carries, and git resolves it in the common directory, so one block
-covers the main checkout and every worktree.
+`attach` writes nothing there (`init`'s own region is `init`'s). `info/exclude` is the
+repository's own exclude file, which no clone carries, and git resolves it in the common
+directory, so one block covers the main checkout and every worktree. The ledger is one of these
+paths too.
 
 **Only what the owner's own excludes do not hide already.** A path gets a line unless the two
 files the owner holds, this repository's `info/exclude` and the global excludes file
@@ -16,18 +17,21 @@ is the repository's, and a pull can take the line out of it: counted as hiding t
 it left them out of the block and an upstream commit showed them, and the settings file, in
 `git status` until the next attach. So a path both the owner's files and a `.gitignore` hide gets
 no line, and a path only a `.gitignore` hides gets one. A checkout whose own excludes keep the
-whole footprint out of git gets no block. `.gitignore`'s region is asked the plain question
-(`unignored`, from `write.attach`), deliberately **without** `--no-index`: "ignored" there means
-what `git status` would hide, where a tracked file that matches a pattern is not hidden (the rule
-`project/ignored.py` states for the same command), and any source counts, because that region
-only keeps stayfixed's own local state out of git, so a checkout that already hides it by any
-means is not touched.
+whole footprint out of git gets no block.
+
+**And once the block stands, git is asked whether each path is ignored** (`unignored`, from
+`write`), over the checkout as it is, every source counted: a `.gitignore` that re-includes a
+path with a `!` line outranks the block, so that path would show however the block reads, and
+`attach` refuses before writing it (`NOT_IGNORED`). Asked with `--no-index`, so a pattern decides
+and the index does not: a tracked file is refused on its own, before any write
+(`permissions.TRACKED_LOCAL_SETTINGS`).
 
 Security ruling, in the order the template asks for it. **Preconditions**: every candidate path is
 computed by stayfixed — `paths.memory` and each `memory.groups` entry are repository-authored, but
 each candidate is held inside the project by `config.paths.contained` before it is asked about,
-and a name no exclude line can hold as one line is left out, so it stays visible rather than being
-hidden by a line the repository wrote: a line break, a NUL (git's reader ends the line there, so
+and a name no exclude line can hold as one line gets no line, so the check after the block refuses
+the run unless the owner's own excludes hide it, rather than its being hidden by a line the
+repository wrote: a line break, a NUL (git's reader ends the line there, so
 the pattern would be a shorter path's), and every other character `str.splitlines` breaks at (a
 reader that splits there would take one line for several). Of the characters left, git's
 pattern syntax gives a meaning to `\\`, `*`, `?`, `[` and a space (a trailing one is dropped), and
@@ -42,8 +46,10 @@ refused when it is a symlink, as `guards.githooks.install` refuses a symlinked h
 user cannot write the directory that holds it, both while the run is planned, and written with
 `fsops.write_atomically`, whose rename replaces the name rather than writing through it.
 **Who must not be refused**: a checkout whose own `info/exclude` or global excludes file already
-hides everything, where `attach` changes nothing and so never needs the file at all, whatever a
-`.gitignore` in it says and whichever of those paths the repository tracks.
+hides everything, where `attach` changes nothing and so never needs the file at all, whatever
+`.gitignore` lines in it hide the same paths. A `.gitignore` line that re-includes one, and a
+settings file the repository tracks, are refused: each puts a file of the owner's where git shows
+it.
 """
 
 from __future__ import annotations
@@ -101,14 +107,23 @@ LINKED = (
 )
 UNREADABLE = "{path} cannot be read ({reason}), so nothing was written"
 # Asked of the directory the file is replaced in while the run is planned, so the common case (a
-# `.git/info` this user cannot write) refuses before `.gitignore` or anything else is written.
+# `.git/info` this user cannot write) refuses before anything is written.
 UNWRITABLE = (
     "{path} cannot be written, because this user cannot write the directory that holds it, so "
     "nothing was written"
 )
-# The write itself failing, which no check made while planning can rule out: by then `attach` may
-# have written `.gitignore`'s region, and `detach` may have withdrawn what comes before the block.
+# The write itself failing, which no check made while planning can rule out: by then `detach` may
+# have withdrawn what comes before the block.
 NOT_WRITTEN = "{path} could not be written ({reason})"
+# Said when git would still show a path `attach` places once the block is written: a `.gitignore`
+# re-includes it with a `!` line, which outranks the exclude file, or its name is one no line of
+# the block can spell (`pattern`). `{paths}` is what `write` names them by.
+NOT_IGNORED = (
+    "git would not ignore {paths}, which `attach` places for this machine alone, so nothing past "
+    "the exclude block was written: a `.gitignore` line starting with `!` that re-includes a path "
+    "outranks that block, and a memory group whose name holds a line break gets no line in it; "
+    "take that line out of the `.gitignore`, or rename the group, and run `stayfixed attach` again"
+)
 
 
 @dataclass(frozen=True)
@@ -128,14 +143,16 @@ class ExcludeWrite:
 
 
 def unignored(root: Path, relatives: Sequence[str]) -> tuple[str, ...]:
-    """The members of `relatives` git would still show, in their given order.
+    """The members of `relatives` no ignore pattern hides, every source read, in their given order.
 
-    `--stdin -z`: the paths go in NUL-separated and never as arguments, so none is read as an
-    option, and come back unquoted, so the answer compares with what was asked. Exit 1 is "none
-    matched", an answer; anything but 0 and 1 is no answer, and a refusal, because treating it
-    as "nothing is ignored" would write, and treating it as "everything is" would hide nothing.
+    `--no-index`: the question is whether a pattern hides the path, which a `.gitignore`'s `!`
+    line decides, and not whether the index tracks it. `--stdin -z`: the paths go in
+    NUL-separated and never as arguments, so none is read as an option, and come back unquoted,
+    so the answer compares with what was asked. Exit 1 is "none matched", an answer; anything but
+    0 and 1 is no answer, and a refusal, because treating it as "nothing is ignored" would refuse
+    a checkout git might hide, and treating it as "everything is" would write where git shows.
     """
-    return _unmatched(root, relatives, "check-ignore", "--stdin", "-z")
+    return _unmatched(root, relatives, "check-ignore", "--no-index", "--stdin", "-z")
 
 
 def _unmatched(root: Path, relatives: Sequence[str], *asked: str) -> tuple[str, ...]:
@@ -301,9 +318,9 @@ def _named(
 def withdrawn_block(root: Path) -> ExcludeWrite | None:
     """The exclude file with this attach's block taken out, or `None` when there is none.
 
-    Asked above `detach`'s first withdrawal, for the reason `_ignore_region_remainder` is: a
-    block opened twice is a `RegionError` knowable at the start, and a directory this user cannot
-    write the file into is `UNWRITABLE`, as it is for `attach`. A symlinked file is left alone
+    Asked above `detach`'s first withdrawal, as `_checkouts` is: a block opened twice is a
+    `RegionError` knowable at the start, and a directory this user cannot write the file into is
+    `UNWRITABLE`, as it is for `attach`. A symlinked file is left alone
     rather than refused, because `attach` never writes through one, so a block behind a link is
     not one this command put there.
 

@@ -31,7 +31,7 @@ from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load, read_document
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.reading import ConfigError, MachineConfigError
-from stayfixed.errors import Failure, Refusal
+from stayfixed.errors import Failure
 from stayfixed.memory import index, store, trust
 from stayfixed.overlay import create, identity
 from stayfixed.overlay.api import COMMON_CODEX
@@ -112,16 +112,6 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     (
         "the attach ledger",
         lambda t: (_plant(t / ATTACH_LEDGER), lambda: write.ledger(t))[1],
-        Failure,
-    ),
-    (
-        "the .gitignore attach writes its region into",
-        lambda t: (_plant(t / write.GITIGNORE), lambda: write._planned_ignore_region(t))[1],
-        Refusal,
-    ),
-    (
-        "the .gitignore detach takes its region out of",
-        lambda t: (_plant(t / write.GITIGNORE), lambda: write._ignore_region_remainder(t))[1],
         Failure,
     ),
     (

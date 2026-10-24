@@ -23,9 +23,9 @@ from stayfixed import fsops, jsonobject
 from stayfixed.attach.api import ledger
 from stayfixed.attach.binding import OVERLAY_DAMAGED
 from stayfixed.attach.check import check
-from stayfixed.attach.permissions import settings_document
+from stayfixed.attach.exclude import NOT_IGNORED
+from stayfixed.attach.permissions import TRACKED_LOCAL_SETTINGS, settings_document
 from stayfixed.attach.write import (
-    GITIGNORE,
     GROUP_ESCAPES,
     GROUP_UNASKED,
     HARNESS_LAPSED,
@@ -34,7 +34,6 @@ from stayfixed.attach.write import (
     REAL_DIRECTORIES,
     REFRESH_REFUSED,
     Attached,
-    _planned_ignore_region,
     attach,
 )
 from stayfixed.config.loader import CONFIG_FILE, load
@@ -427,96 +426,61 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
     assert (root / LEDGER).is_file()
 
 
-def test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked(tmp_path: Path) -> None:
-    # The repository has no `.stayfixed` line today and nothing under `templates/project/` ships
-    # one, so an earlier revision's confidentiality argument rested on a file that does not exist.
-    # Assert the region exists after attach, and assert
-    # `git check-ignore -q .stayfixed/local/attach.json` succeeds — not that nothing is tracked,
-    # which passes on a fixture that has committed nothing.
-    root, store, machine = _attachable(tmp_path)
-    assert not _check_ignore(root, LEDGER)
-    attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=False,
-        runner=Recorder(),
-        home=tmp_path / "home",
-    )
-    body = extract((root / ".gitignore").read_text(encoding="utf-8"), "ignore", Style.HASH)
-    assert body is not None and ".stayfixed/local/" in body
-    assert _check_ignore(root, LEDGER)
-
-
-def test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The two tests around this one assert the region *exists* afterwards, which is a different
-    # question from the one `attach`'s own comment states: the ledger holds the owner's personal
-    # allow rules and lives under a path the repository has no `.gitignore` line for, so a ledger
-    # written first is a ledger `git add -A` publishes to every collaborator in the window before
-    # the region lands. The one entry it had replaced the call with `pass`, which is what
-    # `mutations/`'s "the ignore region is never written at all" still does, so both named tests
-    # reddened against absence and nothing anywhere reddened against order.
-    #
-    # The order of the writes themselves, recorded at `fsops.write_within` — the one primitive
-    # every write in this module goes through — rather than inferred from the tree afterwards,
-    # because the tree afterwards is identical either way.
-    #
-    # Mutation: `mutations/`'s "the ignore region is written after the ledger it untracks".
-    root, store, machine = _attachable(tmp_path)
-    written: list[str] = []
-    real = fsops.write_within
-
-    def record(base: Path, relative: str, text: str, *, encoding: str = "utf-8") -> None:
-        if base == root:
-            written.append(relative)
-        real(base, relative, text, encoding=encoding)
-
-    monkeypatch.setattr(fsops, "write_within", record)
-    attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=False,
-        runner=Recorder(),
-        home=tmp_path / "home",
-    )
-    assert ".gitignore" in written and LEDGER in written, written
-    assert written.index(".gitignore") < written.index(LEDGER), written
-
-
-def test_attach_leaves_every_other_line_of_an_existing_gitignore_alone(tmp_path: Path) -> None:
-    # The whole point of a managed region, and the reason this does not need the scaffold engine's
-    # manifest: everything outside the two markers comes back out as it went in.
-    root, store, machine = _attachable(tmp_path)
+def test_attach_writes_nothing_into_gitignore_and_leaves_git_status_empty(tmp_path: Path) -> None:
+    # The ledger was kept out of git by a `stayfixed:ignore` region `attach` wrote into
+    # `.gitignore`, a tracked file, so every first attach left a change every collaborator would
+    # get. Everything `attach` places is hidden through the exclude block now, the ledger with
+    # the rest, and `.gitignore` is not written at all.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
-    attach(
-        root,
-        store=store,
-        machine=machine,
-        confirmed=False,
-        runner=Recorder(),
-        home=tmp_path / "home",
-    )
-    assert "node_modules/\n" in (root / ".gitignore").read_text(encoding="utf-8")
+    _committed(root)
+    before = (root / ".gitignore").read_bytes()
+    _attach_confirmed(root, store, machine, tmp_path / "home")
+    # Non-vacuous: the run placed the ledger and the settings file, which git would show.
+    assert (root / LEDGER).is_file() and (root / SETTINGS).is_file()
+    assert _git(root, "status", "--porcelain=v1", "-z", "-uall") == ""
+    assert (root / ".gitignore").read_bytes() == before
 
 
-def test_attach_refuses_when_the_ignore_region_cannot_be_written(tmp_path: Path) -> None:
-    # The other half: if the ledger cannot be made untracked, writing it is a leak, and the
-    # right answer is to refuse rather than to warn.
-    root, store, machine = _attachable(tmp_path)
-    (root / ".gitignore").mkdir()
-    with pytest.raises(Refusal):
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            confirmed=False,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
+def test_a_gitignore_that_re_includes_the_settings_file_refuses_before_it_is_written(
+    tmp_path: Path,
+) -> None:
+    # A pull request adding `!.claude/settings.local.json` to the tracked `.gitignore`: a
+    # `.gitignore` outranks the exclude file, so the block's line hides nothing and the settings
+    # file, which names what only this machine may know, would show in `git status` and go out
+    # with the next `git add -A`. git is asked about every placed path once the block stands, and
+    # the run stops there, naming the path, with the settings file not written.
+    #
+    # Mutation: `mutations/`'s "the ignore check skips the settings file".
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
+    (root / ".gitignore").write_text(f"!{SETTINGS}\n", encoding="utf-8")
+    _committed(root)
+    with pytest.raises(Refusal) as refused:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == NOT_IGNORED.format(paths=quoted(SETTINGS))
+    assert not (root / SETTINGS).exists()
     assert not (root / LEDGER).exists()
+    assert not (root / ".codex" / "rules").exists()
+
+
+def test_a_tracked_local_settings_file_is_refused_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # No exclude line hides a tracked file, so a repository that tracks its
+    # `.claude/settings.local.json` would carry whatever `attach` merged into it to every clone.
+    # Refused before the first write, by `--check` as by the run.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text("{}\n", encoding="utf-8")
+    _committed(root)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    assert str(refused.value) == TRACKED_LOCAL_SETTINGS
+    assert_snapshot_unchanged(root, before)
+    with pytest.raises(Refusal) as previewed:
+        check(root, store=store, machine=machine, home=tmp_path / "home")
+    assert str(previewed.value) == TRACKED_LOCAL_SETTINGS
 
 
 def _with_groups(root: Path, listed: str) -> None:
@@ -657,7 +621,7 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
     added = set(after) - set(before)
     assert attached.settings_written and attached.binding_recorded
     assert {LEDGER, SETTINGS, ".codex/rules/common.rules"} <= added
-    assert before.get(".gitignore") != after.get(".gitignore")
+    assert before.get(".git/info/exclude") != after.get(".git/info/exclude")
     assert (store.parent / PROJECT_RECORD).is_file()
     assert (store / "project-stable").is_dir()
 
@@ -1225,7 +1189,7 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
     assert attached.settings_written
     assert ".codex/rules/common.rules" in set(after) - set(before)
     assert SETTINGS in set(after) - set(before)
-    assert before.get(".gitignore") != after.get(".gitignore")
+    assert before.get(".git/info/exclude") != after.get(".git/info/exclude")
     # And the union the ledger exists for survived the refusal being hoisted out of the writer:
     # `_write_ledger` is handed the ledger the caller read once, above every write.
     assert ledger(root).rules == (".codex/rules/common.rules",)
@@ -1395,12 +1359,12 @@ def _attach_confirmed(root: Path, store: Path, machine: Path, home: Path) -> Non
     )
 
 
-def test_attach_leaves_nothing_for_git_status_but_the_ignore_region(tmp_path: Path) -> None:
+def test_attach_leaves_nothing_for_git_status(tmp_path: Path) -> None:
     # The link tree, `.codex/rules/` and `.claude/settings.local.json` were all untracked and
     # unignored after an attach, so every `git status` in the project listed the owner's personal
     # links and rules, and a `git add -A` committed them. They are machine-local by construction,
-    # so `attach` hides them in `info/exclude`, which no clone shares, and leaves `.gitignore`
-    # to the one region `init` already owns.
+    # so `attach` hides them in `info/exclude`, which no clone shares, the ledger with them, and
+    # writes nothing into `.gitignore`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
     _attach_confirmed(root, store, machine, tmp_path / "home")
@@ -1408,7 +1372,7 @@ def test_attach_leaves_nothing_for_git_status_but_the_ignore_region(tmp_path: Pa
         # Non-vacuous: each one is really there, so `check-ignore` answers about a real path.
         assert (root / placed).is_symlink() or (root / placed).is_file(), placed
         assert _check_ignore(root, placed), placed
-    assert _status(root) == ["?? .gitignore"]
+    assert _status(root) == []
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None and SETTINGS in body
 
@@ -1509,17 +1473,7 @@ def test_a_committed_gitignore_does_not_stand_in_for_the_exclude_block(tmp_path:
     for placed in _placed():
         assert f"/{placed}" in body.split("\n"), placed
     # Upstream drops the lines; the owner's files stay hidden.
-    (root / ".gitignore").write_text(
-        (root / ".gitignore")
-        .read_text(encoding="utf-8")
-        .split("# stayfixed:ignore:begin")[0]
-        .replace(f"{DEFAULT_MEMORY}/\n", "")
-        .replace(".claude/\n", "")
-        .replace(".codex/\n", "")
-        + "# stayfixed:ignore:begin"
-        + (root / ".gitignore").read_text(encoding="utf-8").split("# stayfixed:ignore:begin")[1],
-        encoding="utf-8",
-    )
+    (root / ".gitignore").write_text("", encoding="utf-8")
     assert _status(root) == [" M .gitignore"]
 
 
@@ -1545,7 +1499,7 @@ def test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitign
     assert (root / SETTINGS).is_file()
     assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
     assert f"/{SETTINGS}" not in body.split("\n")
-    assert _status(root) == [" M .gitignore"]
+    assert _status(root) == []
 
 
 def test_a_gitignore_a_sparse_checkout_leaves_out_does_not_stand_in_for_the_block(
@@ -1587,7 +1541,7 @@ def test_a_path_the_owners_excludes_re_include_is_still_hidden(tmp_path: Path) -
     assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
     # The other links the owner's file hides get no line of their own.
     assert f"/{DEFAULT_MEMORY}/project-stable" not in body.split("\n")
-    assert _status(root) == ["?? .gitignore"]
+    assert _status(root) == []
 
 
 def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
@@ -1610,22 +1564,20 @@ def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
     _attach_confirmed(root, store, machine, home)
     second = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert second is not None and f"/{SETTINGS}" in second.split("\n")
-    assert _status(root) == ["?? .gitignore"]
+    assert _status(root) == []
 
 
-def test_a_second_attach_changes_neither_ignore_file(tmp_path: Path) -> None:
+def test_a_second_attach_leaves_the_exclude_file_as_the_first_wrote_it(tmp_path: Path) -> None:
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
     home = tmp_path / "home"
     _attach_confirmed(root, store, machine, home)
-    # Non-vacuous: the first attach did write both, so "unchanged" is about a block and a region
-    # and not about two files that were never there.
+    # Non-vacuous: the first attach did write the block, so "unchanged" is about a block and not
+    # about a file that was never there.
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    assert body is not None and SETTINGS in body
-    assert extract((root / ".gitignore").read_text(encoding="utf-8"), "ignore", Style.HASH)
-    gitignore, exclude = (root / ".gitignore").read_bytes(), _exclude(root).read_bytes()
+    assert body is not None and SETTINGS in body and f"/{LEDGER}" in body.split("\n")
+    exclude = _exclude(root).read_bytes()
     _attach_confirmed(root, store, machine, home)
-    assert (root / ".gitignore").read_bytes() == gitignore
     assert _exclude(root).read_bytes() == exclude
 
 
@@ -1830,8 +1782,7 @@ def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attac
     # `.claude` linked in from elsewhere is an ordinary layout, and an overlay that grants
     # nothing gives `attach` nothing to merge. On a first attach the store has no approval, so
     # the harness link is withheld and no settings-file fallback is ever wanted: the attach goes
-    # through, says the link waits, writes no settings file and leaves `git status` clean but for
-    # the region `init` owns.
+    # through, says the link waits, writes no settings file and leaves `git status` clean.
     from stayfixed.memory.api import harness_memory_path
 
     root, store, machine = _attachable(tmp_path)
@@ -1851,7 +1802,7 @@ def test_a_first_attach_beside_the_harnesss_own_memory_and_a_linked_claude_attac
     assert attached.notes == (HARNESS_WAITS,)
     assert not attached.settings_written
     assert list((tmp_path / "dotfiles-claude").iterdir()) == []
-    assert _status(root) == ["?? .gitignore"]
+    assert _status(root) == []
 
 
 # --- a `memory.groups` entry git would read as more than one exclude line -------------------
@@ -1874,34 +1825,30 @@ def _owner_hides_dotenv(root: Path, tmp_path: Path) -> None:
     (root / "b").write_text("b\n", encoding="utf-8")
 
 
-def test_a_group_name_with_a_line_separator_unhides_nothing_on_a_later_attach(
+def test_a_group_name_with_a_line_separator_gets_no_line_and_stops_the_attach(
     tmp_path: Path,
 ) -> None:
     # A repository-authored group name holding U+2028 was written as one exclude line, which git
-    # reads as one line. The next attach re-read the block with `str.splitlines`, which breaks at
-    # U+2028, and wrote the pieces back as three lines: the link's path up to `g`, `!.env` and
-    # `b` -- so the owner's `.env` showed in `git status` and every file named `b` stopped
-    # showing. The repository adding a group is the ordinary reason for a second attach.
+    # reads as one line, and a later attach re-read the block with `str.splitlines`, which breaks
+    # at U+2028, and wrote the pieces back as three lines: the link's path up to `g`, `!.env` and
+    # `b` -- so the owner's `.env` showed in `git status`. No exclude line spells such a name, so
+    # its link gets none, and git, asked once the block stands, would show that link: the run
+    # stops there, counting the link and never printing the name the repository chose.
     #
     # Mutation: `mutations/`'s "the exclude line refuses only a newline".
     root, store, machine = _attachable(tmp_path)
     _with_groups(root, f'["developer", "project-stable", "{_INJECTED}"]')
     _committed(root)
     _owner_hides_dotenv(root, tmp_path)
-    home = tmp_path / "home"
-    _attach_confirmed(root, store, machine, home)
-    config = root / "stayfixed.toml"
-    text = config.read_text(encoding="utf-8")
-    config.write_text(text.replace(f'"{_INJECTED}"]', f'"{_INJECTED}", "later"]'), encoding="utf-8")
-    _git(root, "commit", "-qam", "a group is added")
-    _attach_confirmed(root, store, machine, home)
+    with pytest.raises(Refusal) as refused:
+        _attach_confirmed(root, store, machine, tmp_path / "home")
+    linked = "1 link(s) of the link tree under paths.memory"
+    assert str(refused.value) == NOT_IGNORED.format(paths=linked)
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
-    # Non-vacuous: the second attach did rewrite the block, with the group it added.
-    assert body is not None and f"/{DEFAULT_MEMORY}/later" in body
+    # Non-vacuous: the block was written, with the links whose names it can spell.
+    assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
     assert "!.env" not in body.split("\n")
-    status = _status(root)
-    assert "?? .env" not in status
-    assert "?? b" in status
+    assert "?? .env" not in _status(root)
 
 
 def test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds(tmp_path: Path) -> None:
@@ -2255,20 +2202,6 @@ def test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back(tmp_path
     assert wrong == []
 
 
-def test_a_doubled_gitignore_region_is_refused_naming_the_file(tmp_path: Path) -> None:
-    # "region 'ignore' is opened or closed twice" named the region and not the file it is in.
-    #
-    # Mutation: `mutations/`'s "a doubled .gitignore region is refused without its file".
-    root, store, machine = _attachable(tmp_path, allow=(RULE,))
-    begin = "# stayfixed:ignore:begin\n"
-    (root / ".gitignore").write_text(begin + begin + "# stayfixed:ignore:end\n", encoding="utf-8")
-    before = _everything(tmp_path)
-    with pytest.raises(Refusal) as refused:
-        _attach_it(root, store, machine, tmp_path / "home")
-    assert ".gitignore" in str(refused.value)
-    assert _everything(tmp_path) == before
-
-
 def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
     # `pre-commit install`'s answer was quoted raw in the note.
     #
@@ -2554,62 +2487,6 @@ def test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_fi
     with pytest.raises(Refusal, match="nested deeper than this reader follows"):
         _attach_it(root, store, machine, tmp_path / "home")
     assert _everything(tmp_path) == before
-
-
-@pytest.mark.parametrize("command", ["attach", "plan"])
-def test_a_gitignore_linked_to_a_device_is_refused_and_never_read(
-    tmp_path: Path, command: str
-) -> None:
-    # `attach` read `.gitignore` with `exists()` and `read_text`, both of which follow a link: a
-    # committed `.gitignore -> /dev/zero` read until memory ran out, and one to a FIFO waited for
-    # a writer. It is read only when it is a regular file, and anything else is a `.gitignore` that
-    # cannot be read, which stops the run before its first write. `/dev/null` is the case that
-    # cannot hang and still tells the guard apart: read, it is an empty `.gitignore`. Mutation
-    # (declared): `.gitignore` read with `read_text` again -> the run goes on.
-    root, store, machine = _attachable(tmp_path, allow=(RULE,))
-    gitignore = root / GITIGNORE
-    if gitignore.exists():
-        gitignore.unlink()
-    gitignore.symlink_to("/dev/null")
-    before = _everything(tmp_path)
-    with pytest.raises(
-        Refusal, match=r"\.gitignore cannot be read \(not a regular file\)"
-    ) as raised:
-        if command == "attach":
-            _attach_it(root, store, machine, tmp_path / "home")
-        else:
-            _planned_ignore_region(root)
-    # The machine's own absolute path is not the reader's business: the refusal says why, and
-    # names the file as the project names it. Mutation (declared): `mutations/`'s "the .gitignore
-    # refusal prints the path it opened".
-    assert str(tmp_path) not in str(raised.value)
-    assert _everything(tmp_path) == before
-
-
-def test_a_gitignore_that_is_a_fifo_is_refused_without_waiting_for_a_writer(tmp_path: Path) -> None:
-    # A FIFO cannot be committed, but a local process can leave one: the read must refuse it, not
-    # wait. In a child under a timeout, so a regression fails this case rather than hanging.
-    root = tmp_path / "project"
-    root.mkdir()
-    os.mkfifo(root / GITIGNORE)
-    probe = (
-        "import sys\n"
-        "from pathlib import Path\n"
-        "from stayfixed.attach.write import _planned_ignore_region\n"
-        "from stayfixed.errors import Refusal\n"
-        "try:\n"
-        "    _planned_ignore_region(Path(sys.argv[1]))\n"
-        "except Refusal:\n"
-        "    print('refused')\n"
-    )
-    done = subprocess.run(
-        [sys.executable, "-c", probe, str(root)],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert done.stdout == "refused\n", done.stderr
 
 
 @pytest.mark.parametrize("command", ["attach", "check"])

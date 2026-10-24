@@ -10,23 +10,21 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
 
 from stayfixed import fsops, jsonobject
-from stayfixed.attach.write import GITIGNORE, GROUP_UNASKED_IN_TREE, Detached, detach
+from stayfixed.attach.write import GROUP_UNASKED_IN_TREE, Detached, detach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
-from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.printed import quoted
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
-from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
-from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
+from stayfixed.scaffold import MANIFEST_PATH
+from stayfixed.scaffold.regions import Style, extract
 from tests.approved import record
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config, _trusted
@@ -818,187 +816,6 @@ def test_a_home_that_is_not_there_refuses_above_every_withdrawal(tmp_path: Path)
     assert (root / ".codex" / "rules").is_dir()
 
 
-def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is(
-    tmp_path: Path,
-) -> None:
-    # The same shape as the `git` case above, one precondition over. `drop()` refuses a region
-    # opened twice — what a merge that kept both sides leaves — and it was asked *after* the
-    # settings withdrawal, the rule files and every link tree: rules gone, links gone, ledger
-    # still there, `doctor` still reporting the repository attached, and a second `detach`
-    # failing at the same line. The region is now read beside the ledger and `_checkouts`, so a
-    # broken one refuses above the first withdrawal.
-    #
-    # Mutation (`mutations/`'s "detach stops reading the ignore region before its first
-    # withdrawal"): the region is met only where it is written → the snapshot below changes.
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2], allow=(RULE,), hooks=True)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
-    begin, _end = markers(IGNORE_REGION, Style.HASH)
-    ignore = root / GITIGNORE
-    ignore.write_text(f"{begin}\n" + ignore.read_text(encoding="utf-8"), encoding="utf-8")
-    before = snapshot(root)
-    with pytest.raises(RegionError) as refused:
-        _detach(root, machine, home)
-    # The refusal names the file, as the exclude block's does. Mutation: `mutations/`'s "a
-    # doubled .gitignore region is refused without its file".
-    assert GITIGNORE in str(refused.value)
-    assert_snapshot_unchanged(root, before)
-    assert (root / LEDGER).is_file()
-    assert (root / "docs" / "memory" / "developer").is_symlink()
-
-
-def test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `attach` reads `.gitignore` to the read cap, and `detach` read the same file whole: a
-    # `.gitignore` past the cap stopped an `attach` and was read to its end by the `detach` beside
-    # it. Both read it through `fsops.read_regular_text` now, and `detach` refuses it above the
-    # first withdrawal, naming the file as the project names it and never by the path it opened.
-    # The cap is lowered so the file is small. Mutation (oracle): `mutations/`'s "detach reads
-    # .gitignore with no bound" -> the region is withdrawn.
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    ignore = root / GITIGNORE
-    assert extract(ignore.read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH) is not None
-    limit = 16 * 1024
-    ignore.write_text(ignore.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
-    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
-    before = snapshot(root)
-    with pytest.raises(Failure) as refused:
-        _detach(root, machine, home)
-    assert str(refused.value) == ".gitignore cannot be read (larger than this reader reads)"
-    assert_snapshot_unchanged(root, before)
-    assert (root / LEDGER).is_file()
-
-
-def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> None:
-    # `docs/cli.md` promises the round trip is byte-for-byte, and the withdrawal removed the
-    # file whenever what remained was blank — so a `.gitignore` holding one newline before the
-    # attach was gone after the detach. Only a file the attach created is taken away.
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    (root / GITIGNORE).write_text("\n", encoding="utf-8")
-    before = snapshot(root)
-    _attach(root, store, machine, home)
-    _detach(root, machine, home)
-    assert_snapshot_unchanged(root, before)
-    assert (root / GITIGNORE).read_bytes() == b"\n"
-
-
-def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
-    """A region `init`'s footprint records is `init`'s: ownership decides, not last writer.
-
-    `stayfixed init` records the `stayfixed:ignore` region as a footprint artifact with exactly
-    the body `attach` writes — one spelling, imported rather than respelled, so neither command
-    can report the other's region as hand-edited. `attach`'s own write stays and is idempotent;
-    what changes is the withdrawal. A `detach` that dropped a region the manifest records would
-    take a line out of a *committed* file that `init` put there, and `upgrade` would then read
-    the footprint as hand-edited on a repository nobody edited.
-
-    The manifest is the authority because it is the only record of who wrote the region that
-    survives the region being written twice. There is no new ledger field: the attach ledger is
-    per-checkout and untracked, and the question "whose region is this" is answered for every
-    clone by the committed manifest.
-
-    Mutation: `mutations/`'s "detach withdraws a region the footprint owns".
-    """
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2])
-    (root / GITIGNORE).write_text(
-        "node_modules/\n" + upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH), encoding="utf-8"
-    )
-    Manifest(
-        {
-            "gitignore": Record(
-                "gitignore",
-                Kind.MANAGED_REGION,
-                Location.REPO,
-                GITIGNORE,
-                "gitignore",
-                "0.1.0",
-                digest(IGNORE_BODY),
-            )
-        }
-    ).write(root)
-    _attach(root, store, machine, tmp_path / "home", confirmed=True)
-    removed = _detach(root, machine, tmp_path / "home")
-    text = (root / GITIGNORE).read_text(encoding="utf-8")
-    assert removed.ignore_region_removed is False
-    assert text.startswith("node_modules/\n")
-    assert extract(text, IGNORE_REGION, Style.HASH) == IGNORE_BODY
-
-
-def _newer_format(manifest: Path, outside: Path) -> None:
-    manifest.write_text(json.dumps({"format": 99}), encoding="utf-8")
-
-
-def _not_utf8(manifest: Path, outside: Path) -> None:
-    manifest.write_bytes(b'{"a": "\xff"}')
-
-
-def _nested_past_the_stack(manifest: Path, outside: Path) -> None:
-    manifest.write_text(NESTED, encoding="utf-8")
-
-
-def _symlinked_out_of_the_root(manifest: Path, outside: Path) -> None:
-    outside.write_text("{}", encoding="utf-8")
-    manifest.symlink_to(outside)
-
-
-@pytest.mark.parametrize(
-    "commit",
-    [_newer_format, _not_utf8, _nested_past_the_stack, _symlinked_out_of_the_root],
-    ids=lambda commit: commit.__name__.lstrip("_"),
-)
-def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
-    tmp_path: Path, commit: Callable[[Path, Path], None]
-) -> None:
-    """A repository may not disable the command that undoes an attach.
-
-    `.stayfixed/manifest.json` is **tracked** -- the ignore region covers `.stayfixed/local/` and
-    `.stayfixed/assessment.json` and nothing else -- so a clone commits whatever it likes there,
-    and `Manifest.read` refuses one that is unreadable, is not an object, or declares a `format`
-    past this stayfixed's. `attach` never reads the file, so a clone shipping `{"format": 99}`
-    attached cleanly, merged the owner's allow rules and hook entries, and then made `detach`
-    exit 2 on every run for ever: the ownership question is asked above every withdrawal, so
-    nothing was half-undone and nothing could ever be undone either.
-
-    Refusing with a better sentence is not the answer, because the act it would name is
-    "delete a tracked file out of somebody else's repository". An unreadable manifest is read
-    as no claim this command will act on and no claim it will act against: the region stays,
-    which is the conservative half, and the detach finishes. Everything else comes back, which
-    is what the settings file and the ledger assert here.
-
-    The first fix caught `ManifestError` alone, and a clone has three other ways to make the
-    read fail: bytes that are not UTF-8 (`UnicodeDecodeError`, a `ValueError` the reader did not
-    name), nesting deep enough to exhaust the parser's stack (`RecursionError`), and a manifest
-    committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
-    one made the detach exit 2 exactly as `{"format": 99}` had.
-
-    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "a read
-    refusal lets undecodable bytes out as a crash again".
-    """
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2], allow=(RULE,), hooks=True)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
-    assert (root / LEDGER).is_file()
-    # Written after the attach, exactly as a clone's committed one is there before a later
-    # `detach` and never read by the run that wrote the ledger.
-    manifest = root / MANIFEST_PATH
-    manifest.parent.mkdir(parents=True, exist_ok=True)
-    commit(manifest, tmp_path / "outside.json")
-    removed = _detach(root, machine, home)
-    assert not (root / LEDGER).exists()
-    assert removed.allow_removed == (RULE,)
-    # The conservative half: ownership could not be established, so the block is left alone and
-    # the result says so rather than claiming a withdrawal it did not make.
-    assert removed.ignore_region_removed is False
-    assert extract((root / GITIGNORE).read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
-
-
 def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harness_slug(
     tmp_path: Path,
 ) -> None:
@@ -1052,7 +869,7 @@ def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: P
     # Non-vacuous: the fallback was taken, so the file exists and is this run's.
     assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
     assert _check_ignore(root, SETTINGS)
-    # `.gitignore` shows, as it should: the fixture tracks it and the attach added its region.
+    # The block hides it, and `attach` wrote nothing into the fixture's tracked `.gitignore`.
     status = git(root, "status", "--porcelain", "--untracked-files=all")
     assert SETTINGS not in status
 
@@ -1160,40 +977,6 @@ def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
     assert attached.links.created
     assert elsewhere.read_bytes() == outside
     assert not (root / SETTINGS).exists()
-
-
-def test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_refuse(
-    tmp_path: Path,
-) -> None:
-    # The owner's symlinked exclude file hides the whole footprint, and the repository tracks its
-    # own `.claude/settings.local.json`. git shows a tracked file whatever an exclude line says, so
-    # asking "does git show it?" gave it a line that hides nothing, and that line needed the
-    # symlinked file written, which is refused: an attach nothing had to write into the exclude
-    # file exited 2. Only what the owner's own two files leave visible gets a line.
-    #
-    # Mutation: `mutations/`'s "the exclude block also lists what git shows in spite of the
-    # owner's excludes".
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2], allow=(RULE,))
-    home = tmp_path / "home"
-    (root / ".claude").mkdir()
-    (root / SETTINGS).write_text("{}\n", encoding="utf-8")
-    git(root, "add", "-A")
-    git(root, "commit", "-qm", "the repository tracks its settings file")
-    exclude = root / ".git" / "info" / "exclude"
-    elsewhere = tmp_path / "exclude-elsewhere"
-    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
-    elsewhere.write_text(
-        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n/{SETTINGS}\n.stayfixed/\n", encoding="utf-8"
-    )
-    exclude.unlink(missing_ok=True)
-    exclude.symlink_to(elsewhere)
-    outside = elsewhere.read_bytes()
-    attached = _attach(root, store, machine, home, confirmed=True)
-    # Non-vacuous: the run wrote the tracked settings file, so it was a candidate for the block.
-    assert attached.settings_written
-    assert RULE in (root / SETTINGS).read_text(encoding="utf-8")
-    assert elsewhere.read_bytes() == outside
 
 
 # --- the exclude block is shared by every checkout, and is taken back exactly ----------------

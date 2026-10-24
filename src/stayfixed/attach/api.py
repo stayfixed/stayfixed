@@ -45,10 +45,9 @@ argued from prose is a surface nobody measured: the first count of this list's i
 covered `src/`, `scripts/` and `tests/` and never read the sentence, and the sentence is what
 kept the names.
 
-The ledger's path and the `.gitignore` block `init` and `attach` both write are the core's
-(`config.layout`'s `ATTACH_LEDGER` and `IGNORE_BODY`), because `project` and `doctor` name them
-too and the core may not import this area; the crossings still pinned are listed in
-`tests/boundaries/test_delivery.py`.
+The ledger's path is the core's (`config.layout`'s `ATTACH_LEDGER`), because `project` and
+`doctor` name it too and the core may not import this area; the crossings still pinned are listed
+in `tests/boundaries/test_delivery.py`.
 """
 
 from stayfixed.attach.binding import Binding, read_binding
