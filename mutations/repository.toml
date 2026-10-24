@@ -839,7 +839,7 @@ reddens = ["tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_firs
 [[mutation]]
 name = "the PyPI description advertises the unshipped memory MCP server"
 file = "pyproject.toml"
-before = 'description = "A methodology harness for coding agents: a bug ledger that lives in the repository, curated working memory behind a trust gate, and fail-closed guards, packaged as one plugin for Claude Code and Codex."'
+before = 'description = "A methodology harness for coding agents: a bug ledger that lives in the repository, working memory whose notes count once reviewed, and fail-closed guards, packaged as one plugin for Claude Code and Codex."'
 after = 'description = "A methodology harness for coding agents: a bug ledger, curated working memory, guards, and a memory MCP server, packaged as one plugin for Claude Code and Codex."'
 reddens = [
   "tests/test_manifests.py::test_no_storefront_string_advertises_what_the_readme_says_is_not_yet",

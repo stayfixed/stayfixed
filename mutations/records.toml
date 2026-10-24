@@ -3271,3 +3271,24 @@ after = "    while False:\n        nonce = new_nonce()"
 reddens = [
   "tests/memory/test_trust.py::test_wrap_draws_another_nonce_when_the_note_already_holds_the_first",
 ]
+
+# A note counts as the owner's only at the bytes promoted: the record's digest for the note's path
+# must be the note's digest now, so an edit after promoting is a note to review again.
+[[mutation]]
+name = "a stale digest still reads as reviewed"
+file = "src/stayfixed/memory/reviewed.py"
+before = "    return REVIEWED if state_in(held, KIND, named, current) is State.APPROVED else UNREVIEWED"
+after = "    return REVIEWED if state_in(held, KIND, named, current) is not State.MISSING else UNREVIEWED"
+reddens = [
+  "tests/memory/test_reviewed.py::test_an_edit_after_promotion_makes_that_note_unreviewed_and_moves_no_other",
+]
+
+# Only a reviewed note is a standing rule, whatever `startup` rank a note claims about itself.
+[[mutation]]
+name = "the standing rules admit an unreviewed note"
+file = "src/stayfixed/memory/bundles.py"
+before = "        return _standing([note for note in notes if note.path in reviewed], config)"
+after = "        return _standing(notes, config)"
+reddens = [
+  "tests/memory/test_reviewed.py::test_a_note_with_no_record_is_unreviewed_and_no_standing_rule_whatever_it_ranks",
+]

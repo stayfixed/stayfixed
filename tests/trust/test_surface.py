@@ -28,5 +28,13 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "sandbox_refused",
         "SANDBOX_REFUSED",
         "RUN_OUTSIDE",
+        # the reviewed-note record `memory` keeps under kind `reviewed`: read once and asked of
+        # each note, with the vocabulary those answer in, and written by `memory promote`
+        "recorded",
+        "Approval",
+        "UnreadableTrust",
+        "state_in",
+        "State",
+        "approve_all",
     }
     assert required == set(trust.__all__)

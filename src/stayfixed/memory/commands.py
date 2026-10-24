@@ -15,8 +15,10 @@ destination in agreement was that each of those call sites remembered to pass it
 from __future__ import annotations
 
 import argparse
+import contextlib
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, command_owner, common_flags
 from stayfixed.config.schema import HARNESS_MODE, Config
@@ -35,6 +37,8 @@ from stayfixed.memory.index import (
     write_index,
 )
 from stayfixed.memory.inventory import inventory, totals
+from stayfixed.memory.notes import Note, walk
+from stayfixed.memory.reviewed import promote, unreviewed
 from stayfixed.memory.store import STORE_MISSING, Store, Unresolved, resolved
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
@@ -286,7 +290,7 @@ def run_session_context(args: argparse.Namespace) -> Result:
 def run_inventory(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     reconciled = reconcile(store, config, write=False)
-    entries = inventory(reconciled, config)
+    entries = inventory(reconciled, config, store)
     counts = totals(entries)
     return Result(
         f"{counts['notes']} notes, {counts['words']} words, "
@@ -377,6 +381,56 @@ def run_refs(args: argparse.Namespace) -> Result:
     return Result("; ".join([*parts, *advice]), data, exit_code=1)
 
 
+# What `memory promote` refuses, with nothing recorded: a name that is no note the store walks,
+# and a command line that names notes and asks for every unreviewed one at once, or neither.
+NOT_A_NOTE = (
+    "is not a note of this store, so nothing was promoted; name a note by its path in the store, "
+    "<group>/<file>.md, as `stayfixed memory index` links it"
+)
+NOTHING_NAMED = (
+    "name the notes to promote, or pass --changed for every unreviewed note, and not both; "
+    "nothing was promoted"
+)
+
+
+def _relative(note: Note) -> str:
+    return f"{note.group_name}/{note.path.name}"
+
+
+def _named(notes: list[Note], names: list[str]) -> list[Note]:
+    """The notes `names` name, by their path in the store or by a path to the file, in order and
+    once each; a name that is none of them refuses before anything is recorded."""
+    by_name = {_relative(note): note for note in notes}
+    by_path: dict[Path, Note] = {}
+    for each in notes:
+        with contextlib.suppress(OSError):
+            by_path[fsops.resolved(each.path)] = each
+    chosen: dict[Path, Note] = {}
+    for name in names:
+        found = by_name.get(name)
+        if found is None:
+            with contextlib.suppress(OSError):
+                found = by_path.get(fsops.resolved(Path(name).expanduser()))
+        if found is None:
+            raise Refusal(f"{quoted(name)} {NOT_A_NOTE}")
+        chosen.setdefault(found.path, found)
+    return list(chosen.values())
+
+
+def run_promote(args: argparse.Namespace) -> Result:
+    if bool(args.notes) == args.changed:
+        raise Refusal(NOTHING_NAMED)
+    store, config = _store(args)
+    notes = walk(store.path, [g for g in config.memory.groups if g in store.groups]).notes
+    chosen = unreviewed(store, notes) if args.changed else _named(notes, args.notes)
+    recorded = promote(store, chosen) if chosen else {}
+    rows = [{"path": _relative(note), "digest": recorded[note.path]} for note in chosen]
+    lines = [f"promoted {printable(row['path'])} {row['digest']}" for row in rows]
+    return Result(
+        "\n".join(lines) or "every note is reviewed; nothing was promoted", {"promoted": rows}
+    )
+
+
 def register(groups: SubParsers) -> None:
     group = groups.add_parser("memory", help="the working-memory store")
     sub = group.add_subparsers(dest="command", metavar="<command>")
@@ -412,3 +466,16 @@ def register(groups: SubParsers) -> None:
         store=True,
     )
     refs.set_defaults(func=run_refs)
+
+    promoting = common_flags(
+        sub.add_parser("promote", help="count notes as the owner's, at the bytes they hold now"),
+        store=True,
+    )
+    promoting.add_argument(
+        "notes",
+        nargs="*",
+        metavar="NOTE",
+        help="a note by its path in the store, <group>/<file>.md",
+    )
+    promoting.add_argument("--changed", action="store_true", help="every unreviewed note")
+    promoting.set_defaults(func=run_promote)

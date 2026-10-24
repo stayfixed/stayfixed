@@ -90,8 +90,8 @@ at session start, ranked, and never truncated. Everything else is a pointer the 
 to.
 
 **What stayfixed does.** Which rules those are is each person's to write, and stayfixed ships
-none: a standing rule is a note with `metadata.startup` in the overlay's `common/memory/` or a
-project's memory, and the `recommended` preset carries no rule of its own. `memory
+none: a standing rule is a note with `metadata.startup` that its owner promoted at the bytes it
+holds (`memory promote`), and the `recommended` preset carries no rule of its own. `memory
 session-context` renders two bundles — standing rules and volatile notes — each across
 numbered parts sized to the platform's per-entry cap, and `memory fit` reports a bundle that
 does not fit its slots.
@@ -117,9 +117,10 @@ names, paths inside the project and document layout; they may never set standing
 widen permissions, install hooks, pick a write path outside the root, or select their own
 enforcement level.
 
-**What stayfixed does.** Notes that live in the repository reach the model only inside a
-delimited region with a per-invocation nonce no note holds, which says "this is data", and never
-as standing rules. Every write goes through a path walk that refuses a symlink at any
+**What stayfixed does.** A note counts as the owner's only once promoted, which records the digest
+of its bytes in a trust record no tree carries; until then — a note the repository ships among
+them — it reaches the model only inside a delimited region with a per-invocation nonce no note
+holds, which says "this is data", and never as a standing rule. Every write goes through a path walk that refuses a symlink at any
 component and refuses to leave the project root. The harness's payload caps are plugin-owned
 (`[native_caps]`), which no repository sets, so a project cannot raise its own payload cap. The
 machine-level configuration's location is not selectable by an environment variable, because a

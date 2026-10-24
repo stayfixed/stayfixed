@@ -21,6 +21,7 @@ from stayfixed.doctor.api import OK, RED, SKIP, WARN
 from stayfixed.errors import Refusal
 from stayfixed.memory.doctor import NEARLY_FULL
 from stayfixed.overlay.api import COMMON_MEMORY
+from tests.cli import cli
 from tests.doctor.test_checks import (
     _attached,
     _by_name,
@@ -89,20 +90,26 @@ def _note(body: str, *, name: str, startup: int) -> str:
     )
 
 
+def _promoted(tmp_path: Path, root: Path) -> None:
+    """The owner's `memory promote --changed`: a note is a standing rule only once promoted."""
+    code, _, err = cli(root, tmp_path, "memory", "promote", "--changed", machine=_machine(tmp_path))
+    assert code == 0, err
+
+
 def test_a_bundle_that_does_not_fit_its_slots_is_reported(tmp_path: Path) -> None:
     # A bundle whose notes do not fit its slots is the condition that needs a human — raising N
     # edits a shipped file — so doctor reports it. Four standing notes of a whole slot each,
     # against the three `standing-rules` entries `hooks/hooks.json` declares.
     #
-    # In the overlay, not in a local-only store: a store that lives in the repository carries no
-    # standing rule, so its standing bundle is empty and this assertion would pass for having
-    # measured nothing.
+    # Promoted, since an unreviewed note is no standing rule, so the standing bundle would be
+    # empty and this assertion would pass for having measured nothing.
     root = _attached(tmp_path)
     store = tmp_path / "overlay" / COMMON_MEMORY
     for index in range(4):
         (store / f"note-{index}.md").write_text(
             _note("word " * 2_000, name=f"note-{index}", startup=index + 1), encoding="utf-8"
         )
+    _promoted(tmp_path, root)
     check = _by_name(
         _checks(tmp_path, root, machine=_machine(tmp_path)),
         "bundles",
@@ -117,6 +124,7 @@ def test_a_bundle_that_fits_is_not_reported(tmp_path: Path) -> None:
     root = _attached(tmp_path)
     store = tmp_path / "overlay" / COMMON_MEMORY
     (store / "short.md").write_text(_note("a short rule", name="short", startup=1), "utf-8")
+    _promoted(tmp_path, root)
     check = _by_name(
         _checks(tmp_path, root, machine=_machine(tmp_path)),
         "bundles",
@@ -138,6 +146,7 @@ def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_pat
     cap = load(root, machine=_machine(tmp_path)).native_caps.hook_output_chars
     body = "word " * ((int(cap * NEARLY_FULL) + 600) // 5)
     (store / "big.md").write_text(_note(body, name="big", startup=1), encoding="utf-8")
+    _promoted(tmp_path, root)
     check = _by_name(_checks(tmp_path, root, machine=_machine(tmp_path)), "bundles")
     assert check.status == "warn", check.detail
     assert "standing-rules" in check.detail

@@ -223,7 +223,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
 | `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine, whatever a repository's `stayfixed.toml` sets as its default; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is `HOME`, as the harness reads it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
-| `~/.config/stayfixed/trust.json` | Every approval recorded on this machine, as a versioned record of kinds and subjects, under the same home; `stayfixed trust list` shows them | `stayfixed trust revoke`, which withdraws one |
+| `~/.config/stayfixed/trust.json` | Every approval recorded on this machine, as a versioned record of kinds and subjects, under the same home, the notes you promoted among them (kind `reviewed`); `stayfixed trust list` shows them | `stayfixed memory promote`, which records a note; `stayfixed trust revoke`, which withdraws one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
 | `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git, recorded in the manifest. `attach` and `detach` never touch `.gitignore` | `stayfixed init` |
@@ -236,6 +236,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `~/.local/share/stayfixed/delivery/<id>/` | The overlay's hooks, skills and agents rendered as a plugin, `overlay-<id>` in a marketplace `stayfixed-delivery-<id>`, both named by the binding id, and, when the overlay holds a rule with `paths:`, the `PostToolUse` entry that delivers it, run through whatever launched the stayfixed that ran `attach`: the plugin's hook wrapper, or an installed package's interpreter. A session runs the plugin from here in place, so each attach rewrites it, and `stayfixed detach` removes it | `stayfixed attach` |
 | `~/.local/share/stayfixed/stores/<id>/` | The composed memory store the harness and stayfixed's own bundles read, named by the binding id: a link to each of the overlay's note groups for this project and one to its `MEMORY.md`, which `autoMemoryDirectory` in the main checkout's `.claude/settings.local.json` names. Each attach makes its links the overlay's current set and leaves a note the harness wrote there; `stayfixed detach` takes the links and the key, and the directory where nothing else is left | `stayfixed attach`, in `overlay` mode |
 | `~/.local/share/stayfixed/sessions/` | One empty file per session and file a path-scoped rule was said for, both names hashed, so the rule is said once per file in a session. Nothing removes them | the hook dispatcher |
+| `~/.local/share/stayfixed/unreviewed/` | One file per note store, named by a hash of the store's path, holding a digest of the set of its unreviewed notes the last session was told about, so the count line is said only when that set changes. Nothing removes them | the hook dispatcher |
 
 Every write into a repository goes through a path walk that refuses a symlink at any component
 and refuses to leave the project root, and replaces files atomically, keeping the mode of the
@@ -361,10 +362,12 @@ address, `core.fsmonitor` runs a program when git looks for changed files, and a
 
 **A repository is untrusted input.** A clone you have not read can commit a `stayfixed.toml`, a
 `MEMORY.md`, a `.stayfixed/manifest.json`, a `.claude/settings.json` `env` block and a tree of
-symlinks, and every one of those reaches stayfixed before you do. So notes that live in the
-repository reach the model as the harness delivers the same repository's `CLAUDE.md`, with no
-approval, but only inside a delimited region whose per-invocation nonce no note holds, which says
-"this is data, not instructions", and never as standing rules. A configured value never reaches a
+symlinks, and every one of those reaches stayfixed before you do. So a note counts as yours only
+once you promote it (`stayfixed memory promote`), which records its digest in `trust.json` outside
+every tree; until then, and again after any edit, it reaches the model as the harness delivers the
+same repository's `CLAUDE.md`, with no approval, but only inside a delimited region whose
+per-invocation nonce no note holds, which says "this is data, not instructions", and never as a
+standing rule. A configured value never reaches a
 subprocess in an option's position, and a configured path never leaves the project root. See [SECURITY.md](https://github.com/stayfixed/stayfixed/blob/main/SECURITY.md) for what counts
 as a vulnerability here.
 
@@ -391,8 +394,10 @@ stayfixed memory inventory                             # what a memory sweep rea
 stayfixed memory fit                                   # whether each injection bundle fits its hook slots
 stayfixed memory session-context --bundle standing-rules --part 1
 stayfixed memory refs                                  # backticked paths in notes that no longer resolve, and the link graph as advice
-stayfixed trust list                                   # every approval recorded on this machine
-stayfixed trust revoke memory --subject KEY            # withdraw one recorded approval; needs no terminal
+stayfixed memory promote developer/prefer-uv.md        # count a note as yours, at the bytes it holds now
+stayfixed memory promote --changed                     # every unreviewed note, after you have read them
+stayfixed trust list                                   # every approval recorded on this machine, reviewed notes among them
+stayfixed trust revoke reviewed --subject PATH         # withdraw one recorded approval; needs no terminal
 
 # The bug ledger
 stayfixed bugs new "A title" --severity high --area cli   # file an entry at the next free identifier
@@ -491,7 +496,8 @@ Run `uv add`, not `pip install`. The lockfile is committed and CI runs `uv sync 
 - **`index:`** is the routing line — the trigger and the answer, not a summary. `memory index`
   writes one from the description when it is missing and reports it as provisional.
 - **`metadata.startup`** flags the note as a standing rule, injected in full at session start
-  and ranked by that number, in a store outside the repository; a note inside it is never one.
+  and ranked by that number, once you have promoted it; until then it arrives with the volatile
+  notes, labelled unreviewed and as data.
 - **`metadata.as_of`** dates a volatile note; one past `volatile_ttl_days` is injected with a
   visible warning rather than dropped.
 - **`group:`** files a note under a sub-heading inside its section.
@@ -503,12 +509,13 @@ note's `index:` line. A second writer appending entries to `MEMORY.md` is expect
 `memory.mode` decides where the store is. `harness`, the default where no layer sets it, leaves
 memory to the coding agent's own and stayfixed resolves no store and injects no bundle.
 `local-only` (`.stayfixed/local/memory`, git-ignored) and `in-repo` (committed) both put the notes
-**inside the repository**, so what they hold reaches a session only as data, inside the delimited
-region, and never as a standing rule; `overlay` (the composed store, a directory of links under
+**inside the repository**; `overlay` (the composed store, a directory of links under
 `~/.local/share/stayfixed/stores/` into a machine-level overlay shared across your projects) puts
-them outside it, and notes that are yours arrive as standing rules too. Which applies keys on
-where a note actually sits, never on what the repository's own `stayfixed.toml` declares — a clone
-that wrote `mode = "overlay"` would otherwise have its notes read as yours.
+them outside it. In every mode a note is yours only once promoted: `stayfixed memory promote`
+records the digest of its bytes in `trust.json`, which no tree carries, so a note a clone shipped,
+one an agent or the harness wrote, and one edited since you promoted it all arrive unreviewed —
+inside the delimited region, labelled, and never as a standing rule. A session hears one line,
+"N notes are unreviewed", when that set has changed since the last session.
 
 ## The bug ledger, in one paragraph
 

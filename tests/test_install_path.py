@@ -220,7 +220,7 @@ def _install_path(
     attach: bool = True,
     earlier_template: bool = False,
 ) -> Walkthrough:
-    """Steps 1-5: the overlay, the machine layer, a repository, attach, and a note in it.
+    """Steps 1-6: the overlay, the machine layer, a repository, attach, and a note in it, promoted.
 
     Every step is the real launcher with the real argv. Step 1's overlay is created **outside** the
     project root on purpose: `setup` refuses to record one inside it, because a path inside the
@@ -342,7 +342,9 @@ def _install_path(
     assert previewed.stdout.strip(), "`attach --check` printed no diff to consent to"
     step("attach", "--store", str(store), "--machine", str(machine))
     if initialised:
-        # Step 5 already happened, by the owner's hand: the moved note *is* the standing rule.
+        # Step 5 already happened, by the owner's hand: the moved note *is* the standing rule,
+        # once promoted, as step 6 promotes it below.
+        step("memory", "promote", "--changed", "--machine", str(machine))
         return walk
 
     # 5. a standing rule in this project's own share of the overlay.
@@ -354,6 +356,8 @@ def _install_path(
     note = store / "project-stable" / "no-force-push.md"
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text(NOTE, encoding="utf-8")
+    # 6. the owner promotes it: a note counts as a standing rule only once promoted.
+    step("memory", "promote", "--changed", "--machine", str(machine))
     return walk
 
 
@@ -479,10 +483,10 @@ def test_the_bundle_arrives_whole_and_within_the_platform_cap(tmp_path: Path) ->
     # platform's own cap, because anything above it is truncated by the harness and a truncated
     # block is a block that arrives half-said.
     #
-    # `trust.wrap`'s two region markers are not asserted here. In **overlay** mode there are
-    # none and there must not be: the notes are the machine owner's own, `inside_project` is
-    # False by construction and `bundles.blocks` wraps nothing — so that assertion cannot hold
-    # on this walkthrough, and the mode where it does hold is the test below.
+    # `trust.wrap`'s two region markers are not asserted here. On a standing rule there are none
+    # and there must not be: the note is the owner's own, promoted in step 6, and
+    # `bundles.blocks` wraps only an unreviewed note — so that assertion cannot hold on this
+    # walkthrough, and the shape where it does hold is the test below.
     walk = _install_path(tmp_path)
     done = _bundle(walk, "standing-rules")
     config = load(walk.root, machine=walk.machine)

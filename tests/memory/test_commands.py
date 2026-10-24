@@ -98,8 +98,8 @@ def test_an_unknown_bundle_is_refused(project: Path) -> None:
 def test_a_store_whose_notes_live_in_the_repository_delivers_them_as_data_and_no_standing_rule(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # With no approval asked or recorded: the volatile note arrives inside the region that marks it
-    # as data, and the note ranked `startup: 1` is not a standing rule.
+    # With nothing promoted: the volatile note arrives inside the region that marks it as data,
+    # and the note ranked `startup: 1` is not a standing rule.
     from stayfixed.memory.trust import DELIMITER
 
     assert (
@@ -110,8 +110,8 @@ def test_a_store_whose_notes_live_in_the_repository_delivers_them_as_data_and_no
         invoke(["memory", "session-context", "--bundle", "volatile-notes", *common(project)]) == 0
     )
     out = capsys.readouterr().out
-    assert out.startswith(DELIMITER)
-    assert "Body. Body." in out
+    assert DELIMITER in out
+    assert out.index(DELIMITER) < out.index("Body. Body.")
     assert not (project.parent / "trust.json").exists()
 
 
@@ -129,7 +129,14 @@ def test_inventory_reports_what_a_sweep_acts_on(
     assert invoke(["memory", "inventory", "--json", *common(project)]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["notes"] == 2
-    assert payload["standing"] == 1
+    # Nothing promoted: "a" ranks `startup: 1` and is no standing rule until it is.
+    assert (payload["standing"], payload["unreviewed"]) == (0, 2)
+    assert invoke(["memory", "promote", "--changed", *common(project)]) == 0
+    capsys.readouterr()
+    assert invoke(["memory", "inventory", "--json", *common(project)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert (payload["standing"], payload["unreviewed"]) == (1, 0)
+    assert all(entry["reviewed"] for entry in payload["entries"])
     # "v" carries five words to "a"'s one, so word count decides this and the alphabet does not.
     assert [entry["name"] for entry in payload["entries"]] == ["v", "a"]
 
@@ -490,28 +497,24 @@ def test_an_index_past_a_harness_cap_is_surfaced_rather_than_computed_and_droppe
 def test_the_standing_total_counts_what_the_standing_bundle_actually_injects(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `bundles._standing` excludes a volatile-group note even when it carries `startup` — a
+    # The standing bundle excludes a volatile-group note even when it carries `startup` — a
     # perishable fact is not a standing rule — while `totals` counted every note with one. The
     # sweep skill's headline number therefore disagreed with what reaches the model, and a
-    # number that means something other than its name is worse than no number at all. This
-    # store is the repository's, whose notes are no standing rule at all, so the count is held to
-    # the selection the bundle makes for a store that is not.
-    from stayfixed.config.loader import load
-    from stayfixed.memory.bundles import _standing
-    from stayfixed.memory.store import resolve
-
+    # number that means something other than its name is worse than no number at all. Every note
+    # is promoted first, so the count is held to the selection the bundle makes of the owner's
+    # notes.
     volatile = project / ".stayfixed" / "local" / "memory" / "project-volatile"
     (volatile / "loud.md").write_text(
         NOTE.format(name="loud", meta="metadata:\n  type: project\n  startup: 1\n", body="Loud."),
         encoding="utf-8",
     )
+    assert invoke(["memory", "promote", "--changed", *common(project)]) == 0
+    capsys.readouterr()
     assert invoke(["memory", "inventory", "--json", *common(project)]) == 0
     counted = json.loads(capsys.readouterr().out)["standing"]
-    machine = project.parent / "machine.toml"
-    config = load(project, machine=machine)
-    store = resolve(project, config, machine=machine)
-    assert store is not None
-    injected = "\n".join(_standing(store, config)).count("### ")
+    argv = ["memory", "session-context", "--bundle", "standing-rules", *common(project)]
+    assert invoke(argv) == 0
+    injected = capsys.readouterr().out.count("### ")
     assert counted == injected == 1
 
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -37,6 +38,12 @@ CANARY = "CANARY-IN-REPO-RULE"
 # What the clone's volatile note carries: it reaches a session, inside a delimited region.
 CARRIED = "CANARY-AS-DATA"
 DELIMITER = "<<<stayfixed:repository-data"
+# The one line the session-start hook may say for a store none of whose notes the owner promoted,
+# `stayfixed.memory.hooks.UNREVIEWED_COUNT`, spelled out because this script runs without
+# `stayfixed` importable: fixed words and a count, nothing the clone wrote.
+UNREVIEWED_COUNT = re.compile(
+    r"stayfixed: [0-9]+ notes are unreviewed; `stayfixed memory promote --changed`"
+)
 # The remote the overlay records for `smoke`, and the one the clone has instead. The clone chooses
 # its own `project.name` and its own `origin`; what it cannot choose is a binding id in its git
 # common directory that this machine records, which is the whole of why `attach` can tell it from
@@ -167,6 +174,16 @@ def stayfixed(
     return _run([sys.executable, str(plugin_root / "scripts" / "stayfixed"), *args], env, cwd)
 
 
+def delimited(text: str, needle: str) -> bool:
+    """Whether `needle` stands inside a region the repository-data markers open: the last marker
+    before it is an opening one, never an end."""
+    if needle not in text:
+        return False
+    head = text[: text.index(needle)]
+    opened = head.rfind(DELIMITER + ":")
+    return opened != -1 and not head.startswith(DELIMITER + ":end:", opened)
+
+
 def through_wrapper(
     wrapper: Path, args: list[str], env: dict[str, str], cwd: Path
 ) -> subprocess.CompletedProcess[str]:
@@ -193,38 +210,41 @@ def main(argv: list[str]) -> int:
     report.row(
         carried.returncode == 0
         and CARRIED in carried.stdout
-        and carried.stdout.startswith(DELIMITER)
+        and delimited(carried.stdout, CARRIED)
+        and delimited(carried.stdout, CANARY)
         and ruled.returncode == 0
         and CANARY not in ruled.stdout
         and not ruled.stdout.strip(),
         "the clone's notes reach a session as data and never as a standing rule",
         f"volatile rc={carried.returncode}, carried={CARRIED in carried.stdout}, "
-        f"delimited={carried.stdout.startswith(DELIMITER)}, standing rc={ruled.returncode}, "
+        f"delimited={delimited(carried.stdout, CARRIED)}, "
+        f"rule delimited={delimited(carried.stdout, CANARY)}, standing rc={ruled.returncode}, "
         f"canary={CANARY in ruled.stdout}, standing emitted {len(ruled.stdout.strip())}",
     )
 
-    # The dispatcher's own SessionStart entry. No handler there speaks for an `in-repo` store —
-    # the overlay's status line and rules speak only in `overlay` mode — so the envelope carries
-    # no context at all. That is the right answer and it is what is asserted: a well-formed
-    # envelope naming the event, with no `additionalContext` and neither the canary nor the
-    # repository-data marker anywhere in it. The row's positive control is the first row above —
-    # the same store does reach a session through the bundle entries — so "nothing came out"
-    # cannot be a crash.
+    # The dispatcher's own SessionStart entry. The overlay's status line and rules speak only in
+    # `overlay` mode, so for an `in-repo` store the one thing the envelope may carry is the count
+    # of its unreviewed notes, fixed words and a number. That is what is asserted: a well-formed
+    # envelope naming the event, whose `additionalContext` is absent or that line alone, and
+    # neither the canary nor the repository-data marker anywhere in it. The row's positive control
+    # is the first row above — the same store does reach a session through the bundle entries —
+    # so "nothing came out" cannot be a crash.
     started = through_wrapper(wrapper, ["hook", "SessionStart"], env, planted.clone)
     try:
         envelope = json.loads(started.stdout)
     except json.JSONDecodeError:
         envelope = {}
     specific = envelope.get("hookSpecificOutput", {})
+    context = specific.get("additionalContext")
     report.row(
         started.returncode == 0
         and specific.get("hookEventName") == "SessionStart"
-        and "additionalContext" not in specific
+        and (context is None or UNREVIEWED_COUNT.fullmatch(str(context)) is not None)
         and CANARY not in started.stdout
         and DELIMITER not in started.stdout,
         "the session-start hook answers its envelope and injects nothing from the clone",
         f"rc={started.returncode}, event={specific.get('hookEventName')!r}, "
-        f"context={'additionalContext' in specific}, canary={CANARY in started.stdout}",
+        f"context={context!r}, canary={CANARY in started.stdout}",
     )
 
     # --- what the clone's machine configuration bought it: a line of information, nothing else -

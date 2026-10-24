@@ -66,7 +66,7 @@ this area's tests use; an area that comes to need one grows this list by the rul
   existing is not the same as an area importing, and none imports these.
 - **The inventory group** — `inventory`, `totals`, `Entry` — and nothing outside this area
   imports them.
-- **The store predicates** — `in_repository`, `inside_project`, `refusal_reason`,
+- **The store predicates** — `in_repository`, `refusal_reason`,
   `overlay_group_target` and `resolved`, none with a reader outside this area.
 - **The helpers** — `blocks` and `split`, with no reader outside this area.
 - **The bundles group** — `fit`, `render`, and the `Bundle` and `Fit` their signatures name. The

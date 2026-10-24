@@ -13,6 +13,8 @@ from datetime import date
 from stayfixed.config.schema import Config
 from stayfixed.memory.index import Reconciliation, is_volatile
 from stayfixed.memory.notes import Provenance
+from stayfixed.memory.reviewed import REVIEWED, record, status
+from stayfixed.memory.store import Store
 
 
 @dataclass(frozen=True)
@@ -25,13 +27,16 @@ class Entry:
     as_of: str | None
     stale: bool
     provenance: str
+    # Whether the owner promoted the note at the bytes it holds now (`memory.reviewed`).
+    reviewed: bool
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
-def inventory(reconciled: Reconciliation, config: Config) -> list[Entry]:
+def inventory(reconciled: Reconciliation, config: Config, store: Store) -> list[Entry]:
     today = date.today()
+    held = record(store)
     ttl = config.budgets.effective("volatile_ttl_days")
     entries = [
         Entry(
@@ -46,6 +51,7 @@ def inventory(reconciled: Reconciliation, config: Config) -> list[Entry]:
                 and (note.as_of is None or (today - note.as_of).days > ttl)
             ),
             provenance=note.index_provenance.value,
+            reviewed=status(store, note, held) == REVIEWED,
         )
         for note in reconciled.notes
     ]
@@ -68,10 +74,13 @@ def totals(entries: list[Entry]) -> dict[str, int]:
         "provisional": sum(1 for e in entries if e.provenance == Provenance.PROVISIONAL.value),
         "stale": sum(1 for entry in entries if entry.stale),
         "undated": sum(1 for e in entries if is_volatile(e.group) and e.as_of is None),
-        # The same two conditions `bundles._standing` selects on, and for the same reason: a
-        # volatile note is a dated, perishable fact, so it is injected by the volatile bundle
-        # whatever `startup` it carries. Counting every flagged note made this headline number
-        # disagree with what actually reaches the model — and this number is what the
-        # `memory-sweep` skill reads and quotes.
-        "standing": sum(1 for e in entries if e.startup is not None and not is_volatile(e.group)),
+        "unreviewed": sum(1 for entry in entries if not entry.reviewed),
+        # The same three conditions `bundles.blocks` selects a standing rule on, and for the same
+        # reasons: a volatile note is a dated, perishable fact, injected by the volatile bundle
+        # whatever `startup` it carries, and an unreviewed note is data. Counting every flagged
+        # note made this headline number disagree with what actually reaches the model — and this
+        # number is what the `memory-sweep` skill reads and quotes.
+        "standing": sum(
+            1 for e in entries if e.startup is not None and not is_volatile(e.group) and e.reviewed
+        ),
     }

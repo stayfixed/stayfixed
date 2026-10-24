@@ -24,7 +24,7 @@ Three things hold everywhere:
   configuration and warns once when the session starts (see [its section](#stayfixed-hook-event)),
   `stayfixed memory session-context` prints nothing, and `stayfixed doctor` reports it as a
   `stayfixed.toml` that does not load, a red row, exit `1`.
-- **Every `memory` command takes the same three options**, described once here rather than six
+- **Every `memory` command takes the same three options**, described once here rather than seven
   times below. `--root` and `--machine` are not memory's alone: [Shared flags](#shared-flags) says
   which commands take them, and in which sense.
 
@@ -41,6 +41,7 @@ Three things hold everywhere:
 - [`stayfixed memory session-context --bundle <name> [--part N]`](#stayfixed-memory-session-context---bundle-name---part-n)
 - [`stayfixed memory inventory`](#stayfixed-memory-inventory)
 - [`stayfixed memory fit`](#stayfixed-memory-fit)
+- [`stayfixed memory promote NOTE… | --changed`](#stayfixed-memory-promote-note----changed)
 - [`stayfixed hook <event>`](#stayfixed-hook-event)
 - [Hooks](#hooks)
 - [`stayfixed commit check --range RANGE`](#stayfixed-commit-check---range-range)
@@ -150,14 +151,14 @@ plays no part in it.
 ## `stayfixed trust list [--root PATH] [--machine PATH]`
 
 Every approval recorded on the machine, one line each with its kind, its subject and when it was
-approved. It names each subject — for `memory`, the store's absolute path — escaped where it leaves
-the path grammar and, past 120 characters, by its start and its length; a subject under `HOME` is
-named from `~/`. `--json` carries every subject whole.
+approved. It names each subject — for `reviewed`, the note's resolved absolute path; for `memory`,
+the store's — escaped where it leaves the path grammar and, past 120 characters, by its start and
+its length; a subject under `HOME` is named from `~/`. `--json` carries every subject whole.
 
-No command records an approval in this release: the notes a repository commits reach a session
-with no approval, as data ([`stayfixed memory session-context`](#stayfixed-memory-session-context---bundle-name---part-n)),
-so the approvals of kind `memory` an earlier release recorded are inert, and `trust revoke`
-withdraws them.
+One command records an approval in this release: [`stayfixed memory
+promote`](#stayfixed-memory-promote-note----changed), of kind `reviewed`, one per note. The
+approvals of kind `memory` an earlier release recorded are inert, since the notes a repository
+commits reach a session with no approval, as data, and `trust revoke` withdraws them.
 
 `--json` keys: `approvals`, one object per approval with its `kind`, `subject`, `digest` and
 `approved_at` (empty for one `0.3.0` recorded).
@@ -225,8 +226,8 @@ run it by hand except to see what a session actually receives.
 
 | Bundle | What it is |
 |---|---|
-| `standing-rules` | Every note flagged `startup`, in full, ranked, from a store outside the repository; a note inside it is never a standing rule, whatever it says about itself. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
-| `volatile-notes` | Dated, perishable notes, in full; over budget, descriptions only. A note inside the repository arrives inside a delimited region that says it is data, opened and closed with a nonce the note does not hold. |
+| `standing-rules` | Every note flagged `startup` that you promoted at the bytes it holds now ([`memory promote`](#stayfixed-memory-promote-note----changed)), in full, ranked; an unreviewed note is never a standing rule, whatever it says about itself. Never truncated — only flagged when the set outgrows its budget, because a standing rule that does not arrive is a standing rule that gets broken. |
+| `volatile-notes` | Dated, perishable notes, and every unreviewed note flagged `startup`, in full; over budget, descriptions only. An unreviewed note arrives labelled `[unreviewed]` inside a delimited region that says it is data, opened and closed with a nonce the note does not hold. |
 
 Each bundle is emitted across numbered parts, because the harness caps each hook entry's output
 independently. `--part N` selects one; a part past the end prints nothing and exits `0`. A part
@@ -240,9 +241,11 @@ entry.
 
 Where no layer sets `[memory] mode`, memory is the coding agent's own (`harness`), there is no
 store, and this command prints nothing. So it does before the store's directory exists — a
-`local-only` repository before its first note. Notes inside the repository — a `local-only` or `in-repo`
-store — reach a session with no approval, as the harness delivers the same repository's
-`CLAUDE.md`, only in `volatile-notes` and only as data. It reads the configuration as the session does
+`local-only` repository before its first note. An unreviewed note — one a repository commits, one
+an agent or the harness's writer wrote, one edited since you promoted it — reaches a session with no
+approval, as the harness delivers the same repository's `CLAUDE.md`, only in `volatile-notes` and
+only as data, in every mode; a `trust.json` that cannot be read leaves every note unreviewed. It
+reads the configuration as the session does
 ([Configuration](#configuration)), and a machine file that does not load is read as recording no
 overlay, so the notes not kept in an overlay still arrive; the session's own warning names that
 file.
@@ -252,7 +255,11 @@ file.
 ## `stayfixed memory inventory`
 
 What a memory sweep reads: every note with its word count, type, `startup` rank, date, whether
-it is stale, and whether its index line is curated, harvested or provisional. Plus totals.
+it is stale, whether its index line is curated, harvested or provisional, and whether it is
+`reviewed`. Plus totals, among them `unreviewed` and `standing`, the promoted notes the
+`standing-rules` bundle carries.
+
+**Reads** the store's notes and the machine's trust record.
 
 **Writes** nothing.
 
@@ -263,6 +270,37 @@ Whether each bundle fits the numbered hook entries declared for it. Exits `1` wh
 and would be truncated by the platform.
 
 **Writes** nothing.
+
+## `stayfixed memory promote NOTE… | --changed`
+
+Count notes as yours, at the bytes they hold now. Each `NOTE` is a note's path in the store,
+`<group>/<file>.md` as `memory index` links it, or a path to the note's file; `--changed` takes
+every note that is not reviewed. One or the other: both, or neither, exits `2` and records nothing,
+as does a name that is no note of the store.
+
+```bash
+stayfixed memory promote developer/prefer-uv.md
+stayfixed memory promote --changed    # after reading what changed
+```
+
+A note is reviewed while `trust.json` holds a `reviewed` approval for its resolved path at the
+sha256 of its current bytes, so an edit — yours, an agent's, the harness's writer's — makes it
+unreviewed again and moves no other note. Only a reviewed note is a standing rule
+([`session-context`](#stayfixed-memory-session-context---bundle-name---part-n)). The record lies
+outside every tree, so repository bytes cannot write it; an agent whose shell can run this command
+can, and against it the record is a label, not a gate ([`trust list`](#stayfixed-trust-list---root-path---machine-path)
+says what the record holds against). `trust revoke reviewed --subject PATH` withdraws one.
+
+Prints each note's path in the store and the digest recorded, one per line. `--json` keys:
+`promoted`, one object per note with its `path` and `digest`.
+
+Exits `2` if `trust.json` cannot be read, as `trust list` does, and for a write refused as an
+agent's sandbox refuses one, as `trust revoke` does.
+
+**Reads** the store's notes and the machine's trust record.
+
+**Writes** `~/.config/stayfixed/trust.json` (or the file beside `--machine`), only when a note was
+promoted, as `trust revoke` writes it.
 
 ## `stayfixed hook <event>`
 
@@ -280,7 +318,7 @@ machine file override. A configuration is never the reason a call is refused.
 The project's file is read the way [Configuration](#configuration) says a
 session reads it: an unknown section or key is ignored and a value that cannot be used is put back
 to the preset's, so the rest of the file still applies. The handlers about the project — the
-worktree link, the overlay status, the red-run note — say nothing when there is no project
+unreviewed-notes count, the overlay status, the red-run note — say nothing when there is no project
 configuration to use, which is so when there is no file, and when the file is a symbolic link
 (never read, whatever it points at), is not UTF-8, cannot be read or is not TOML, or holds a key
 nothing can stand in for: a required key with no default (`[stayfixed] version`, `[project]
@@ -337,7 +375,10 @@ root, or a relative one, nothing is written there and a `once_key` handler is as
 invocation. One handler writes outside it: `overlay-path-rules`, the path-scoped rules above,
 writes one empty file per session and file it said a rule for, under
 `$HOME/.local/share/stayfixed/sessions/`, both names hashed to a fixed width; none for a payload
-with no session id, and nothing removes them. No handler links a memory store into a worktree:
+with no session id, and nothing removes them. And `unreviewed-notes`, which on `SessionStart` says
+"N notes are unreviewed" when the set of the store's unreviewed notes differs from the one last
+said, writes one file per store under `$HOME/.local/share/stayfixed/unreviewed/`, named by a hash
+of the store's path and holding a digest of that set; nothing removes them. No handler links a memory store into a worktree:
 the harness reads the composed store from every worktree through the main checkout's
 `autoMemoryDirectory` (`stayfixed attach`).
 

@@ -611,39 +611,7 @@ def refusal_reason(
     return None if reason is None else str(reason)
 
 
-def inside_project(store: Store) -> bool:
-    """Whether any note actually lives in the repository — the predicate that decides whether the
-    store's notes reach a session only as data, and never as standing rules.
-
-    Not `memory.mode`, which the clone chooses, and not the store directory. What decides whether
-    a note is the machine owner's or the repository's is where the note itself sits: `local-only`
-    puts it under `.stayfixed/local/`, which a `.gitignore` keeps out of a clone the owner made
-    and does not keep out of a clone the attacker authored.
-
-    This asks the question of the *notes*, and deliberately keeps asking only that. A file that
-    is not a note and belongs to no group is asked about one at a time, with `in_repository`
-    below.
-
-    **Where it cannot answer, it answers closed.** In `local-only` and `in-repo` the notes are
-    in the repository by construction — `.stayfixed/local/memory` and `paths.memory` are both
-    resolved under `root` through `contained`, which refuses a symlink at every level — so a
-    group landing outside `store.root` in those modes is a resolution that went wrong, not a
-    store belonging to the machine owner. Answering False there is what let a clone that
-    escaped the resolver reach the model with no `trust.wrap`, as standing rules: a predicate
-    whose default for the unclassifiable is "the owner's" is the wrong way round. `overlay` keeps
-    its answer, because outside `store.root` is precisely where the overlay's layout puts those
-    notes.
-    """
-    if any(_inside(target, store.root) for target in store.groups.values()):
-        return True
-    return store.mode != OVERLAY_MODE
-
-
 def in_repository(store: Store, path: Path) -> bool:
-    """Whether one particular file this store yields sits in the repository itself.
-
-    `inside_project` cannot answer this for `MEMORY.md`: the index is not a note, belongs to no
-    `memory.groups` entry and lives at `store.path`. A caller that is about to inject a specific
-    file asks about that file.
-    """
+    """Whether one particular file this store yields sits in the repository itself: the index's
+    harvest and publish ask it of `MEMORY.md` and of each note, one file at a time."""
     return _inside(path, store.root)

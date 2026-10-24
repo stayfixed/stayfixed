@@ -15,9 +15,7 @@ from stayfixed.gitenv import GitUnavailable, Unasked
 from stayfixed.memory.store import (
     LEFT_TO_HARNESS,
     NO_RECORD,
-    Store,
     composed_directory,
-    inside_project,
     refusal_reason,
     resolve,
     resolved,
@@ -140,7 +138,6 @@ def test_local_only_mode_uses_dot_stayfixed(tmp_path: Path) -> None:
     store = resolve(root, a_config(root, "local-only"))
     assert store is not None
     assert store.path == root / ".stayfixed" / "local" / "memory"
-    assert inside_project(store) is True
 
 
 def test_with_no_mode_chosen_memory_is_left_to_the_harness(tmp_path: Path) -> None:
@@ -229,26 +226,6 @@ def test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that(tmp_path:
     assert "stay inside" not in reason
 
 
-def test_notes_that_resolve_outside_the_repository_are_repository_data_outside_overlay_mode(
-    tmp_path: Path,
-) -> None:
-    # Fail closed. `inside_project` is the predicate the bundles turn on, and a store it could not
-    # classify answered "not repository data" — which delivered its notes as standing rules and
-    # skipped `trust.wrap` on the way out. In `local-only` and `in-repo` the notes sit in the
-    # repository by construction, so groups landing outside it is a resolution that went wrong
-    # rather than an overlay. `overlay` is the one mode where outside is the design and
-    # keeps its answer, or the machine owner's own notes would arrive as data and no rule.
-    root = tmp_path / "project"
-    root.mkdir(parents=True)
-    outside = tmp_path / "elsewhere" / "developer"
-    outside.mkdir(parents=True)
-    for mode in ("local-only", "in-repo"):
-        escaped = Store(root / "docs" / "memory", mode, root, {"developer": outside})
-        assert inside_project(escaped) is True
-    overlay = Store(root / "docs" / "memory", "overlay", root, {"developer": outside})
-    assert inside_project(overlay) is False
-
-
 def test_overlay_mode_honours_the_tree_attach_creates(tmp_path: Path) -> None:
     root = tmp_path / "project"
     a_repo(root)
@@ -259,7 +236,6 @@ def test_overlay_mode_honours_the_tree_attach_creates(tmp_path: Path) -> None:
     assert sorted(store.groups) == ["developer", "project-stable"]
     # The cross-project half is the point: a single link at paths.memory cannot reach it.
     assert store.groups["developer"].resolve() == (overlay / "common" / "memory").resolve()
-    assert inside_project(store) is False
 
 
 def test_overlay_mode_reads_the_composed_store_and_no_tree_in_the_checkout(tmp_path: Path) -> None:

@@ -13,7 +13,7 @@
         "ref": "v0.3.1",
         "sha": "98018f228d8699088dbcfa6fd5fdb71b04a8b97e"
       },
-      "description": "A methodology harness for coding agents: bug ledger, curated working memory behind a trust gate, and fail-closed guards."
+      "description": "A methodology harness for coding agents: bug ledger, working memory whose notes count once reviewed, and fail-closed guards."
     }
   ]
 }
