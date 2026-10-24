@@ -137,8 +137,6 @@ def run_detach(args: argparse.Namespace) -> Result:
         "entries_removed": len(removed.entries_removed),
         "rules_removed": len(removed.rules_removed),
         "settings_keys_removed": len(removed.settings_keys_removed),
-        # A boolean this command computed, so it prints.
-        "ignore_region_removed": removed.ignore_region_removed,
         # A count, for the reason `run_attach` gives above.
         "links_revoked": len(removed.links.revoked),
         # A count, and it has to be: besides `CREATED_DIRS`, stayfixed's own closed vocabulary,

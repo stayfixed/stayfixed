@@ -100,58 +100,6 @@ reddens = [
   "tests/attach/test_commands.py::test_the_machine_flag_is_refused_for_a_reason_of_its_own",
 ]
 
-# The ledger holds the owner's personal allow rules and lives under `.stayfixed/local/`, a path
-# the repository has no `.gitignore` line for. Written before the region exists, it is published
-# to every collaborator -- so the region goes first, and a region that cannot be written is a
-# refusal rather than a warning.
-#
-# Two entries, because the old single one was named for the order and tested the absence: replacing
-# the call with `pass` reddens both named tests against there being no region at all, which is a
-# weaker claim and the one the name did not make. `mutations/`'s "the ignore region is written after
-# the ledger it untracks" moves the statement instead, and the tree afterwards is byte-identical
-# either way -- so only an assertion about the sequence of writes can see it.
-[[mutation]]
-name = "the ignore region is never written at all"
-file = "src/stayfixed/attach/write.py"
-before = "        _write_ignore_region(root, planned.ignore)"
-after = "        pass"
-reddens = [
-  "tests/attach/test_write.py::test_attach_writes_the_ignore_region_that_keeps_the_ledger_untracked",
-  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
-]
-
-[[mutation]]
-name = "the ignore region is written after the ledger it untracks"
-file = "src/stayfixed/attach/write.py"
-before = """    if planned.ignore is not None:
-        _write_ignore_region(root, planned.ignore)
-    if planned.hidden is not None:
-        exclude.write(planned.hidden)
-    for target, text in planned.rules:
-        fsops.write_within(root, target, text)
-    rules = tuple(target for target, _ in planned.rules)
-    written = planned.settings is not None
-    if planned.settings is not None:
-        fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
-    carried = planned.carried
-    _write_ledger(root, planned, carried)"""
-after = """    if planned.hidden is not None:
-        exclude.write(planned.hidden)
-    for target, text in planned.rules:
-        fsops.write_within(root, target, text)
-    rules = tuple(target for target, _ in planned.rules)
-    written = planned.settings is not None
-    if planned.settings is not None:
-        fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
-    carried = planned.carried
-    _write_ledger(root, planned, carried)
-    if planned.ignore is not None:
-        _write_ignore_region(root, planned.ignore)"""
-reddens = [
-  "tests/attach/test_write.py::test_the_ignore_region_is_written_before_the_ledger_and_not_merely_written",
-  "tests/attach/test_write.py::test_attach_refuses_when_the_ignore_region_cannot_be_written",
-]
-
 # `memory.groups` is repository-authored and reaches no guard of its own (`config/paths.py`
 # leaves the containment to the module that consumes the field). The entry decides a
 # directory created inside the OVERLAY -- the one tree `attach` trusts -- so `fsops` refusing it
@@ -375,7 +323,7 @@ reddens = [
 # `_write_ledger` was the thing that asked for it — from the fourth write of the run. A clone
 # committing such a ledger got the ignore region, the `.codex/rules/` copies and the settings
 # merge written before the exit 2, with the committed ledger still on disk for `doctor._attached`
-# to key on. The mutation moves the read back below two of those writes.
+# to key on. The mutation puts a write above the read.
 [[mutation]]
 name = "the ledger is read after attach has already written"
 file = "src/stayfixed/attach/write.py"
@@ -387,7 +335,7 @@ before = '''    previous = existing_ledger(root)
 # The write is put above the read rather than the read moved below the writes: `previous` is also
 # read by the settings-candidate question above the first write, so moving the read would break
 # the name instead of the order.
-after = '''    _write_ignore_region(root, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
+after = '''    fsops.write_within(root, ".stayfixed-probe", "")
     previous = existing_ledger(root)
     # Above every write, because the first of them creates `.stayfixed/local/` and the answer
     # would then be wrong by exactly the directory this run brought into existence.
@@ -406,8 +354,8 @@ reddens = [
 [[mutation]]
 name = "detach asks git where the checkouts are after it has already withdrawn"
 file = "src/stayfixed/attach/write.py"
-before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
-after = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)\n    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)"
+before = "    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    # The `info/exclude` block is found above the first withdrawal for the same reason: `git`\n    # names the file and a region opened twice refuses, and both are knowable now. It is shared\n    # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are\n    # each checkout's own, so it stays while another checkout still holds a ledger: taking it\n    # would show that checkout's settings file and rule copies in its `git status`.\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    settings = _planned_settings(root, recorded)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)\n    allow_removed = _withdraw_settings(root, settings)"
+after = "    settings = _planned_settings(root, recorded)\n    allow_removed = _withdraw_settings(root, settings)\n    checkouts = _checkouts(root)\n    for tree in checkouts:\n        harness_anchor(tree, home)\n    kept = _another_attached(root, checkouts)\n    hidden = None if kept else exclude.withdrawn_block(root)\n    harnessed, trees = _reach(root, checkouts, kept=kept)\n    # Where each checkout's harness link may point and be ours, asked here because it walks the\n    # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger\n    # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the\n    # withdrawal, a main checkout whose `paths.memory` came to be reached through a symlink\n    # refused after the rule copies were gone. And asked before `_refuse_unwithdrawable`, which\n    # walks only checkouts asked here: it resolves each tree's `paths.memory` with no answer for\n    # a symlink loop, where `.resolve()` raises `RuntimeError` up to Python 3.12, and this\n    # question's one refusal names the loop.\n    targets = {tree: harness_targets(tree, checkouts[0], config) for tree in harnessed}\n    _refuse_unwithdrawable(root, recorded, trees, config, settings)"
 reddens = [
   "tests/attach/test_detach.py::test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn",
 ]
@@ -463,21 +411,6 @@ before = '    foreign += sum(1 for name in directories if name not in CREATED_DI
 after = '    foreign += 0'
 reddens = [
   "tests/attach/test_detach.py::test_a_ledger_naming_a_directory_no_attach_creates_is_refused",
-]
-
-# `drop()` refuses a region opened twice, and it was asked after the settings withdrawal, the
-# rule files and every link tree -- a half-detached repository with the ledger still in place,
-# which `doctor` then reported attached. Read beside the ledger and `_checkouts` instead.
-[[mutation]]
-name = "detach stops reading the ignore region before its first withdrawal"
-file = "src/stayfixed/attach/write.py"
-# The read is conditional on what the manifest records. The mutation takes the read away entirely,
-# which is what leaves a region that cannot be withdrawn to be discovered after everything else is
-# gone.
-before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
-after = "    ignore_remainder = None"
-reddens = [
-  "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
 ]
 
 # A worktree deleted without `git worktree prune` stays on `git worktree list` with a `prunable`
@@ -667,15 +600,15 @@ reddens = [
 ]
 
 # The overlay half of the never-moved snapshot, which the repository-write mutation, `mutations/`'s
-# "the never-moved check is asked one write too late", cannot reach: it hoists
-# `_write_ignore_region`, which lands under the root. `_record_binding` is the write that made
-# `doctor` report a refused attach as **bound**, and it lands in the overlay -- so this is the one
-# that proves the second walk is doing work rather than passing empty.
+# "the never-moved check is asked one write too late", cannot reach: it hoists a write that
+# lands under the root. The overlay's record of the project is the write that made `doctor`
+# report a refused attach as **bound**, and it lands in the overlay -- so this is the one that
+# proves the second walk is doing work rather than passing empty.
 [[mutation]]
 name = "the binding record is written above the never-moved refusal"
 file = "src/stayfixed/attach/write.py"
 before = "        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
-after = "        _record_binding(binding)\n        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
+after = "        _record_project(binding, binding.remote)\n        self.real = len(unlinked_groups(self.root, config))\n        if self.real:"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
 ]
@@ -687,19 +620,9 @@ reddens = [
 name = "the never-moved check is asked one write too late"
 file = "src/stayfixed/attach/write.py"
 before = "        self.real = len(unlinked_groups(self.root, config))"
-after = "        _write_ignore_region(self.root, \"\")\n        self.real = len(unlinked_groups(self.root, config))"
+after = "        fsops.write_within(self.root, \".stayfixed-probe\", \"\")\n        self.real = len(unlinked_groups(self.root, config))"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
-]
-
-# `detach` leaves the ignore region in place when `init`'s footprint owns it.
-[[mutation]]
-name = "detach withdraws a region the footprint owns"
-file = "src/stayfixed/attach/write.py"
-before = "    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)"
-after = "    ignore_remainder = _ignore_region_remainder(root)"
-reddens = [
-  "tests/attach/test_detach.py::test_a_region_init_recorded_survives_a_detach",
 ]
 
 # `--check`'s exit code is what the attach skill branches on before it relays anything, so a
@@ -764,25 +687,6 @@ before = "    binding = read_binding(root, store=store, machine=machine, config=
 after = "    binding = read_binding(root, store=store, machine=machine)"
 reddens = [
   "tests/attach/test_commands.py::test_attach_reads_each_of_its_two_documents_once_too",
-]
-
-# `.stayfixed/manifest.json` is tracked, `attach` never reads it, and `Manifest.read` refuses an
-# unreadable one -- so a clone committing `{"format": 99}` attached cleanly and then made every
-# later `detach` exit 2, for ever, above every withdrawal. The mutation lets a symlinked
-# manifest's `PathEscape` propagate again.
-[[mutation]]
-name = "an unreadable manifest blocks the detach again"
-file = "src/stayfixed/attach/write.py"
-before = '''    try:
-        return Manifest.read(root).get("gitignore") is not None
-    except Refusal:'''
-after = '''    try:
-        return Manifest.read(root).get("gitignore") is not None
-    except Refusal as exc:
-        if isinstance(exc, PathEscape):
-            raise'''
-reddens = [
-  "tests/attach/test_detach.py::test_a_manifest_a_clone_committed_cannot_block_the_withdrawal",
 ]
 
 # The verdict half of the finding behind `mutations/`'s "a repeated memory group is counted twice
@@ -898,9 +802,34 @@ reddens = [
   "tests/attach/test_commands.py::test_a_project_not_in_overlay_mode_is_refused_before_a_byte_is_written",
 ]
 
+# A `.gitignore` that re-includes a placed path with a `!` line outranks the exclude block, so git
+# would show it however the block reads. git is asked about every placed path once the block
+# stands and before any later write, and the settings file is the one that must never be written
+# where git shows it.
+[[mutation]]
+name = "the ignore check skips the settings file"
+file = "src/stayfixed/attach/write.py"
+before = "    if shown := exclude.unignored(root, planned.placed):"
+after = "    if shown := exclude.unignored(root, [p for p in planned.placed if p != LOCAL_SETTINGS]):"
+reddens = [
+  "tests/attach/test_write.py::test_a_gitignore_that_re_includes_the_settings_file_refuses_before_it_is_written",
+]
+
+# The rule's other half: no exclude line hides a tracked file, so a placed path the index tracks,
+# under any case of its spelling, is refused above every write, or `attach` writes over it.
+[[mutation]]
+name = "attach writes over a tracked placed path"
+file = "src/stayfixed/attach/write.py"
+before = "    if found := exclude.tracked(root, placed):"
+after = "    if found := exclude.tracked(root, ()):"
+reddens = [
+  "tests/attach/test_write.py::test_a_tracked_codex_rule_copy_is_refused_before_anything_is_written",
+  "tests/attach/test_write.py::test_a_tracked_local_settings_file_is_refused_before_anything_is_written",
+]
+
 # `attach` hides only what git does not hide already, so a checkout that keeps its whole footprint
-# out of git through `info/exclude` sees neither ignore file change. Reading every placed path as
-# visible writes both the `.gitignore` region and the exclude block into that checkout.
+# out of git through `info/exclude` sees its exclude file unchanged. Reading every placed path as
+# visible writes the exclude block into that checkout, and the check after it refuses the run.
 [[mutation]]
 name = "attach treats an ignored path as not ignored"
 file = "src/stayfixed/attach/exclude.py"
@@ -1021,18 +950,6 @@ reddens = [
   "tests/attach/test_write.py::test_a_checkout_whose_global_excludes_file_hides_everything_is_not_touched",
   "tests/attach/test_write.py::test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitignore_says",
   "tests/attach/test_detach.py::test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches",
-]
-
-# git shows a tracked file whatever an exclude line says, so a line for one hides nothing, and it
-# needs the exclude file written: with the owner's symlinked exclude file hiding everything and
-# the settings file tracked, an attach nothing had to write into that file was refused.
-[[mutation]]
-name = "the exclude block also lists what git shows in spite of the owner's excludes"
-file = "src/stayfixed/attach/exclude.py"
-before = "    return tuple(relative for relative in relatives if relative in unheld)"
-after = "    return tuple(r for r in relatives if r in unheld | set(unignored(root, relatives)))"
-reddens = [
-  "tests/attach/test_detach.py::test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_refuse",
 ]
 
 # git reads a skip-worktree `.gitignore`, which a sparse checkout leaves out of the work tree, from
@@ -1536,21 +1453,10 @@ reddens = [
 name = "attach reads the overlay's rule sources after its first write"
 file = "src/stayfixed/attach/write.py"
 before = "    rules = _codex_rule_texts(binding)"
-after = """    fsops.write_within(root, GITIGNORE, upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH))
+after = """    fsops.write_within(root, ".stayfixed-probe", "")
     rules = _codex_rule_texts(binding)"""
 reddens = [
   "tests/attach/test_write.py::test_an_overlay_rule_that_is_not_utf8_stops_attach_before_it_writes",
-]
-
-# "region 'ignore' is opened or closed twice" named the region and never the file it is in.
-[[mutation]]
-name = "a doubled .gitignore region is refused without its file"
-file = "src/stayfixed/attach/write.py"
-before = '        raise RegionError(f"`{GITIGNORE}`: {exc}") from exc'
-after = "        raise"
-reddens = [
-  "tests/attach/test_write.py::test_a_doubled_gitignore_region_is_refused_naming_the_file",
-  "tests/attach/test_detach.py::test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is",
 ]
 
 # A named failure mode, and the shape one existing checkout already had: a **real directory** at
@@ -2342,27 +2248,6 @@ reddens = [
   "tests/attach/test_write.py::test_a_settings_merge_the_encoder_cannot_write_back_is_refused_before_the_first_write",
 ]
 
-# In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": `attach`
-# reads the committed `.gitignore` it adds its region to through that reader, so a link there to a
-# device or a FIFO is a `.gitignore` that cannot be read, and the run stops before its first write.
-[[mutation]]
-name = "attach reads a .gitignore through any link"
-file = "src/stayfixed/attach/write.py"
-before = """
-        text = fsops.read_regular_text(path)
-    except FileNotFoundError:
-        text = ""
-"""
-after = """
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        text = ""
-"""
-reddens = [
-  "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
-  "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[attach]",
-]
-
 # Whether a name is too long is the kernel's verdict: Linux limits a name to 255 bytes and APFS to
 # 255 characters, so counting a name's bytes refused on macOS a `memory.groups` entry the
 # filesystem takes. The lookup is stubbed in the test, so the count is caught on any OS.
@@ -2408,37 +2293,6 @@ before = """            text = fsops.read_regular_text(path)
 after = """            text = path.read_text(encoding="utf-8")
         except FileNotFoundError as exc:"""
 reddens = ["tests/attach/test_detach.py::test_a_ledger_linked_to_a_device_stops_detach_and_is_never_read"]
-
-[[mutation]]
-name = "the .gitignore refusal prints the path it opened"
-file = "src/stayfixed/attach/write.py"
-before = 'f"{GITIGNORE} cannot be read ({fsops.said(exc)}), so `.stayfixed/local/` cannot be "'
-after = 'f"{GITIGNORE} cannot be read ({exc}), so `.stayfixed/local/` cannot be "'
-reddens = [
-  "tests/attach/test_write.py::test_a_gitignore_linked_to_a_device_is_refused_and_never_read[plan]",
-]
-
-# `detach` reads `.gitignore` as `attach` does, to the read cap, so a file past it that stops one
-# stops the other above its first withdrawal; and names it as the project does.
-[[mutation]]
-name = "detach reads .gitignore with no bound"
-file = "src/stayfixed/attach/write.py"
-before = """    with fsops.reading(GITIGNORE, Failure):
-        text = fsops.read_regular_text(path)"""
-after = """    with fsops.reading(GITIGNORE, Failure):
-        text = path.read_text(encoding="utf-8")"""
-reddens = [
-  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
-]
-
-[[mutation]]
-name = "detach's .gitignore refusal prints the path it opened"
-file = "src/stayfixed/attach/write.py"
-before = "    with fsops.reading(GITIGNORE, Failure):"
-after = "    with fsops.reading(path, Failure):"
-reddens = [
-  "tests/attach/test_detach.py::test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing",
-]
 
 # In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
 # recursion escape": `detach` copies the parsed settings document and compares what is left with it,
@@ -2638,8 +2492,8 @@ reddens = [
 ]
 
 # `attach --check` asks what the run asks past its gates and before its first write through the
-# run's own `plan_writes`, so a ledger, a harness anchor, an ignore file, an overlay rule or a trust
-# record the run cannot take ends both with one code and line; each of these was once unread here,
+# run's own `plan_writes`, so a ledger, a harness anchor, the exclude file, an overlay rule or a
+# trust record the run cannot take ends both with one code and line; each of these was once unread here,
 # and `--check` answered clean over a checkout that stopped the run. Each case named here reddens
 # on its own, measured by hand.
 [[mutation]]
@@ -2652,8 +2506,6 @@ reddens = [
   "tests/attach/test_commands.py::test_check_ends_on_a_ledger_the_run_cannot_take_with_the_runs_code_and_words[a-link]",
   "tests/attach/test_commands.py::test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_line",
   "tests/attach/test_commands.py::test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and_line",
-  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-region-doubled]",
-  "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[gitignore-not-text]",
   "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[exclude-block-doubled]",
   "tests/attach/test_commands.py::test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_line[claude-linked-in]",
 ]

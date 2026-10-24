@@ -1672,7 +1672,7 @@ either way.
 | `roadmap-history` | footprint | template | `[paths] roadmap_history` | an empty history |
 | `trail` | footprint | template | `trail.toml` beside the roadmap | one theme, no declared states |
 | `specs-keep`, `plans-keep` | footprint | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
-| `gitignore` | footprint | managed region | `.gitignore` | the same block `attach` writes |
+| `gitignore` | footprint | managed region | `.gitignore` | `.stayfixed/local/` and `.stayfixed/assessment.json` |
 | `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's stayfixed uses |
 | `ci-workflow` | footprint | template | `.github/workflows/stayfixed.yml` | the pinned call to the reusable gate |
 | `profile-rules` | footprint | template | `<stayfixed>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[stayfixed] profile` set |
@@ -2535,11 +2535,9 @@ project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` a
 `.claude/settings.json` — the committed one — is read for **nothing**: it is repository-controlled,
 and the repository never grants a capability.
 
-**Writes** the `stayfixed:ignore` region in `.gitignore` (which is what keeps
-`.stayfixed/local/` untracked, and is written first — and only when git does not already ignore
-both `.stayfixed/local/` and `.stayfixed/assessment.json`), a block between
-`# stayfixed:attach:begin` and `# stayfixed:attach:end` in the repository's own exclude file (the
-one `git rev-parse --git-path info/exclude` names, which every worktree shares),
+**Writes** a block between `# stayfixed:attach:begin` and `# stayfixed:attach:end` in the
+repository's own exclude file (the one `git rev-parse --git-path info/exclude` names, which every
+worktree shares), written first,
 `.claude/settings.local.json`, `.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the
 binding id `stayfixed/binding` in the git common directory when there is none yet, this machine's
 binding record `$HOME/.local/share/stayfixed/bindings/<id>.toml`, the link tree under
@@ -2555,40 +2553,46 @@ the
 `pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
 `pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook
-entry can; `detach` reads it and nothing else.
+entry can; `detach` reads it and nothing else. **`.gitignore` is never written**: it is tracked, so
+any line there would be a change every collaborator gets. A `stayfixed:ignore` region an earlier
+release's `attach` wrote there stays until you remove it; `stayfixed init`'s own region is
+`init`'s.
 
-**What it places, it hides from git, unless git hides it already.** The link tree (`MEMORY.md` and
-one link per group), each `.codex/rules/` file and — on a run that writes it, or after one that did
-— `.claude/settings.local.json` are this machine's own, so each one is listed in the exclude-file
-block, one anchored line per path, unless your own excludes already hide it: the repository's
-exclude file or your global excludes file (`core.excludesFile`), read on their own. A `.gitignore`
-in the checkout does not stand in for the block, because the repository authors it and a pull can
-change it: a path only a `.gitignore` hides gets a line, and a path your own excludes hide gets
-none, whatever a `.gitignore` also says. A file the repository tracks is listed only when your own
-excludes do not hide it, since no exclude line hides a tracked file. A link whose name no single
-exclude line can hold — a group name with a line break, a NUL, U+2028 or another character a line
-reader may split at — gets no line and stays visible, rather than being written as a line git, or a
-later `attach` reading the block back, would take for several. A path this run does not write is not
-listed and is not held to the project either, so a `.claude` linked in from elsewhere is refused,
-before the first write, only when the overlay grants something to merge into it. The
-`autoMemoryDirectory` fallback is never written through such a link: where it would be taken — a
-real directory already sits where the harness memory link goes, and the store is approved — `attach`
-skips it and its line says what the harness link is missing and what to do. Whether the fallback may
-be taken is decided before the first write too; on a first attach, with no approval recorded for the
-store yet, it cannot be. A checkout that already hides all of them in its own exclude file or a
-global excludes file gets no block, and one that already hides `.stayfixed/local/` and
-`.stayfixed/assessment.json` by any means, `.gitignore` included, gets no `.gitignore` change, so
-`git status` after an attach shows at most the `stayfixed:ignore` region. `.gitignore` is never
-written beyond that region. When the exclude file did not exist, when the directory it goes in did
-not exist either (a repository made without git's templates has no `info/`, and the write creates
-it), or when its last line had no line ending, the block says so in a comment line of its own, which
-is what lets `detach`, from whichever checkout runs it last, give the file back byte for byte. The
-file is read as bytes, so bytes in it that are not UTF-8 are kept exactly and refuse nothing. The
-file is read, changed and replaced without a lock, so two runs at once in checkouts of one
-repository — two `attach` runs, or an `attach` and a `detach`, in the main checkout and a worktree
-say — can each read it before the other writes, and the later write then undoes what the earlier one
-did to it. Run one `attach` or `detach` at a time. Running `attach` again in the checkout whose
-lines went puts them back.
+**What it places, it hides from git, unless git hides it already.** The ledger, the link tree
+(`MEMORY.md` and one link per group), each `.codex/rules/` file and — on a run that writes it, or
+after one that did — `.claude/settings.local.json` are this machine's own, so each one is listed in
+the exclude-file block, one anchored line per path, unless your own excludes already hide it: the
+repository's exclude file or your global excludes file (`core.excludesFile`), read on their own. A
+`.gitignore` in the checkout does not stand in for the block, because the repository authors it and
+a pull can change it: a path only a `.gitignore` hides gets a line, and a path your own excludes
+hide gets none, whatever a `.gitignore` also says. A path the repository tracks, under any case of
+its spelling, is refused before the first write, since no exclude line hides a tracked file. A link
+whose name no single exclude line can hold — a group name with a line break, a NUL, U+2028 or
+another character a line reader may split at — gets no line, rather than being written as a line
+git, or a later `attach` reading the block back, would take for several; unless your own excludes
+hide it, the check below then refuses the run. **Once the block is written, git is asked whether
+each of those paths is ignored** (`git check-ignore --no-index`, every ignore file read), and a path
+it would still show — one a `.gitignore` re-includes with a `!` line, which outranks the exclude
+file — refuses the run before that path, or anything after the block, is written. The binding id is
+placed in the git common directory, which git never tracks, so it is neither listed nor asked about.
+A path this run does not write is not listed and is not held to the project either, so a `.claude`
+linked in from elsewhere is refused, before the first write, only when the overlay grants something
+to merge into it. The `autoMemoryDirectory` fallback is never written through such a link: where it
+would be taken — a real directory already sits where the harness memory link goes, and the store is
+approved — `attach` skips it and its line says what the harness link is missing and what to do.
+Whether the fallback may be taken is decided before the first write too; on a first attach, with no
+approval recorded for the store yet, it cannot be. A checkout that already hides all of them in its
+own exclude file or a global excludes file gets no block, and `git status` after an attach shows
+nothing new. When the exclude file did not exist, when the directory it goes in did not exist either
+(a repository made without git's templates has no `info/`, and the write creates it), or when its
+last line had no line ending, the block says so in a comment line of its own, which is what lets
+`detach`, from whichever checkout runs it last, give the file back byte for byte. The file is read
+as bytes, so bytes in it that are not UTF-8 are kept exactly and refuse nothing. The file is read,
+changed and replaced without a lock, so two runs at once in checkouts of one repository — two
+`attach` runs, or an `attach` and a `detach`, in the main checkout and a worktree say — can each
+read it before the other writes, and the later write then undoes what the earlier one did to it. Run
+one `attach` or `detach` at a time. Running `attach` again in the checkout whose lines went puts
+them back.
 
 It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
 the harness memory link cannot be made, so when the link becomes possible again — or when the
@@ -2676,9 +2680,13 @@ It exits `2` on a refusal, in the order the run meets them:
   symlink.
 - A `.stayfixed` that is a symlink, or an existing ledger naming files, settings keys or
   directories `attach` could not have written.
-- A `git check-ignore` that cannot answer; a `.gitignore`, when it needs the `stayfixed:ignore`
-  region, that cannot be read, is not UTF-8 or holds that region opened or closed twice (the
-  refusal names the file).
+- A `git check-ignore` that cannot answer.
+- A path it places — the ledger, a link of the link tree, a `.codex/rules/` copy, or
+  `.claude/settings.local.json` on a run that writes it — that the repository tracks, under any
+  case of its spelling (on a filesystem that ignores case, a tracked `.claude/Settings.Local.json`
+  is the file `attach` would write), since no exclude line hides a tracked file and what `attach`
+  writes there would reach every clone with the next commit; or a `git ls-files` that cannot say.
+  The refusal names each such path, and counts the link tree's. `--check` refuses it too.
 - A `.codex` or `.claude` that is a symlink, on a run that writes into it; a
   `git rev-parse --git-path info/exclude` that names no exclude file; an exclude file that cannot
   be read or holds a `stayfixed:attach` block opened or closed twice (the refusal names the file),
@@ -2689,10 +2697,13 @@ It exits `2` on a refusal, in the order the run meets them:
 Every refusal in that list happens before anything is written, so a refused attach leaves both the
 repository and the overlay as they were. What is left can only happen once writing has begun:
 
-- A `.gitignore` that cannot be written. It is the first write, so this refusal leaves nothing
-  behind either.
-- An exclude file that cannot be written after all, which is refused, naming it, with
-  `.gitignore`'s region already written.
+- An exclude file that cannot be written after all, which is refused, naming it. It is the first
+  write, so this refusal leaves nothing behind either.
+- A path it places that git would still show once the block is written — one a `.gitignore`
+  re-includes with a `!` line, which outranks the exclude file — or a `git check-ignore` that
+  cannot answer at that point. It is refused, naming each such path (a link of the link tree is
+  counted rather than named, since its name is the repository's), with only the exclude block
+  written; take the line out of the `.gitignore` and run `attach` again, which reuses the block.
 - A directory in this project's share of the overlay that became a symlink between the moment it
   was checked and the moment it was written, which is refused.
 - Any other write that fails, a rule copy, the settings file, the ledger, the binding id, the
@@ -2742,8 +2753,7 @@ mixes one of those with your own entry is split, never replaced), and leaves the
 none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
 this checkout and every worktree together with each one's harness memory link — while another checkout is
 attached, only this checkout's link, and its tree unless it is the main checkout, as above —
-removes the `stayfixed:ignore` region and the `stayfixed:attach` block in the repository's exclude
-file, and deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is
+removes the `stayfixed:attach` block in the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is
 removed rather than left empty — for the exclude file, only when `attach` created it, which the block records, so
 an exclude file you had, empty or not, stays, and the `info/` directory it sat in goes with it only
 when `attach` created that too and it is empty; the line ending `attach` added to your exclude
@@ -2775,21 +2785,9 @@ that detach; and, where the main checkout detached first, a linked worktree's `p
 which the worktree's own ledger records as already there, because the main checkout's `attach` or
 the worktree-link handler made it.
 
-**The `stayfixed:ignore` region in `.gitignore` goes only if the manifest does not record it.**
-On a repository `stayfixed init` set up, that block is the footprint's — recorded in
-`.stayfixed/manifest.json` as a scaffolded artifact, with the body `attach` writes — and it
-stays. Ownership decides, not last writer: the block is committed, so withdrawing it would
-take a line out of a tracked file this command never wrote and leave `stayfixed upgrade`
-reading the footprint as hand-edited. A repository with no manifest is one no
-`init` has set up, and its region is withdrawn as before.
-
-A manifest this command **cannot read** — unreadable, not a JSON object, holding a `format` that is
-not a positive integer, or written by a newer stayfixed — is read as no answer rather than as an
-answer, so the block stays and the detach finishes. That file is committed and `attach` never opens
-it, so a clone that ships a broken one would otherwise attach cleanly and then make every later
-`detach` exit `2` for ever, with the only way out being to delete a tracked file out of somebody
-else's repository. `--json` reports `ignore_region_removed: false`, and `stayfixed init` or a hand
-edit clears the block.
+**`.gitignore` is never touched.** `attach` writes nothing there, so `detach` takes nothing out:
+a `stayfixed:ignore` region `stayfixed init` wrote is the footprint's, and one an earlier release's
+`attach` wrote stays until you remove it.
 
 **Directories come back too.** `attach` records which of `.stayfixed/local/`, `.stayfixed/`,
 `.codex/rules/`, `.codex/`, `.claude/` and the directories above `paths.memory` this repository
@@ -2814,9 +2812,6 @@ Exits `0` on success. It exits `1` on a failure, in the order the run meets them
   TOML.
 - `.claude/settings.local.json` cannot be read or is not UTF-8.
 - `git` cannot list this repository's worktrees.
-- `.gitignore` cannot be read or is not UTF-8, when the `stayfixed:ignore` region in it is the one
-  `attach` wrote; a region `stayfixed init`'s footprint records is left where it is, and the file
-  is not read.
 
 "Cannot be read" means here what it means for `attach`: a link to a device or a FIFO, or a file
 longer than 64 MiB, which neither command reads past. A settings file an earlier release's
@@ -2831,8 +2826,6 @@ It exits `2` on a refusal, in the order the run meets them:
   shape the withdrawal cannot read, or whose indented write-back would pass 64 MiB.
 - A home directory that is not there, or a component below it, `~/.claude` included, that is a
   symlink, in any checkout of the repository.
-- A `stayfixed:ignore` region in `.gitignore` opened or closed twice, or otherwise with markers
-  that no longer say where it ends (the refusal names the file).
 - A `git rev-parse --git-path info/exclude` that names no exclude file, an exclude file that cannot
   be read, a `stayfixed:attach` block in it opened or closed twice, or one to take out of a file in
   a directory you cannot write (the refusal names the file).
@@ -2857,7 +2850,7 @@ nothing. What is left can only happen once withdrawing has begun, and leaves the
 with part of the attach already undone:
 
 - An exclude file whose write fails for any other reason, which is refused, naming it, once the
-  settings, the rule copies, the link trees and the `.gitignore` region are withdrawn.
+  settings, the rule copies and the link trees are withdrawn.
 - Any other write or removal that fails, which ends as `internal error` with the error the system
   gave.
 

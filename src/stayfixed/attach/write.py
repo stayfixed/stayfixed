@@ -25,14 +25,15 @@ hand. A `permissions.allow` string cannot carry one — `scaffold.mark` appends 
 so an allow rule has exactly **one** witness, the ledger at `.stayfixed/local/attach.json`, and
 `detach` is only ever as good as that file.
 
-**The ledger is written under `.stayfixed/local/`, and the `.gitignore` region goes first.** The
-repository has no `.stayfixed` line today and nothing in this area ships one, so without that
-region `attach` drops the owner's personal allow rules into a tracked-by-default path. It is
-written before the ledger rather than beside it, so the ledger is never in a tracked path even
-for an instant — and if the region cannot be written, writing the ledger would be a leak, so the
-answer is a refusal rather than a warning. It is written only when git does not already ignore
-both paths it lists, so a checkout that hides them another way reaches no tracked file here; the
-rest of what `attach` places is hidden through `info/exclude` instead (`attach.exclude`).
+**Nothing goes into `.gitignore`, and every placed path is ignored before the first write after
+the exclude block.** `.gitignore` is tracked, so a line `attach` wrote there was a change every
+collaborator got. Everything `attach` places in the checkout, the ledger with the owner's personal
+allow rules included, is listed in the `info/exclude` block (`attach.exclude`), which no clone
+carries; the block is written first, and git is then asked whether each placed path is ignored,
+so a `.gitignore` that re-includes one (a `!` line outranks the exclude file) stops the run
+before that path is written. The binding id is placed too, but in the git common directory, which
+git never tracks, so it is neither listed nor asked about. `init`'s own `stayfixed:ignore` region
+is `init`'s, and this module neither writes nor withdraws it.
 
 **Every write goes through a primitive that already exists.** `fsops.write_within(root, …)` for
 everything inside the project and `fsops.write_within(overlay, …)` for the binding record — the
@@ -45,7 +46,7 @@ import datetime
 import functools
 import json
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -72,12 +73,7 @@ from stayfixed.attach.permissions import (
     settings_document,
 )
 from stayfixed.binding import ensure_id, record, short
-from stayfixed.config.layout import (
-    ATTACH_LEDGER,
-    IGNORE_BODY,
-    IGNORE_REGION,
-    LOCAL_STATE_PATHS,
-)
+from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import load
 from stayfixed.config.owner import Owner
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
@@ -118,22 +114,16 @@ from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
 from stayfixed.printed import answered, quoted
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
-    Manifest,
     ParserLimitError,
-    RegionError,
-    Style,
     apply_entries,
-    drop,
     mark,
     marker_id,
     owned_ids,
     settings_text,
-    upsert,
 )
 from stayfixed.trust.api import ONLY_OUTSIDE, PERSON_RUNS, SANDBOX_REFUSED
 
 LEDGER_FORMAT = 1
-GITIGNORE = ".gitignore"
 # `attach`'s fallback for the one link that leaves stayfixed's own channel: a settings-file value
 # is subject to workspace trust and a link is not, so the symlink is preferred and this is taken
 # only when it cannot be made.
@@ -420,61 +410,6 @@ def existing_ledger(root: Path) -> AttachLedger | None:
     return ledger(root)
 
 
-def _planned_ignore_region(root: Path) -> str | None:
-    """`.gitignore` with the region that makes `.stayfixed/local/` untracked, or `None` when it
-    holds the region already; a refusal when the file cannot be read.
-
-    One `scaffold.upsert` with the `stayfixed:ignore` marker: everything outside the region comes
-    back out as it went in, which is the whole point of a managed region and the reason this
-    does not need the scaffold engine's manifest. Asked while the run is planned, and only when
-    git does not already ignore both `LOCAL_STATE_PATHS`; `_write_ignore_region` writes the
-    answer.
-    """
-    path = root / GITIGNORE
-    try:
-        # A regular file only: `exists()` and `read_text` followed a committed link, so
-        # `.gitignore -> /dev/zero` read until memory ran out and a FIFO there waited for a
-        # writer. Anything else is a `.gitignore` that cannot be read.
-        text = fsops.read_regular_text(path)
-    except FileNotFoundError:
-        text = ""
-    except UnicodeDecodeError:
-        raise Refusal(
-            f"{GITIGNORE} is not UTF-8 text, so `.stayfixed/local/` cannot be made untracked — and "
-            f"writing the attach ledger into a tracked path would publish your personal allow "
-            f"rules to every collaborator"
-        ) from None
-    except OSError as exc:
-        raise Refusal(
-            f"{GITIGNORE} cannot be read ({fsops.said(exc)}), so `.stayfixed/local/` cannot be "
-            f"made untracked — and writing the attach ledger into a tracked path would publish "
-            f"your personal allow rules to every collaborator"
-        ) from exc
-    updated = _in_gitignore(upsert, text, IGNORE_REGION, IGNORE_BODY, Style.HASH)
-    return None if updated == text else updated
-
-
-def _in_gitignore(region: Callable[..., str], *args: object) -> str:
-    """`upsert` or `drop` over `.gitignore`, with the file named in a refusal: "region 'ignore' is
-    opened or closed twice" said which region and never which file."""
-    try:
-        return region(*args)
-    except RegionError as exc:
-        raise RegionError(f"`{GITIGNORE}`: {exc}") from exc
-
-
-def _write_ignore_region(root: Path, updated: str) -> None:
-    """Write the `.gitignore` `_planned_ignore_region` decided on, or refuse: writing the ledger
-    into a tracked path would be a leak, so a failure here is never a warning."""
-    try:
-        fsops.write_within(root, GITIGNORE, updated)
-    except OSError as exc:
-        raise Refusal(
-            f"{GITIGNORE} cannot be written ({exc}), so `.stayfixed/local/` cannot be made "
-            f"untracked — refusing rather than leaving the attach ledger in a tracked path"
-        ) from exc
-
-
 def _allow_list(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """The local settings document's `permissions` object, copied, and its allow list, read by
     `permissions.allow_list`: the reader `--check` reads the same file with, so the two refuse
@@ -521,7 +456,7 @@ def _codex_rule_texts(binding: Binding) -> tuple[tuple[str, str], ...]:
     `attach --check` reports exactly the files `attach` then writes rather than a second
     enumeration that could disagree with this one. Every source is read and decoded here and none
     while copying: a source that is not UTF-8, met while copying, would stop the copy after
-    `.gitignore`, the exclude block and the rules before it were written, with the partial copies
+    the exclude block and the rules before it were written, with the partial copies
     hidden by the block and no ledger for `detach` to remove them by.
     """
     texts: list[tuple[str, str]] = []
@@ -655,20 +590,34 @@ def _memory_absent(root: Path, config: Config) -> bool:
 
 
 def _placed(binding: Binding, config: Config, *, settings: bool) -> tuple[str, ...]:
-    """Every path this run puts into the project besides the ledger, which `.gitignore`'s region
-    covers: the link tree (`linked_names`, the same list `attach_main` walks), each rule copy
-    `codex_rules` enumerates, and the settings file when `settings` says this run writes it or an
-    earlier one did. These are what `attach.exclude` hides and holds inside the project.
+    """Every path this run puts into the checkout's work tree: the ledger, the link tree
+    (`linked_names`, the same list `attach_main` walks), each rule copy `codex_rules` enumerates,
+    and the settings file when `settings` says this run writes it or an earlier one did. These are
+    what `attach.exclude` hides and holds inside the project, and what one rule holds: none
+    tracked, each ignored once the block stands. The binding id is placed too, but under the git
+    common directory, which git never tracks, so it is no path of the work tree.
 
     **Only what is written, because each candidate is also a containment refusal.** A `.claude`
     the owner keeps elsewhere and links in is an ordinary layout, and an overlay that grants
     nothing gives this run nothing to write there — so the settings file on such a run is neither
     a reason to refuse nor a line in the block for a file `attach` never made."""
     return (
+        ATTACH_LEDGER,
         *(f"{config.paths.memory}/{name}" for name in linked_names(config)),
         *(target for target, _ in codex_rules(binding)),
         *((LOCAL_SETTINGS,) if settings else ()),
     )
+
+
+def _named(config: Config, paths: tuple[str, ...]) -> str:
+    """Placed paths as a refusal names them: those the checkout or the overlay names through
+    `printed.quoted`, and the link tree's counted, because each carries a `memory.groups` entry,
+    which the repository chose."""
+    tree = f"{config.paths.memory}/"
+    named = [quoted(path) for path in paths if not path.startswith(tree)]
+    if linked := sum(1 for path in paths if path.startswith(tree)):
+        named.append(f"{linked} link(s) of the link tree under paths.memory")
+    return ", ".join(named)
 
 
 def _fallback_store(owner: Path, config: Config, *, machine: Path | None) -> Store | None:
@@ -1155,8 +1104,9 @@ class AttachPlan:
     # The settings document to write, or `None` when the merge leaves it as it is.
     settings: str | None
     carried: tuple[str, ...]
-    # `.gitignore` with its region, or `None` when it needs none.
-    ignore: str | None
+    # Every path this run places in the work tree (`_placed`), and the exclude block that hides
+    # them, or `None` when the owner's own excludes hide them all.
+    placed: tuple[str, ...]
     hidden: exclude.ExcludeWrite | None
     # Each `.codex/rules/` target and the text to copy there.
     rules: tuple[tuple[str, str], ...]
@@ -1186,8 +1136,8 @@ def attach(
     refuses a `check-ignore` with no answer, a placed path that leaves the project and a
     symlinked or unwritable exclude file; read the overlay's rule sources, the checkouts and the
     machine's trust record, which the writes below would otherwise read for themselves;
-    then write, `.gitignore` first when it needs its region at all, so the ledger is never in a
-    tracked path even for an instant, and the exclude block before any file it hides.
+    then write the exclude block, refuse a placed path git would still not ignore
+    (`exclude.NOT_IGNORED`), and only then write any file the block hides.
 
     **The split is what holds that order.** `_plan` reads and refuses and returns an
     `AttachPlan`; `_carry_out` takes only that value and writes. A read the writes need is a
@@ -1387,8 +1337,8 @@ def plan_writes(
 ) -> AttachPlan:
     """The rest of `_plan`: every read and refusal `attach` makes once the groups have all moved,
     and nothing written. The anchor for the harness memory link, the ledger, the settings merge,
-    the checkouts and the fallback, what git already hides and the ignore files' blocks, the
-    overlay's rule sources and the machine's trust record, in that order.
+    the checkouts and the fallback, what git already hides and the exclude block, the overlay's
+    rule sources and the machine's trust record, in that order.
 
     `attach --check` calls it too and drops the plan, which is how the preview meets every one of
     these refusals with the run's code and line: each read here was once left out of the preview,
@@ -1400,12 +1350,10 @@ def plan_writes(
     absent = _absent_directories(root)
     parents = _absent_memory_parents(root, config)
     memory_created = _memory_absent(root, config)
-    # What git already hides is asked here, above the first write, and decides both ignore
-    # files: `.gitignore`'s region only when one of its two paths is still visible, and the
-    # `info/exclude` block for the paths `attach` places that the owner's own excludes do not
-    # hide (`exclude.unhidden_by_owner`). Each can refuse — git cannot answer, a path leaves the
-    # project, the exclude file is a symlink — and each refusal is made while nothing has been
-    # written.
+    # What git already hides is asked here, above the first write, and decides the `info/exclude`
+    # block: a line for each path `attach` places that the owner's own excludes do not hide
+    # (`exclude.unhidden_by_owner`). It can refuse — git cannot answer, a path leaves the project,
+    # the exclude file is a symlink — and each refusal is made while nothing has been written.
     # The settings merge is computed here, before any write, because whether it writes decides
     # whether the settings file is a candidate at all (`_placed`).
     document = local_document(root)
@@ -1427,8 +1375,12 @@ def plan_writes(
     # link is missing and how to get it.
     fallback = possible and _settings_containable(root)
     settings = written or fallback or _settings_placed(previous, document)
-    ignore = _planned_ignore_region(root) if exclude.unignored(root, LOCAL_STATE_PATHS) else None
-    hidden = exclude.planned_block(root, _placed(binding, config, settings=settings))
+    placed = _placed(binding, config, settings=settings)
+    # One rule for every placed path: none tracked, asked here above every write, and each ignored,
+    # asked once the block stands (`_carry_out`).
+    if found := exclude.tracked(root, placed):
+        raise Refusal(exclude.TRACKED.format(paths=_named(config, found)))
+    hidden = exclude.planned_block(root, placed)
     # The two reads the writes below would otherwise make for themselves, each of which can
     # refuse after the first write: the overlay's rule sources (a file that is not UTF-8) and the
     # machine's trust record, which the index render and the harness link both read (a
@@ -1449,7 +1401,7 @@ def plan_writes(
         # remove it. Read off the document this run leaves there; the real answer is taken again
         # after the links, by the only function that can change it.
         carried=_keys_in(merged),
-        ignore=ignore,
+        placed=placed,
         hidden=hidden,
         rules=rules,
         checkouts=checkouts,
@@ -1459,20 +1411,21 @@ def plan_writes(
 def _carry_out(
     root: Path, planned: AttachPlan, *, machine: Path | None, runner: Runner, home: Path | None
 ) -> Attached:
-    """Write what `_plan` decided: `.gitignore` first when it needs its region at all, so the
-    ledger is never in a tracked path even for an instant, and the exclude block before any file
-    it hides.
+    """Write what `_plan` decided: the exclude block first, then ask git whether every placed path
+    is ignored, and only then any file the block hides, so none is ever where git would show it.
 
     What is still asked here is asked of what this run has just written, and cannot be asked
-    before it: whether the store resolves once the link tree stands, and whether the harness link
-    or the settings fallback is wanted once it does. A write that itself fails is the other way
-    this can stop after the first write.
+    before it: whether git ignores each placed path once the block stands, whether the store
+    resolves once the link tree stands, and whether the harness link or the settings fallback is
+    wanted once it does. A write that itself fails is the other way this can stop after the first
+    write.
     """
     config, binding = planned.config, planned.binding
-    if planned.ignore is not None:
-        _write_ignore_region(root, planned.ignore)
     if planned.hidden is not None:
         exclude.write(planned.hidden)
+    # The rule's second half: a `.gitignore` re-including a placed path (`!`) outranks the block.
+    if shown := exclude.unignored(root, planned.placed):
+        raise Refusal(exclude.NOT_IGNORED.format(paths=_named(config, shown)))
     for target, text in planned.rules:
         fsops.write_within(root, target, text)
     rules = tuple(target for target, _ in planned.rules)
@@ -1531,7 +1484,6 @@ class Detached:
     entries_removed: tuple[str, ...]
     rules_removed: tuple[str, ...]
     settings_keys_removed: tuple[str, ...]
-    ignore_region_removed: bool
     links: Links
     directories_removed: tuple[str, ...] = ()
     exclude_block_removed: bool = False
@@ -1619,91 +1571,6 @@ def _withdraw_settings(root: Path, planned: SettingsWithdrawal) -> tuple[str, ..
     elif planned.text is not None:
         fsops.remove_within(root, LOCAL_SETTINGS)
     return planned.removed
-
-
-def _ignore_region_remainder(root: Path) -> str | None:
-    """What `.gitignore` will hold once the attach region is dropped; `None` when nothing is
-    there to drop.
-
-    Asked **before the first withdrawal**, for the reason `_checkouts` is: `drop()` refuses a
-    region that is opened or closed twice -- which a merge that kept both sides produces -- and
-    asked at the write, that refusal would come after the settings, the rule files and every link
-    tree were gone, with the ledger still present: `doctor` would report the repository attached,
-    and a second `detach` would fail at the same line. A region that cannot be withdrawn is
-    knowable at the start, and so is a file that cannot be read.
-
-    Read as `_planned_ignore_region` reads it (`fsops.read_regular_text`), so a `.gitignore` past
-    the read cap that stops an `attach` stops the `detach` beside it too, rather than being read
-    to its end; and named as the project names it, never by the path it was opened by.
-    """
-    path = root / GITIGNORE
-    if not fsops.is_file(path):
-        return None
-    with fsops.reading(GITIGNORE, Failure):
-        text = fsops.read_regular_text(path)
-    remaining = _in_gitignore(drop, text, IGNORE_REGION, Style.HASH)
-    return None if remaining == text else remaining
-
-
-def _footprint_owns_region(root: Path) -> bool:
-    """Whether `stayfixed init`'s footprint, and not this attach, put the ignore region there.
-
-    A region `init`'s footprint records is `init`'s, whichever command wrote it last: an
-    ownership rule rather than a last-writer one. `init` records the same `stayfixed:ignore`
-    block as a scaffold artifact, with the body imported from this module rather than respelled
-    -- a second spelling would let each command report the other's region as hand-edited -- and
-    that block is **committed**. Withdrawing it would take a line out of a tracked file this
-    command never wrote, and leave `upgrade` reading the footprint as hand-edited on a
-    repository nobody edited. `attach`'s own write stays and is idempotent; only the withdrawal
-    asks this.
-
-    The manifest and not a new ledger field: the ledger is untracked and per-checkout, while
-    "whose region is this" has to answer the same for every clone of the project. A repository
-    with no manifest is one no `init` has set up -- the state every attach before `init` shipped
-    leaves behind -- and its region is withdrawn exactly as it always was.
-
-    **A manifest this cannot read answers "not mine", and that is the whole of the ruling.**
-    `.stayfixed/manifest.json` is **tracked** -- `IGNORE_BODY` covers `.stayfixed/local/` and
-    `.stayfixed/assessment.json` and nothing else -- so a clone commits it, and `Manifest.read`
-    raises `ManifestError` for one that is unreadable, is not a JSON object, or declares a
-    `format` past this stayfixed's -- and `PathEscape` for one committed as a symlink out of the
-    root. `attach` never reads the file, so such a clone attached
-    cleanly, merged the owner's allow rules and hook entries, and then made the **withdrawal**
-    exit 2 on every run for ever: a repository a clone chose could keep the command that undoes
-    an attach from ever completing. Nothing destructive had happened first, because this
-    question is asked above every withdrawal -- which is exactly why refusing here is the wrong
-    answer. The remedy would be to delete a tracked file out of somebody else's repository, and
-    a `detach` that cannot run until you do that is still a `detach` a repository disabled.
-
-    So an unreadable manifest is not a claim of ownership this command will act on, and it is
-    not a claim of ownership this command will act *against* either: it leaves the region where
-    it is -- the conservative half, since the block may well be the footprint's -- and finishes
-    the detach. `Detached.ignore_region_removed` is `False`, which `run_detach` reports, and no
-    sentence anywhere says *why* it was left, so nothing here becomes untrue. The remaining
-    cost is one block in `.gitignore` that `stayfixed init` or a hand edit clears, against a
-    withdrawal that now always completes.
-    """
-    try:
-        return Manifest.read(root).get("gitignore") is not None
-    except Refusal:
-        # `Refusal` and not `ManifestError`: a manifest committed as a symlink out of the root is
-        # refused by `contained()` as a `PathEscape` before any byte is read, and it blocks the
-        # withdrawal exactly as an unparseable one did.
-        return True
-
-
-def _withdraw_ignore_region(root: Path, remaining: str | None) -> bool:
-    if remaining is None:
-        return False
-    # `if remaining` and not `if remaining.strip()`: a `.gitignore` that held only whitespace
-    # before the attach is a file the owner had, and the round trip `docs/cli.md` promises is
-    # byte-for-byte. Only a file the attach created -- nothing left once its region is gone --
-    # is taken away.
-    if remaining:
-        fsops.write_within(root, GITIGNORE, remaining)
-    else:
-        fsops.remove_within(root, GITIGNORE)
-    return True
 
 
 def _withdraw_directories(root: Path, recorded: AttachLedger) -> tuple[str, ...]:
@@ -1951,8 +1818,8 @@ def detach(
     That is not licence to *discover* a precondition late. Everything structural this function
     can know before its first withdrawal is asked before it: the ledger (which refuses one no
     attach could have written), the configuration (whose loader validates `paths.*`), the
-    settings document's own shape through `owned_ids`, whether the footprint owns the ignore
-    region, `_checkouts`, which is the only thing here that needs `git`, the exclude block, what
+    settings document's own shape through `owned_ids`, `_checkouts`, which is the only thing here
+    that needs `git`, the exclude block, what
     the settings file becomes (`_planned_settings`), and every path the withdrawal writes or
     removes, walked the way the write or removal walks it (`_refuse_unwithdrawable`). What is
     left after the first withdrawal is exactly what cannot precede it — a write that fails, and a
@@ -1979,7 +1846,6 @@ def detach(
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
-    ignore_remainder = None if _footprint_owns_region(root) else _ignore_region_remainder(root)
     # The `info/exclude` block is found above the first withdrawal for the same reason: `git`
     # names the file and a region opened twice refuses, and both are knowable now. It is shared
     # by every checkout while the ledger, the settings file and the `.codex/rules/` copies are
@@ -2021,7 +1887,6 @@ def detach(
             targets=targets[tree],
             keep_tree=tree not in trees,
         ).revoked
-    region = _withdraw_ignore_region(root, ignore_remainder)
     if hidden is not None:
         exclude.write(hidden)
     memory = _withdraw_memory_directories(root, trees, config, recorded)
@@ -2033,7 +1898,6 @@ def detach(
         entries,
         tuple(rules_removed),
         recorded.settings_keys,
-        region,
         Links([], revoked),
         directories + memory,
         hidden is not None,
