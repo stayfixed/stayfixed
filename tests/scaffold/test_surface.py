@@ -51,7 +51,7 @@ EXPORTED = [
     "unlinks",
     "upsert",
     "validate_sources",
-    "wanted_placements",
+    "withdraw_entries",
 ]
 
 

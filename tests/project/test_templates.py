@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.attach.write import _planned_ignore_region
 from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.config.loader import CONFIG_FILE, preset_defaults
 from stayfixed.config.schema import BRANCH_NAME, Config
@@ -215,16 +214,14 @@ IGNORE_BLOCK = (
 )
 
 
-def test_the_ignore_block_init_writes_is_the_block_attach_writes(tmp_path: Path) -> None:
-    # Two areas write one region into one file: `init` as a scaffold artifact, `attach` by
-    # merging it into whatever `.gitignore` holds. Each reporting the other's region as
-    # hand-edited is what a second spelling of the block would cost, so both are held to the
-    # same bytes, into an empty file. Mutation (declared): `mutations/`'s "the ignore block's
-    # note changes under both of its writers".
+def test_the_ignore_block_init_writes_is_the_block_a_project_carries() -> None:
+    # `init` records the region in the manifest by its digest, so a change to its bytes is drift
+    # every `upgrade` reports on every project that carries it. Held to the bytes a project
+    # already carries, into an empty file. Mutation (declared): `mutations/`'s "the ignore block's
+    # note changes under its writer".
     template = {t.id: t for t in _prepared(preset_defaults("widget")).footprint}[IGNORE_ARTIFACT]
     assert template.region is not None
     assert upsert("", template.region, template.render(), template.style) == IGNORE_BLOCK
-    assert _planned_ignore_region(tmp_path) == IGNORE_BLOCK
 
 
 def test_the_ci_workflow_is_offered_only_with_a_recorded_ref_and_says_why_otherwise() -> None:

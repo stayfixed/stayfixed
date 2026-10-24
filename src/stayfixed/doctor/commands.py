@@ -18,10 +18,6 @@ line, and a report's remedies do not fit in one; the skill relays each remedy ve
 report, so a remedy absent from `--json` is a remedy the user never sees. The summary renders
 through `findings.listed`, which caps at `LISTED_LIMIT`, because an unbounded list of row names
 pushes the repairing command off the end of the line.
-
-**`--machine` is not gated behind an interactive shell here**, unlike `attach`/`detach`'s. That
-gate is about a flag deciding which overlay a *write* trusts; `doctor` writes nothing, and
-gating it would make the report unable to answer about the machine file a caller just named.
 """
 
 from __future__ import annotations

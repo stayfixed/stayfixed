@@ -30,7 +30,8 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "PROJECT_RECORD",
         "STORE_DIR",
         "COMMON_GROUP",
-        # the one reader of the binding record, which attach reads with a policy of its own
+        # the one reader of the overlay's project record, which attach reads with a policy of its
+        # own
         "read_binding_record",
         # the link tree attach builds and its `attached` row reports on
         "link",
@@ -81,12 +82,8 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         "BINDING_STATES",
         "BOUND",
         "UNBOUND",
-        "MISMATCH",
-        "NO_ORIGIN",
-        "NO_REMOTE",
-        "NO_ORIGIN_CAUSE",
-        "NO_ORIGIN_WAY_OUT",
-        "DIFFERENT_REMOTE",
+        # the note a moved `origin` earns, which attach and the session-start line say
+        "origin_note",
         "changed",
         "TrustState",
         "UnreadableTrustRecord",

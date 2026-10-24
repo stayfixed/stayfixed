@@ -26,31 +26,53 @@ preset and the machine file in every one of those cases, and a machine file that
 whole adds `MACHINE_FILE_WARNING`. Every warning is a constant in stayfixed's own words: it
 reaches the model, so the one value of the repository's it carries, a key, is printed through
 `printed.printable`.
+
+**One resolution builds the session's preferences.** The keys a layer above the repository may
+set (`RESOLVED`: the personal values, the guards' switches, the preferences and the session
+budgets) are resolved once, by `classes.resolve`, over the preset, what the repository's file
+holds after the NOTE load, the overlay's common and project files (`config.overlay_layers`) and
+the machine file, and `Config`'s values for them come from that resolution
+(`SessionConfig.resolution`), as do the guards (`SessionConfig.guards`). Its notes are what the
+overlay's files could not give and what `resolve` refused; no warning carries them, and
+`doctor`'s `preferences` row names them.
 """
 
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
 from stayfixed import __version__
+from stayfixed.config import overlay_layers
+from stayfixed.config.classes import (
+    CLASSES,
+    SESSION_BUDGETS,
+    KeyClass,
+    Layer,
+    LayerName,
+    Resolution,
+    resolve,
+)
 from stayfixed.config.loader import (
     MissingKeys,
     TooLargeDocument,
     TooManyResets,
     UnusableKey,
+    load,
+    loads,
     loads_noting,
     preset_named,
     read_document,
 )
 from stayfixed.config.machine import machine_config_path
-from stayfixed.config.owner import Owner, resolve_owner
+from stayfixed.config.owner import Guards, Owner, rebased, resolve_owner
 from stayfixed.config.paths import PathEscape
-from stayfixed.config.reading import UNPARSEABLE, ConfigError
-from stayfixed.config.schema import Config
+from stayfixed.config.reading import UNPARSEABLE, ConfigError, coerced, table_types
+from stayfixed.config.schema import Budgets, Config, Memory, Personal, Stayfixed
+from stayfixed.presets import defaults_of, load_preset
 from stayfixed.printed import printable
 from stayfixed.semver import later
 
@@ -111,6 +133,27 @@ MACHINE_FILE_WARNING = (
     "and guards stand in for what it could not give; run `stayfixed doctor` for the detail"
 )
 
+# The keys a session resolves over every layer, each one a layer above the repository may set: the
+# owner's personal values and guards' switches, the preferences, and the session budgets.
+RESOLVED: tuple[str, ...] = (
+    *(f"personal.{item.name}" for item in fields(Personal)),
+    *(f"guards.{item.name}" for item in fields(Guards)),
+    *sorted(
+        key
+        for key, kind in CLASSES.items()
+        if kind is KeyClass.PREFERENCE and not key.endswith(".*")
+    ),
+    *(f"budgets.{name}" for name in sorted(SESSION_BUDGETS)),
+)
+# The schema class each section of `RESOLVED` holds its values to.
+_SCHEMA: dict[str, type[Any]] = {
+    "personal": Personal,
+    "guards": Guards,
+    "memory": Memory,
+    "stayfixed": Stayfixed,
+    "budgets": Budgets,
+}
+
 
 @dataclass(frozen=True)
 class SessionConfig:
@@ -120,8 +163,9 @@ class SessionConfig:
 
     `noted` is the dotted key of every setting the project's file had ignored or reset, in the
     order of its notes, for `doctor` to list by key alone: a key is text the document chose.
-    `document` is the project's file as the NOTE load used it (`loader.Noted.document`), for
-    `doctor` to tell which values the repository set from the one read the session made."""
+    `document` is the project's file as the NOTE load used it (`loader.Noted.document`), from
+    which the resolution's repository layer is read. `resolution` is the one resolution of
+    `RESOLVED` over every layer, whose provenance `doctor`'s `preferences` row prints."""
 
     config: Config | None
     owner: Owner
@@ -129,11 +173,17 @@ class SessionConfig:
     machine_warnings: tuple[str, ...] = ()
     noted: tuple[str, ...] = ()
     document: Mapping[str, Any] = field(default_factory=dict)
+    resolution: Resolution = field(default_factory=lambda: Resolution({}, {}, ()))
 
     @property
     def warnings(self) -> tuple[str, ...]:
         """Every warning `SessionStart` shows: the project file's, then the machine file's."""
         return (*self.project_warnings, *self.machine_warnings)
+
+    @property
+    def guards(self) -> Guards:
+        """The guards' switches the resolution settled, each on where no layer set it."""
+        return Guards(**_section(self.resolution.values, "guards"))
 
 
 def session_config(root: Path | None, *, machine: Path | None = None) -> SessionConfig:
@@ -145,6 +195,29 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
     no project configuration.
     """
     path = machine if machine is not None else machine_config_path()
+    overlays, notes = overlay_layers.read(root, machine=path)
+    return _resolved(_read(root, path), overlays, notes)
+
+
+def command_config(root: Path, *, machine: Path | None, owner: Owner | None = None) -> Config:
+    """The `Config` a command acts on: `loader.loads`', which refuses what it cannot use, with the
+    keys `RESOLVED` names taken from the resolution `session_config` builds, overlay layers and
+    all, so a command acts on what a session runs on; `doctor` names the layers' notes."""
+    text = read_document(root)
+    if text is None:
+        return load(root, machine=machine, owner=owner)
+    config = loads(text, root, machine=machine, owner=owner)
+    path = machine if machine is not None else machine_config_path()
+    raw = tomllib.loads(text)
+    preset = preset_named(raw)
+    held = resolve_owner(path, preset=preset) if owner is None else rebased(owner, preset)
+    overlays, notes = overlay_layers.read(root, machine=path)
+    resolved = _resolved(SessionConfig(config, held, document=raw), overlays, notes).config
+    return config if resolved is None else resolved
+
+
+def _read(root: Path | None, path: Path | None) -> SessionConfig:
+    """The project's configuration and the owner's layer, before the resolution."""
     try:
         text = None if root is None else read_document(root, limit=SESSION_READ_LIMIT)
     except TooLargeDocument:
@@ -184,6 +257,78 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
         warnings = (template.format(count=len(noted.notes)),)
     return SessionConfig(
         noted.config, owner, warnings, _owners(owner, path), noted.keys, noted.document
+    )
+
+
+def _resolved(
+    read: SessionConfig, overlays: Sequence[Layer], notes: Sequence[str]
+) -> SessionConfig:
+    """`read` with `RESOLVED` resolved over the preset, the repository, `overlays` and the machine
+    file, and its configuration's values for those keys taken from the resolution."""
+    owner = read.owner
+    stack = (
+        Layer(LayerName.PRESET, _preset_values(owner.preset)),
+        Layer(LayerName.REPOSITORY, _held(read.document)),
+        *overlays,
+        Layer(LayerName.MACHINE_FILE, dict(owner.layer)),
+    )
+    resolved = resolve(stack)
+    resolution = replace(resolved, notes=(*notes, *resolved.notes))
+    config = None if read.config is None else _over(read.config, resolution.values)
+    return replace(read, config=config, resolution=resolution)
+
+
+def _typed(key: str, value: object) -> object:
+    section, _, name = key.partition(".")
+    return coerced(key, table_types(_SCHEMA[section])[name], value)
+
+
+def _preset_values(preset: str) -> dict[str, object]:
+    """The preset's value of each key of `RESOLVED` it carries, and each guard's default. The
+    preset sets no session budget: one is configured only where a layer above it sets it."""
+    defaults = defaults_of(load_preset(preset))
+    values: dict[str, object] = {f"guards.{item.name}": item.default for item in fields(Guards)}
+    for key in RESOLVED:
+        section, _, name = key.partition(".")
+        table = defaults.get(section)
+        if isinstance(table, dict) and name in table:
+            values[key] = _typed(key, table[name])
+    return values
+
+
+def _held(document: Mapping[str, Any]) -> dict[str, object]:
+    """Each key of `RESOLVED` the repository's file holds after the NOTE load, whose build already
+    held it to its type."""
+    values: dict[str, object] = {}
+    for key in RESOLVED:
+        section, _, name = key.partition(".")
+        table = document.get(section)
+        if isinstance(table, dict) and name in table:
+            values[key] = _typed(key, table[name])
+    return values
+
+
+def _section(values: Mapping[str, object], section: str) -> dict[str, Any]:
+    prefix = f"{section}."
+    return {
+        key.removeprefix(prefix): value for key, value in values.items() if key.startswith(prefix)
+    }
+
+
+def _over(config: Config, values: Mapping[str, object]) -> Config:
+    """`config` with the resolution's `values` for its preferences, personal values and session
+    budgets. `memory.groups` keeps each group once, as the loader keeps the repository's
+    (`loader._deduplicated`)."""
+    memory = _section(values, "memory")
+    if "groups" in memory:
+        memory["groups"] = tuple(dict.fromkeys(memory["groups"]))
+    budgets = config.budgets
+    return replace(
+        config,
+        memory=replace(config.memory, **memory),
+        stayfixed=replace(config.stayfixed, **_section(values, "stayfixed")),
+        personal=replace(config.personal, **_section(values, "personal")),
+        budgets=replace(budgets, configured={**budgets.configured, **_section(values, "budgets")}),
     )
 
 

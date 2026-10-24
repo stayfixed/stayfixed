@@ -23,14 +23,13 @@ from stayfixed.attach.hooks import (
     NOT_ASKABLE,
     NOT_ATTACHED,
     REAL_DIRECTORIES,
-    REMOTE_MISMATCH,
     REQUIRES,
     REQUIRES_UNREADABLE,
     UNPUSHED,
     register,
 )
 from stayfixed.config.loader import CONFIG_FILE, load
-from stayfixed.hooks.api import EVENTS, HookEvent, HookResult
+from stayfixed.hooks.api import EVENTS, Handler, HookEvent, HookResult
 from stayfixed.hooks.registry import discover
 from tests.boundaries.test_discovery import LIST_IMPORTS, ROOT
 from tests.gitfixture import git, needs_git
@@ -78,9 +77,30 @@ def _project(tmp_path: Path, *, mode: str = "overlay") -> Path:
 
 
 def _bind(overlay: Path, remote: str = ORIGIN) -> None:
+    """What `attach` records for the checkout beside `overlay`: the overlay's project record and
+    this machine's binding, both with `remote`."""
+    from stayfixed import binding
+
     record = overlay / "projects" / "widget" / "project.toml"
     record.parent.mkdir(parents=True, exist_ok=True)
     record.write_text(f'remote = "{remote}"\n', encoding="utf-8")
+    binding.record(overlay.parent / "project", "widget", remote)
+
+
+def _moved(origin: str | None, recorded: str | None) -> str:
+    """The line a bound checkout whose `origin` is not the recorded one hears."""
+    from stayfixed.memory.api import origin_note
+
+    said = origin_note(recorded, origin)
+    assert said is not None
+    return f"stayfixed: {said}"
+
+
+def _status() -> Handler:
+    """`overlay-status`, the one handler of this area's three that this file is about; the
+    overlay's rules have theirs in `tests/attach/test_rules.py`."""
+    (handler,) = (h for h in register() if h.name == "overlay-status")
+    return handler
 
 
 def _run(
@@ -89,7 +109,7 @@ def _run(
     if machine_text is not None:
         machine.write_text(machine_text, encoding="utf-8")
     config = load(root, machine=root / "absent.toml")
-    (handler,) = register()
+    handler = _status()
     return handler.run(_event(root, source), session_of(config)).context
 
 
@@ -103,7 +123,7 @@ def _recorded(
 
 
 def test_the_handler_is_discovered_once_per_session_and_only_on_session_start() -> None:
-    (handler,) = register()
+    handler = _status()
     assert handler.event == "SessionStart" and handler.event in EVENTS
     assert handler.once_key == "overlay-status"
     assert "overlay-status" in {h.name for h in discover()}
@@ -117,6 +137,28 @@ def test_an_unattached_overlay_project_is_told_to_attach(
     # reddens and the silent case below prints NOT_ATTACHED.
     root, _, machine = _recorded(tmp_path, monkeypatch)
     assert _run(root, machine, None) == NOT_ATTACHED
+
+
+@needs_git
+def test_a_bound_checkout_whose_origin_moved_hears_one_line_naming_both_urls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The remote no longer decides the binding, so a moved `origin` is a hint and never the
+    # mismatch it was; both URLs are named through `printed`, which escapes what a terminal or a
+    # runner would act on.
+    from stayfixed import binding
+    from stayfixed.printed import quoted
+
+    root, overlay, machine = _recorded(tmp_path, monkeypatch)
+    _bind(overlay)
+    binding.record(root, "widget", ORIGIN)
+    assert _run(root, machine, None) is None
+    moved = "https://example.com/someone/fork"
+    git(root, "remote", "set-url", "origin", moved)
+    assert _run(root, machine, None) == (
+        f"stayfixed: this checkout's `origin` is {quoted(moved)}, and its binding was recorded "
+        f"with {quoted(ORIGIN)}; `stayfixed attach` records the new one"
+    )
 
 
 def test_the_session_start_line_names_the_attach_command_every_remedy_names() -> None:
@@ -157,35 +199,25 @@ def test_hook_discovery_in_a_clean_interpreter_loads_no_doctor_module() -> None:
 
 
 @needs_git
-def test_a_mismatched_record_and_a_missing_overlay_each_get_their_own_line(
+def test_a_moved_origin_and_a_missing_overlay_each_get_their_own_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     _bind(overlay, "git@github.com:someone/else.git")
-    assert _run(root, machine, None) == REMOTE_MISMATCH
+    assert _run(root, machine, None) == _moved(ORIGIN, "git@github.com:someone/else.git")
     assert _run(root, machine, "") == NO_OVERLAY
 
 
 @needs_git
-def test_a_checkout_with_no_origin_hears_the_cause_every_other_surface_says(
+def test_a_bound_checkout_whose_origin_was_removed_hears_the_moved_line_and_stays_bound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The session-start line read a checkout with no `origin` in a recorded project as a
-    # different remote and sent the reader to `--check` about it. It says the one cause and way
-    # out the memory commands, `attach`, `--check` and `doctor` say.
-    #
-    # Mutation: `mutations/`'s "the session-start line says nothing about a missing origin".
-    from stayfixed.attach.hooks import NO_ORIGIN
-    from stayfixed.memory.api import NO_ORIGIN_CAUSE, NO_ORIGIN_WAY_OUT
-
-    # The line is spelled out in the hook module, which discovery imports and which must not
-    # import the memory area, so its words are held to the memory area's here. No mutation: a
-    # changed spelling on either side reddens this line.
-    assert f"stayfixed: {NO_ORIGIN_CAUSE}; {NO_ORIGIN_WAY_OUT}" == NO_ORIGIN
+    # A removed `origin` read as its own refusing state on every surface. The binding is the id
+    # now, so the session hears the one moved-`origin` line and never that it is not attached.
     root, overlay, machine = _recorded(tmp_path, monkeypatch)
     _bind(overlay)
     git(root, "remote", "remove", "origin")
-    assert _run(root, machine, None) == NO_ORIGIN
+    assert _run(root, machine, None) == _moved(None, ORIGIN)
 
 
 @needs_git
@@ -263,7 +295,8 @@ def test_unpushed_work_is_named_by_its_counts_and_only_when_nothing_else_is_wron
     # commits is reported for a branch whose unpushed count is unknown.
     assert "unpushed commit(s)" not in (context or "")
     _bind(overlay, "git@github.com:someone/else.git")
-    assert _run(root, machine, None) == REMOTE_MISMATCH  # the sync half is skipped
+    # The sync half is skipped.
+    assert _run(root, machine, None) == _moved(ORIGIN, "git@github.com:someone/else.git")
 
 
 @needs_git
@@ -318,7 +351,7 @@ def test_other_modes_no_config_and_a_broken_machine_file_are_silence_or_one_fixe
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     machine = _machine_home(tmp_path, monkeypatch)
-    (handler,) = register()
+    handler = _status()
     assert handler.run(_event(tmp_path), NO_CONFIG).context is None
     assert _run(_project(tmp_path, mode="local-only"), machine, None) is None
     root = _project(tmp_path / "two")
@@ -495,7 +528,7 @@ def test_a_failure_with_no_except_of_its_own_is_silence_not_an_exception(
 
     root, _, _ = _recorded(tmp_path, monkeypatch)
     monkeypatch.setattr(binding_module, "unlinked_groups", raising)
-    (handler,) = register()
+    handler = _status()
     result = handler.run(_event(root), session_of(load(root, machine=root / "absent.toml")))
     assert result.context is None
 

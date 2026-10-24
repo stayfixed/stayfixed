@@ -1,13 +1,21 @@
-"""What a session hears about the overlay it is bound to — or not bound to.
+"""What a session hears about the overlay it is bound to, or not bound to, and the overlay's rules.
+
+`overlay-rules` and `overlay-path-rules` deliver the overlay's rules (`attach.rules`): the standing
+ones on every `SessionStart`, and a path-scoped one on the `PostToolUse` the rendered plugin's
+entry sends for a `Read`, `Edit` or `Write`. Both answer from the machine's binding record, never
+from the repository's configuration, and say nothing for an unbound checkout. The rest of this
+docstring is about `overlay-status`.
 
 This area registers it because the question is this area's: `binding_for` says whether a
 repository is bound, and `unlinked_groups` whether its notes ever moved. `memory/hooks.py`
 keeps its single `SessionStart` handler and the test that pins it.
 
-Every line is fixed text with at most a count interpolated; the overlay's declared floor is
-the one owner-authored string that prints, normalised the way it was validated. A repository
-chooses `project.name`, `memory.groups`, `paths.memory` and its remote, and none of the four
-appears here — a repository is untrusted input (principle 5), which is also why
+Every line is fixed text with at most a count interpolated, but two: the overlay's declared floor
+is the one owner-authored string that prints, normalised the way it was validated, and a bound
+checkout whose `origin` moved hears both remotes, each through `printed.quoted`
+(`memory.store.origin_note`). A repository chooses `project.name`, `memory.groups` and
+`paths.memory`, and none of the three appears here — a repository is untrusted input (principle
+5), which is also why
 `memory.store.refusal_reason` is not used: its text is built out of those same fields.
 `MEMORY_PATH_REFUSED` is this module's own line and not `binding.MEMORY_GROUP_ESCAPES` relayed:
 the refusal's text is bounded too, but a line that reaches the model is written where it is
@@ -44,8 +52,8 @@ notes written to the overlay in that conversation are exactly what is uncommitte
 then, and a `startup` that found the repository healthy banked no marker to say otherwise. A
 `compact` is the same running process asking again within minutes, and it stays gated.
 `dispatch.py`'s `once_key` semantics belong to every area's handlers and are untouched; the
-five-second `origin_remote` is not gated either, because it is what decides three of the lines
-above, and skipping it would drop them rather than defer them.
+five-second `origin_remote` is not gated either, because it is what decides the moved-`origin`
+line above, and skipping it would drop that line rather than defer it.
 
 The cost, stated rather than hidden: an overlay that becomes unpushed *during* a session whose
 `startup` found nothing to say is not reported on that session's later `compact`; the next
@@ -104,18 +112,9 @@ NOT_ATTACHED = (
     "stayfixed: this repository is not attached to the overlay this machine records; "
     f"run `{ATTACH_STORE} --check`"
 )
-REMOTE_MISMATCH = (
-    "stayfixed: the overlay records a different remote under this project's name; "
-    "run `stayfixed attach --check` before trusting it"
-)
-# `memory.api.NO_ORIGIN_CAUSE` and `NO_ORIGIN_WAY_OUT`, the sentence every other surface says for
-# a checkout with no `origin`. Spelled out rather than imported, because discovery imports this
-# module and must not import the memory area; `tests/attach/test_hooks.py` holds the two equal.
-NO_ORIGIN = (
-    "stayfixed: this checkout has no `origin` remote, so there is nothing to bind to the overlay "
-    "or to check its record against; add the `origin` remote (the one this project was bound "
-    "with, when the overlay records one), then run `stayfixed attach`"
-)
+# What prefixes a bound checkout's moved-`origin` note (`memory.api.origin_note`), the one line
+# here that names repository-authored bytes, each through `printed.quoted`.
+PREFIX = "stayfixed: "
 MEMORY_PATH_REFUSED = (
     "stayfixed: a memory path was refused for this repository, so its notes were not checked; "
     "`stayfixed doctor` says which"
@@ -178,8 +177,7 @@ def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
         from stayfixed.config.overlay import overlay_root
         from stayfixed.config.paths import PathEscape
         from stayfixed.errors import Failure, Refusal
-        from stayfixed.memory.api import MISMATCH, UNBOUND
-        from stayfixed.memory.api import NO_ORIGIN as NO_ORIGIN_STATE
+        from stayfixed.memory.api import UNBOUND
         from stayfixed.overlay.api import overlay_sync, requires_of, satisfies
 
         root = event.project_root
@@ -196,12 +194,8 @@ def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
             return HookResult(context=NOT_ASKABLE)
         if binding.state == UNBOUND:
             lines.append(NOT_ATTACHED)
-        elif binding.state == MISMATCH:
-            lines.append(REMOTE_MISMATCH)
-        elif binding.state == NO_ORIGIN_STATE:
-            # The sentence every other surface says for this state, and never a mismatch's: that
-            # line would send the reader to `--check` about a different remote that is not there.
-            lines.append(NO_ORIGIN)
+        elif binding.note is not None:
+            lines.append(PREFIX + binding.note)
         try:
             real = unlinked_groups(root, config)
         except PathEscape:
@@ -229,6 +223,45 @@ def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
         return HookResult()
 
 
+# The tools whose `PostToolUse` carries a path-scoped rule: the three the rendered plugin's entry
+# matches (`attach.render.SCOPED_MATCHER`), each naming its file in `tool_input.file_path`.
+SCOPED_TOOLS = frozenset({"Read", "Edit", "Write"})
+
+
+def _standing_rules(event: HookEvent, session: SessionConfig) -> HookResult:
+    """The bound overlay's standing rules (`attach.rules`), on every `SessionStart`: a compacted or
+    cleared context has lost them, so there is no `once_key`. Read from the binding record and
+    never from the repository's configuration, so neither `memory.mode` nor a configuration that
+    did not load decides it."""
+    if event.project_root is None:
+        return HookResult()
+    try:
+        from stayfixed.attach.rules import standing
+
+        return HookResult(context=standing(event.project_root) or None)
+    # An open handler never costs a session, as `_overlay_status` says.
+    except Exception:
+        return HookResult()
+
+
+def _scoped_rules(event: HookEvent, session: SessionConfig) -> HookResult:
+    """The bound overlay's path-scoped rules for the file a `Read`, `Edit` or `Write` touched,
+    once per file per session (`attach.rules`); nothing on any other tool."""
+    path = event.tool_input.get("file_path")
+    if (
+        event.project_root is None
+        or event.tool_name not in SCOPED_TOOLS
+        or not isinstance(path, str)
+    ):
+        return HookResult()
+    try:
+        from stayfixed.attach.rules import scoped_for
+
+        return HookResult(context=scoped_for(event.project_root, path, event.session_id) or None)
+    except Exception:
+        return HookResult()
+
+
 def register() -> list[Handler]:
     return [
         Handler(
@@ -236,5 +269,7 @@ def register() -> list[Handler]:
             event="SessionStart",
             run=_overlay_status,
             once_key="overlay-status",
-        )
+        ),
+        Handler(name="overlay-rules", event="SessionStart", run=_standing_rules),
+        Handler(name="overlay-path-rules", event="PostToolUse", run=_scoped_rules),
     ]

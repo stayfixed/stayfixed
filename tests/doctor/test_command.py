@@ -11,13 +11,13 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
+import stayfixed
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.doctor import checks, registry
-from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check, Claims, Context, Contribution
+from stayfixed.doctor import checks
+from stayfixed.doctor.api import OK, RED, SKIP, WARN, Check
 from stayfixed.doctor.commands import summarise
 from stayfixed.findings import LISTED_LIMIT
 from tests.boundaries.test_discovery import UNIMPORTABLE, plant_area
@@ -130,10 +130,9 @@ def test_the_runner_this_command_builds_is_bounded_for_a_diagnostic(
 
 
 def test_a_skip_is_not_a_finding(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    # One check cannot be answered by this build — the Codex hook-trust hash, which no spike has
-    # measured — and `ci-ref` skips on a state this repository is in: it records no `[ci] ref`.
-    # (`files` is not among them: the release ships the record it compares against.) If a skip
-    # exited 1, `doctor` would be red on every correct installation.
+    # `ci-ref` skips on a state this repository is in: it records no `[ci] ref`. (`files` is not
+    # among the skips: the release ships the record it compares against.) If a skip exited 1,
+    # `doctor` would be red on every correct installation.
     root = _initialised(tmp_path)
     code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
     assert code == 0
@@ -169,36 +168,6 @@ def test_a_machine_file_that_does_not_load_exits_one(
     assert invoke([*argv, "--machine", str(machine)]) == 1
     report = json.loads(capsys.readouterr().out)
     assert [c["name"] for c in report["checks"] if c["status"] == RED] == ["preferences"]
-
-
-def test_claims_that_raise_an_os_error_fail_the_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # An area's claims that raise are red, as `Contribution.claims` promises, and red is what
-    # gates the exit code: claims that raised `PermissionError` reached the report's guard as the
-    # machine's `OSError`, so `hook-entries` warned and `stayfixed doctor` exited 0 over entries
-    # nothing had judged. The one area here is injected through `registry.discover_contributors`,
-    # so nothing else in this repository is red. Mutation (oracle): `mutations/`'s "claims that
-    # raise an OSError reach the guard as one" -> the row warns and the exit code is 0.
-    def raises(context: Context) -> Claims:
-        raise PermissionError("IGNORE-PRIOR-RULES, a message the claims built")
-
-    area = ModuleType("stayfixed.alpha.doctor")
-    setattr(area, "register", lambda: Contribution(checks=(), claims=raises))  # noqa: B010
-    monkeypatch.setattr(registry, "discover_contributors", lambda: [(area.__name__, area)])
-    root = _initialised(tmp_path)
-    code = invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
-    report = json.loads(capsys.readouterr().out)
-    red = [check for check in report["checks"] if check["status"] == RED]
-    assert red == [
-        {
-            "name": "hook-entries",
-            "status": RED,
-            "detail": "this check could not run: UnansweredClaims",
-            "remedy": "report this, with the command you ran",
-        }
-    ]
-    assert code == 1
 
 
 def test_an_area_whose_doctor_module_fails_to_import_costs_one_red_row_and_not_the_report(
@@ -238,21 +207,39 @@ def test_the_json_form_carries_every_check_and_its_remedy(
 ) -> None:
     # The skill relays remedies verbatim, so a remedy missing from `--json` is a remedy the
     # user never sees — and the summary line has room for none of them. The count is the
-    # report's eighteen rows, held beside `README.md`, `docs/cli.md`, the doctor skill and the
+    # report's seventeen rows, held beside `README.md`, `docs/cli.md`, the doctor skill and the
     # smoke workflow by `tests/test_documents.py`.
     (tmp_path / "stayfixed.toml").write_text("[[[", encoding="utf-8")
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home"), "--json"])
     assert code == 1
     report = json.loads(capsys.readouterr().out)
-    assert len(report["checks"]) == 18
+    assert len(report["checks"]) == 17
     assert all({"name", "status", "detail", "remedy"} <= set(check) for check in report["checks"])
     red = next(check for check in report["checks"] if check["status"] == "red")
     assert red["remedy"]
 
 
+def test_doctor_json_carries_no_codex_hooks_row(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The row no build could answer, a skip on every machine, left the report for the README's
+    # Codex reach table: `doctor --json` carries no `codex-hooks`, even where `[stayfixed] agents`
+    # lists Codex.
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "stayfixed.toml").write_text(
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\nstate = "installed"\n'
+        'agents = ["claude", "codex"]\n\n[project]\nname = "p"\n',
+        encoding="utf-8",
+    )
+    invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
+    names = [check["name"] for check in json.loads(capsys.readouterr().out)["checks"]]
+    assert "hook-entries" in names and "codex-hooks" not in names
+
+
 def test_the_summary_line_is_bounded() -> None:
     # `findings.LISTED_LIMIT` exists because an unbounded summary pushes the repairing command
-    # off the end of the line, and eighteen checks is already past eight. Asserted over a
+    # off the end of the line, and seventeen checks is already past eight. Asserted over a
     # synthetic report rather than a fixture, because arranging nine simultaneous real failures
     # would be a test about the fixture.
     checks = [Check(f"check-{n}", RED, "d", "r") for n in range(LISTED_LIMIT + 3)]

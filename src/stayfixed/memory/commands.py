@@ -6,8 +6,8 @@ overlay binding. `--machine` exists for the same reason the resolver takes one â
 did not thread it would read the developer's real configuration and, worse, write a trust
 record into their home directory.
 
-It is threaded exactly twice, into `load` (`session_config` for `session-context`, which reads
-the file the way a session does) and into `resolve`, and never again: `resolve` puts
+It is threaded exactly twice, into `command_config` (`session_config` for `session-context`,
+which reads the file the way a session does) and into `resolve`, and never again: `resolve` puts
 it on the `Store` it builds, so every later call takes it from there. It used to be an optional
 keyword on about twenty functions, and the only thing keeping a command's overlay, its index
 destination and its trust record in agreement was that each of those call sites remembered to
@@ -21,9 +21,8 @@ from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, command_owner, common_flags
-from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
-from stayfixed.config.session import session_config
+from stayfixed.config.session import command_config, session_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
 from stayfixed.memory import trust
@@ -90,7 +89,7 @@ def _no_store(reason: Unresolved) -> Failure:
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
     root = Path(args.root).resolve()
     machine = _machine(args)
-    config = load(root, machine=machine, owner=command_owner(machine))
+    config = command_config(root, machine=machine, owner=command_owner(machine))
     return _store_of(args, root, config, machine), config
 
 
@@ -401,15 +400,14 @@ ALIAS_NOTE = (
 
 
 def run_trust(args: argparse.Namespace) -> Result:
-    """The old spelling of `stayfixed trust approve memory`: the same approve path, the terminal
-    check included.
+    """The old spelling of `stayfixed trust approve memory`: the same approve path.
 
     Its `--json` keeps the old spelling's keys for as long as the spelling lives, beside the new
     ones, each read off the new run: `was_trusted`, whether the store was approved at its digest
     before the run; `trusted`, whether the record holds that digest after it; `digest`, the
     store's digest."""
-    context, given = kind_context(args)
-    approved = approve_kind(trust.MEMORY, context, given)
+    context, _ = kind_context(args)
+    approved = approve_kind(trust.MEMORY, context)
     # The memory kind describes one store per checkout, or refuses before anything is approved.
     (store,) = approved.data["approved"]
     after = state(context.machine, trust.MEMORY, store["subject"], store["digest"])
@@ -550,9 +548,8 @@ def register(groups: SubParsers) -> None:
         action="store_true",
         required=True,
         # Required and never read by `run_trust`: the old spelling required it, and an alias keeps
-        # its spelling whole until it is removed. What stops the command being run without a
-        # person is the terminal check on the approve path both spellings share, not this flag,
-        # and there is nothing here to branch on: trust is only ever *consulted* for content that
+        # its spelling whole until it is removed. It stops nothing, and there is nothing here to
+        # branch on: trust is only ever *consulted* for content that
         # lives in the repository â€” the notes, when `inside_project(store)`, and `MEMORY.md`
         # whenever it resolves inside the repository, which it does in overlay mode too, since
         # `store.path` is a real directory there. For a store holding neither,

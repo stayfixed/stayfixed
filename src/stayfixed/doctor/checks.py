@@ -5,9 +5,9 @@ and their rows come first, in that order; every other row is an area's, contribu
 `doctor.py` (CONTRIBUTING.md, "Areas") and asked after the core's in area-name order. So nothing
 here imports an area, and nothing here names or counts the rows an area contributes: which rows a
 report has is `docs/cli.md`'s table, and `tests/doctor/test_checks.py`'s literal `REPORT`.
-`hook-entries` is a core check because every settings file is the core's to walk, and it asks the
-areas' `Claims` for what each put into them. This module is the list and the run: that row's walk
-is `entries.py`'s, and how the areas' rows are found and guarded is `registry.py`'s.
+`hook-entries` is a core check because every settings file is the core's to walk. This module is
+the list and the run: that row's walk is `entries.py`'s, and how the areas' rows are found and
+guarded is `registry.py`'s.
 
 **A `Check` is not a `Finding`.** `findings.Finding` carries a rule, a path and a line, and its
 docstring says the label carries "what the check computed" while the detail "may quote the
@@ -68,7 +68,6 @@ from pathlib import Path
 
 import stayfixed
 from stayfixed import REPOSITORY_URL, fsops
-from stayfixed.config.classes import CLASSES, KeyClass, Layer, LayerName, resolve
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.config.machine import (
     DEFAULT_CONFIG_DIR,
@@ -100,7 +99,7 @@ from stayfixed.doctor.model import (
 from stayfixed.doctor.registry import contributions
 from stayfixed.findings import listed
 from stayfixed.grammar import PATH_VALUE
-from stayfixed.harnesses import CANONICAL, CLAUDE, CODEX, HARNESSES, Tier, lenient_settings
+from stayfixed.harnesses import CANONICAL, CLAUDE, HARNESSES, lenient_settings
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
@@ -109,7 +108,7 @@ from stayfixed.hooks.api import (
     data_root,
 )
 from stayfixed.jsonobject import json_object
-from stayfixed.presets import DEFAULT_PRESET, defaults_of, load_preset
+from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
 from stayfixed.release.api import (
     HASHED_FILES,
@@ -554,35 +553,6 @@ def _wrapper(context: Context) -> Row:
     return Row(OK, f"{WRAPPER} reached stayfixed and exited 0", "")
 
 
-def _joined(words: Sequence[str]) -> str:
-    """`a`, `a and b`, `a, b and c`."""
-    return " and ".join(filter(None, (", ".join(words[:-1]), *words[-1:])))
-
-
-def _codex_hooks(context: Context) -> Row:
-    # Red is owed while any stayfixed hook is untrusted on Codex, and the hash Codex keys hook
-    # trust on is one no spike has measured. A check that returned green because it could not
-    # look would be strictly worse than one that admits it cannot.
-    detail = (
-        "whether a stayfixed hook is trusted on Codex is unmeasured: nothing here knows how "
-        "Codex records hook trust, and a measurement would need the file it writes it to and "
-        "the hash it keys on"
-    )
-    # What stayfixed claims of Codex is what a Codex user needs when they look, and it is the
-    # registry's to say: the surfaces with no tier there have not been verified end to end on
-    # Codex, which runs a plugin's hooks once they are trusted, and the gates hold in CI. Still a
-    # skip, since nothing measured of Codex makes this row red. Codex's reach has surfaces in both
-    # lists, and the row's text is pinned by its test, so a measurement that empties one is an
-    # edit here.
-    if context.config is not None and CODEX.name in context.config.stayfixed.agents:
-        absent = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is None]
-        in_ci = [str(surface) for surface, reach in CODEX.reach.items() if reach.tier is Tier.CI]
-        detail += (
-            f"; on Codex the {_joined(absent)} are not verified; the {_joined(in_ci)} hold in CI"
-        )
-    return Row(SKIP, detail, "")
-
-
 def _budgets(context: Context, config: Config) -> Row:
     """Every budget set above the preset and every one set below it.
 
@@ -609,16 +579,14 @@ def _budgets(context: Context, config: Config) -> Row:
     return Row(OK, "; ".join(moved) or "every budget is the preset's")
 
 
-# The ways of working a repository, the overlay or the owner may choose (`classes.CLASSES`): the
-# `preferences` row names the layer each came from.
-PREFERENCES: tuple[str, ...] = tuple(
-    sorted(key for key, kind in CLASSES.items() if kind is KeyClass.PREFERENCE)
-)
 # The keys whose value is one of stayfixed's own words, which the loader holds to this vocabulary,
 # and so may be printed. Every other text value is the repository's or the owner's to write, and
 # is not.
 ENUMERATED: Mapping[str, tuple[str, ...]] = {"memory.mode": MEMORY_MODES}
 PREFERENCES_REMEDY = "fix the machine file the detail names, then run `stayfixed doctor` again"
+# What reading the overlay's two layers said (`SessionConfig.resolution.notes`), named in the
+# `preferences` row as information.
+OVERLAY_NOTES = "The overlay layers: {notes}"
 # A machine file that does not load, in the words of its refusal (`Owner.unloaded`), which names
 # the file and the parser's position and never its text. Red, as every red row is a statement that
 # this installation is wrong: a session reads past the file, and every command refuses it.
@@ -643,67 +611,33 @@ def _named(key: str, value: object, layer: str) -> str:
     return f"{key} ({layer})" if shown is None else f"{key} = {shown} ({layer})"
 
 
-def _owner_keys(session: SessionConfig) -> list[str]:
-    """Every key the owner's layer resolved, with the layer `classes.resolve` credited it to."""
-    owner = session.owner
-    named: list[str] = []
-    for key, layer in sorted(owner.provenance.items()):
-        section, _, name = key.partition(".")
-        # The owner's three tables: `personal` and `guards` are dataclasses, and the session
-        # budgets, the third, a mapping by name.
-        tables: dict[str, object] = {"personal": owner.personal, "guards": owner.guards}
-        value = (
-            getattr(tables[section], name, None)
-            if section in tables
-            else owner.session_budgets.get(name)
-        )
-        named.append(_named(key, value, str(layer)))
-    return named
-
-
-def _held(context: Context) -> dict[str, object]:
-    """The preferences the repository's `stayfixed.toml` holds after the NOTE load: written there,
-    and neither the key nor its section ignored or put back to the preset's. Read off the document
-    the session's own load used, never the file again, so the layer and the notes come from one
-    read."""
-    held: dict[str, object] = {}
-    for key in PREFERENCES:
-        section, _, name = key.partition(".")
-        table = context.session.document.get(section)
-        if isinstance(table, dict) and name in table:
-            held[key] = table[name]
-    return held
-
-
 def _preferences(context: Context) -> Row:
-    """Each owner key and each preference, and the layer its value came from.
+    """Each key the session resolved, and the layer its value came from.
 
-    A preference's layer is `classes.resolve`'s answer over the preset and what the repository's
-    file holds after the NOTE load; an owner key's is the owner's layer's own provenance. No
-    preference is read from the machine file. The value is printed only where it is a boolean, a
-    number or one of stayfixed's own words (`ENUMERATED`): a name list, a profile or a personal
-    value is text a repository or an owner wrote, and stays out of a row a model may read. Runs
-    with no `stayfixed.toml` too, where every preference is the preset's.
+    The session's one resolution (`SessionConfig.resolution`) over the preset, the repository's
+    file after the NOTE load, the overlay's common and project files and the machine file gives
+    every value and its layer; the row derives none. The value is printed only where it is a
+    boolean, a number or one of stayfixed's own words (`ENUMERATED`): a name list, a profile or a
+    personal value is text a repository, an overlay or an owner wrote, and stays out of a row a
+    model may read. Runs with no `stayfixed.toml` too, where nothing is the repository's.
 
     A machine file that does not load is red, in its refusal's words (`MACHINE_UNLOADED`): every
     command refuses it, and the report, which reads it as a session does, was otherwise the one
     run that exited 0 on it. What the owner's layer read past in a file that loads is a warning.
+    Every note of the resolution — what the overlay's files could not give, and what `resolve`
+    refused — is named after the values (`OVERLAY_NOTES`), and moves no status.
     """
-    config = context.config
-    defaults = defaults_of(load_preset(config.stayfixed.preset if config else DEFAULT_PRESET))
-    preset: dict[str, object] = {}
-    for key in PREFERENCES:
-        section, _, name = key.partition(".")
-        if isinstance(defaults.get(section), dict) and name in defaults[section]:
-            preset[key] = defaults[section][name]
-    held = _held(context) if config is not None else {}
-    layers = resolve([Layer(LayerName.PRESET, preset), Layer(LayerName.REPOSITORY, held)])
-    named = _owner_keys(context.session)
-    for key in PREFERENCES:
-        section, _, name = key.partition(".")
-        value = getattr(getattr(config, section), name) if config else preset.get(key)
-        named.append(_named(key, value, str(layers.provenance.get(key, LayerName.PRESET))))
+    resolution = context.session.resolution
+    named = [
+        _named(key, resolution.values[key], str(layer))
+        for key, layer in sorted(resolution.provenance.items())
+    ]
     detail = "; ".join(named)
+    if resolution.notes:
+        # Information, never a status: a machine with no overlay, or a project with no file of its
+        # own, is an ordinary state. Each note was composed through `stayfixed.printed` where it
+        # was made (`config.overlay_layers`, `classes.resolve`), so nothing raw reaches the row.
+        detail = f"{detail}. {OVERLAY_NOTES.format(notes='; '.join(resolution.notes))}"
     owner = context.session.owner
     if owner.unloaded is not None:
         return Row(
@@ -1091,6 +1025,10 @@ def _names_home_config(value: str, home: Path) -> bool:
 
 
 def _ignored_env(context: Context) -> Row:
+    """The variables that could name the machine file and that no command reads, and a `HOME` that
+    is not the password database's: information, never a status. Each is a choice of the person
+    who set it, which no command of stayfixed's can undo, so a warning about it would be a row that
+    never clears."""
     # The home every command reads under, and none for a `HOME` that names none (`owner_home`).
     home, recorded = owner_home(), passwd_home()
     set_here = [
@@ -1108,11 +1046,12 @@ def _ignored_env(context: Context) -> Row:
         return Row(OK, HOME_DIFFERS if differs else "no environment variable is being ignored")
     detail = (
         f"{listed(set_here)} is set and is not honoured: every command reads the machine "
-        f"configuration at ~/.config/stayfixed/config.toml and nothing else"
+        f"configuration at ~/.config/stayfixed/config.toml and nothing else, or the file --machine "
+        f"names"
     )
     if differs:
         detail = f"{detail}; {HOME_DIFFERS}"
-    return Row(WARN, detail, "pass --machine <path> to a command that must read a different file")
+    return Row(OK, detail)
 
 
 # How the user settings file is named in the `retired-deny` row, as `hook-entries` names it.
@@ -1175,7 +1114,6 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("files", _files),
     ("wrapper", _wrapper),
     ("hook-entries", hook_entries),
-    ("codex-hooks", _codex_hooks),
     ("budgets", configured(_budgets)),
     ("preferences", _preferences),
     ("cli-path", _cli_path),
@@ -1234,12 +1172,8 @@ def _context(
     runner: Runner,
     env: Mapping[str, str],
     session: SessionConfig,
-    contributed: Sequence[Contribution],
 ) -> Context:
-    """The report's `Context`, whole: both plugin roots, and every area's claims for
-    `hook-entries`, which reads what an area contributes besides rows — the `Claims` each says it
-    put into settings files — and asks them itself, with this context, under its own guard: an
-    area's answer that raises costs that one row, as a contributed check that raises does."""
+    """The report's `Context`, whole, with both plugin roots."""
     return Context(
         root,
         home,
@@ -1249,7 +1183,6 @@ def _context(
         session.config,
         own_root=_own_root(),
         plugin_root=plugin_root(env),
-        claims=tuple(contribution.claims for contribution in contributed if contribution.claims),
         session=session,
     )
 
@@ -1288,6 +1221,5 @@ def run_checks(
         runner=runner,
         env=env,
         session=session,
-        contributed=contributed,
     )
     return [_guarded(name, check, context) for name, check in _report_checks(contributed)]

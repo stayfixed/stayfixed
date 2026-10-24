@@ -8,10 +8,12 @@ from typing import Any
 
 import pytest
 
+from stayfixed import binding
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.gitenv import GitUnavailable, Unasked
 from stayfixed.memory.store import (
+    NO_RECORD,
     Store,
     inside_project,
     main_checkout,
@@ -82,9 +84,12 @@ def a_machine_file(base: Path, overlay: Path | None) -> Path:
     return path
 
 
-def a_tree(root: Path, overlay: Path, project: str = "widget") -> None:
+def a_tree(root: Path, overlay: Path, project: str = "widget", *, bound: bool = True) -> None:
     """The five-link tree `attach` creates: `developer` into the overlay's common
-    notes, the project-scoped groups into its own."""
+    notes, the project-scoped groups into its own; and, where `bound`, the binding `attach`
+    records on this machine for the checkout."""
+    if bound:
+        binding.record(root, project, REMOTE)
     memory = root / "docs" / "memory"
     memory.mkdir(parents=True)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
@@ -252,6 +257,7 @@ def test_a_link_into_another_project_inside_the_same_overlay_is_refused(tmp_path
         overlay / "projects" / "secret-client" / "memory" / "project-stable",
         target_is_directory=True,
     )
+    binding.record(root, "widget", REMOTE)
     config = a_config(root, "overlay")
     store = resolve(root, config, machine=a_machine_file(tmp_path, overlay))
     assert store is not None  # `developer` is legitimate and still resolves
@@ -310,43 +316,53 @@ def test_a_group_name_that_escapes_the_store_is_refused(tmp_path: Path) -> None:
     assert "../../secret" in store.unavailable
 
 
-def test_overlay_mode_refuses_when_the_remote_does_not_match(tmp_path: Path) -> None:
+def test_a_clone_named_after_the_project_is_refused_whatever_its_remote(tmp_path: Path) -> None:
+    # A hostile clone chooses `project.name`, and its `origin` too, but not an id in its git
+    # common directory: with no binding on this machine it reads none of this project's notes,
+    # even under the very remote the overlay records.
     root = tmp_path / "project"
-    a_repo(root, remote="git@example.com:acme/other.git")
+    a_repo(root, remote=REMOTE)
     overlay = an_overlay(tmp_path)
-    a_tree(root, overlay)
+    a_tree(root, overlay, bound=False)
     config = a_config(root, "overlay")
     machine = a_machine_file(tmp_path, overlay)
     assert resolve(root, config, machine=machine) is None
-    assert "remote" in (refusal_reason(root, config, machine=machine) or "")
+    assert NO_RECORD in (refusal_reason(root, config, machine=machine) or "")
 
 
-@pytest.mark.parametrize(
-    ("origin", "binds"),
-    [
-        ("https://example.com/acme/widget", True),
-        ("ssh://git@example.com/acme/widget.git", True),
-        ("https://example.com/acme/other", False),
-        ("https://example.com/other/widget", False),
-        ("https://example.org/acme/widget", False),
-    ],
-)
-def test_a_clone_named_after_the_project_binds_only_as_the_recorded_repository(
-    tmp_path: Path, origin: str, binds: bool
+def test_a_checkout_bound_to_another_project_reads_none_of_this_ones_notes(
+    tmp_path: Path,
 ) -> None:
-    # A hostile clone chooses `project.name` and not which remote the overlay recorded under it,
-    # so naming itself `widget` gets it this project's notes only when its `origin` names the
-    # repository the record names. Comparing remotes by transport keeps that: an https or
-    # ssh:// spelling of the recorded `git@` remote binds, and any other repository, under any
-    # transport, is refused.
+    # The machine binds this checkout to `gadget`, and a pulled commit renames the project to
+    # `widget`: the name picks a share the binding never named, so the store refuses.
+    #
+    # Mutation (oracle): `mutations/`'s "a checkout's binding reads a project it was not bound to".
     root = tmp_path / "project"
-    a_repo(root, remote=origin)
+    a_repo(root)
+    overlay = an_overlay(tmp_path, projects=("widget", "gadget"))
+    a_tree(root, overlay, bound=False)
+    config = a_config(root, "overlay")
+    machine = a_machine_file(tmp_path, overlay)
+    binding.record(root, "widget", REMOTE)
+    assert resolve(root, config, machine=machine) is not None
+    binding.record(root, "gadget", REMOTE)
+    assert resolve(root, config, machine=machine) is None
+    assert NO_RECORD in (refusal_reason(root, config, machine=machine) or "")
+
+
+def test_a_bound_checkout_whose_origin_moved_still_reads_its_notes(tmp_path: Path) -> None:
+    # The remote decides nothing: a bound checkout repointed at a fork, or with no `origin` at
+    # all, keeps its store.
+    root = tmp_path / "project"
+    a_repo(root)
     overlay = an_overlay(tmp_path)
     a_tree(root, overlay)
     config = a_config(root, "overlay")
     machine = a_machine_file(tmp_path, overlay)
-    assert (resolve(root, config, machine=machine) is not None) == binds
-    assert (refusal_reason(root, config, machine=machine) is None) == binds
+    git(root, "remote", "set-url", "origin", "https://example.org/someone/fork")
+    assert resolve(root, config, machine=machine) is not None
+    git(root, "remote", "remove", "origin")
+    assert resolve(root, config, machine=machine) is not None
 
 
 def test_overlay_mode_refuses_without_a_recorded_overlay_root(tmp_path: Path) -> None:
@@ -626,13 +642,13 @@ def test_a_git_that_cannot_run_does_not_make_a_worktree_look_like_the_main_check
 
 
 def test_an_empty_git_answer_is_still_an_answer(tmp_path: Path) -> None:
-    # The other side of the distinction: a repository with no `origin` remote is a fact about
-    # the repository, and must stay the ordinary refusal it always was rather than becoming an
-    # error about the machine.
+    # The other side of the distinction: a checkout git places but with no binding id in its
+    # common directory is a fact about the checkout, and must stay the ordinary refusal it always
+    # was rather than becoming an error about the machine.
     root = tmp_path / "project"
     a_repo(root, remote=None)
     overlay = an_overlay(tmp_path)
-    a_tree(root, overlay)
+    a_tree(root, overlay, bound=False)
     config = a_config(root, "overlay")
     machine = a_machine_file(tmp_path, overlay)
     assert resolve(root, config, machine=machine) is None

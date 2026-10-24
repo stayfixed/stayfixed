@@ -35,6 +35,7 @@ replacement character, so a name that is not UTF-8 cannot end it as an internal 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -415,18 +416,42 @@ def git_answer(root: Path, *args: str) -> GitAnswer:
     return GitAnswer(None)
 
 
+# A URL's scheme and the userinfo before the authority's last `@`: `[^/?#]*` stops at the path, so
+# an `@` in the path (`…/p@v1`) is not userinfo, and a password holding `@` is taken whole.
+_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)(?P<userinfo>[^/?#]*)@")
+
+
+def without_userinfo(url: str) -> str:
+    """`url` as it may be printed or recorded: a remote can carry a token as its userinfo
+    (`https://user:token@host/…`), and `attach` prints the origin and keeps it on this machine.
+
+    Every scheme loses its userinfo but ssh's, whose user (`ssh://git@host/…`) is no secret and is
+    part of how one remote is told from another (`memory.store`'s spellings); there only a
+    `:password` goes. The scp form (`git@host:path`) has no scheme and carries no password, so it
+    is left as it is."""
+    found = _USERINFO.match(url)
+    if found is None:
+        return url
+    scheme, userinfo = found["scheme"], found["userinfo"]
+    rest = url[found.end() :]
+    if "ssh" in scheme.lower():
+        user = userinfo.split(":", 1)[0]
+        return f"{scheme}{user}@{rest}" if user else f"{scheme}{rest}"
+    return f"{scheme}{rest}"
+
+
 def origin_remote(root: Path) -> str | None:
     """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
 
-    Public because `attach` compares it against the overlay's record and `init` derives a name
+    Public because `attach` notes it beside the binding and `init` derives a name
     from it, and neither may reach for a `subprocess.run` of its own: `git_run` scrubs `GIT_DIR`
     and `GIT_WORK_TREE`, and an inherited one would make the answer one about a different
     repository than the session is in. Two areas asking one question two ways is how they stop
     agreeing.
 
     A URL in bytes that are not UTF-8 is answered, as the filesystem's codec spells it, and not
-    raised: it never equals a URL read out of a TOML file, so the binding reads as not this
-    repository's, and `attach`, which would write it into one, refuses it by name. The answer is
+    raised: it never equals a URL read out of a TOML file, and `attach`, which would write it into
+    one, records it as none. The answer is
     what git printed less its line ending alone, never `strip()`, for `answer_lines`'s reason.
 
     Raises `GitUnavailable` rather than answering `None` when `git` could not be asked at all.

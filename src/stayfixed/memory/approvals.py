@@ -30,8 +30,7 @@ def _describe(context: KindContext) -> tuple[Subject, ...]:
     repository, at its digest now. Read as a session reads the configuration when the context is
     `noting`, and as a command reads it, refusing, otherwise (`KindContext.noting`)."""
     from stayfixed.command import command_owner
-    from stayfixed.config.loader import load
-    from stayfixed.config.session import session_config
+    from stayfixed.config.session import command_config, session_config
     from stayfixed.errors import Refusal
     from stayfixed.memory import trust
     from stayfixed.memory.commands import store_at
@@ -42,7 +41,8 @@ def _describe(context: KindContext) -> tuple[Subject, ...]:
             raise Refusal(NO_CONFIGURATION)
         config = session
     else:
-        config = load(context.root, machine=context.machine, owner=command_owner(context.machine))
+        owner = command_owner(context.machine)
+        config = command_config(context.root, machine=context.machine, owner=owner)
     store = store_at(context.root, config, context.machine, context.options.get("--store"))
     try:
         label = store.path.relative_to(context.root).as_posix()

@@ -127,8 +127,9 @@ NOTHING = (
     "nothing to uninstall"
 )
 ATTACHED = (
-    "this repository is attached to an overlay; run `stayfixed detach` first — uninstall takes "
-    "out the ignore block that keeps what attach wrote out of git"
+    "this repository is attached to an overlay; run `stayfixed detach` first — uninstall does not "
+    "withdraw what attach placed, the overlay's plugin and the allow rules among it, and would "
+    "take the ledger that is the only record of them"
 )
 KEPT_LOCALLY = (
     f"{LOCAL_ROOT}/ holds {{count}} file(s) uninstall would not remove, and the ignore block it "

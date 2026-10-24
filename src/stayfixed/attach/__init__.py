@@ -4,8 +4,8 @@ An area, discovered by name: `commands.py` gives it the `attach` and `detach` gr
 `api.py` is what another area may import. `detach` takes back what `attach` wrote and leaves the
 overlay's record of the binding, `projects/<name>/project.toml`, where it is. It writes nothing
 a repository chose — the overlay root comes from the machine file, the store is that overlay's
-own directory for this project, and a write that would widen a permission refuses without an
-explicit confirmation.
+own directory for this project, and what the overlay grants is shown on one screen rather than
+asked about.
 """
 
 # The command that binds this checkout to its share of the overlay, which every remedy of this area

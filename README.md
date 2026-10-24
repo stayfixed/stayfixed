@@ -62,7 +62,10 @@ adds:
   enforces a gate once it passes.
 - **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
   rather than a dotfiles sync. `stayfixed overlay create` renders one and `stayfixed attach`
-  binds a repository to it. It also *declares* the stayfixed it needs, in its plugin manifest;
+  binds a repository to it: the hooks, skills, agents and allow rules you keep there reach that
+  repository's sessions, and so do your rules — `common/claude/rules/*.md` and
+  `projects/<name>/claude/rules/*.md`, a standing rule at every session's start and one with
+  `paths:` frontmatter the first time a session reads or edits a file its globs match. It also *declares* the stayfixed it needs, in its plugin manifest;
   `stayfixed doctor` reads it and reports it when the stayfixed running is too old — red when
   this project keeps its notes in that overlay, a warning when it does not — and a session in a
   bound repository says so once at its start.
@@ -101,11 +104,11 @@ lists it by: `claude` is Claude Code and `codex` is Codex.
 The background-cleanup hints, from the `bg-cleanup` handler that `stayfixed hook PreToolUse` runs
 on every shell call, name a command the agent runs in the background that leaves an `&` job behind
 with no `trap … EXIT` or trailing `wait` to stop it, or that begins with `sleep`, and the remedy;
-they never refuse it. They run in every repository, on the preset and the machine owner's layer,
-whatever its `stayfixed.toml` holds, none at all included, and the session hears once, when it
-starts, what it could not use. The machine owner may switch them off in the machine file
-([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration) names
-the key); a repository never can.
+they never refuse it. They run in every repository, one with no `stayfixed.toml` or one a session
+cannot use included, and the session hears once, when it starts, what it could not use. A repository may switch them off by default in its
+`stayfixed.toml`, and the owner's layers override it: the overlay's files, and the machine file
+last ([`docs/cli.md`](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)
+names the key).
 
 Where a surface does not reach an agent in the session, the repository gates
 still hold in CI, which every agent's changes pass through. What was measured of Codex
@@ -113,8 +116,11 @@ still hold in CI, which every agent's changes pass through. What was measured of
 `/hooks`, skips untrusted ones without a message and runs them anyway under
 `--dangerously-bypass-hook-trust`, and a blocking `PreToolUse` hook's reason reaches the model.
 Codex delivers a failed command on `PostToolUse` with no exit code, so the note after a failing
-test run does not speak on Codex. `stayfixed doctor` says what holds on Codex in its `codex-hooks`
-row whenever `[stayfixed] agents` lists `codex`.
+test run does not speak on Codex. Whether a stayfixed hook is trusted on Codex is not measured:
+nothing here knows how Codex records hook trust, so the table above is where what holds on Codex
+is said, and `stayfixed doctor` has no row for it. Of your overlay, `stayfixed attach` delivers
+Codex its rules alone, copied into `.codex/rules/`; its hooks, skills and agents reach Claude Code
+through the plugin `attach` renders and are not delivered to Codex.
 
 ## Install
 
@@ -183,11 +189,11 @@ mkdir -p .stayfixed/local/memory/developer
 printf -- '---\nname: first-note\ndescription: "When to open this note"\n---\n\nThe note.\n' \
   > .stayfixed/local/memory/developer/first-note.md
 stayfixed memory index      # renders .stayfixed/local/memory/MEMORY.md from the notes
-stayfixed doctor            # eighteen checks over this installation, one line; --json has the remedies
+stayfixed doctor            # seventeen checks over this installation, one line; --json has the remedies
 ```
 
 `memory index` will tell you the notes reach no session until you run
-`stayfixed trust approve memory` once, yourself, in a terminal — that is the trust gate, and
+`stayfixed trust approve memory` once — that is the trust gate, and
 [The threat model, in one paragraph](#the-threat-model-in-one-paragraph) says why it exists.
 Add `.stayfixed/local/` to `.gitignore` if it is not there already.
 
@@ -217,13 +223,19 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `.stayfixed/manifest.json` | The ledger of every scaffolded artifact | the scaffold engine |
 | `.stayfixed/local/artifacts/` | The artifacts `[artifacts] local` keeps out of git, at the path each would have in the repository — git-ignored, never recorded in the manifest | `stayfixed init` and `stayfixed upgrade`, when `[artifacts] local` lists them; `stayfixed uninstall` takes them back |
 | `.stayfixed/local/artifacts.json` | The record of the bytes stayfixed last wrote under `.stayfixed/local/artifacts/`, so an unedited copy is refreshed or retired and an edited one is left. Git-ignored and never committed. Deleted, later runs judge a copy at its artifact's own place by what they render, and no longer find a copy left at an earlier place at all | the scaffold engine; `stayfixed uninstall` removes it |
-| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is `HOME`, as the harness reads it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
+| `~/.config/stayfixed/config.toml` | Machine-level settings: `[personal]`; `[guards]`, where `bg_cleanup = false` switches the background guard off on this machine, whatever a repository's `stayfixed.toml` sets as its default; `[budgets]`, the four budgets that bound what a session loads; `[overlay]`; and `[machine]`. `~` is `HOME`, as the harness reads it ([docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md#configuration)) | you, or `stayfixed setup` |
 | `~/.config/stayfixed/trust.json` | Every approval you gave on this machine — today, which repositories' committed notes may reach the model — as a versioned record of kinds and subjects, under the same home | `stayfixed trust approve`, under either of its spellings, and `stayfixed trust revoke`; and `stayfixed memory index` and `stayfixed attach`, which carry an approval across a write of their own to the store and never give one |
 | `hooks/hooks.json` and `hooks/run-hook.sh` | The zero-config wiring both harnesses read, and the wrapper they execute. **Shipped in the plugin; never written into a project** | nothing — they are part of the plugin |
 | `${CLAUDE_PLUGIN_DATA}/stayfixed/` | Once-per-session markers and the hook diagnostics log. Deleted with the plugin | the hook dispatcher |
-| `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git. Recorded in the manifest when `init` writes it, and `detach` then leaves it | `stayfixed init`, or `attach` on a repository `init` has not set up |
-| `.stayfixed/local/attach.json` | What `attach` added to this repository, so `detach` can take exactly that back — git-ignored by the region `attach` itself writes | `stayfixed attach` |
-| `<overlay>/projects/<name>/project.toml` | Which remote this overlay is bound to for this project, and when it was first attached | `stayfixed attach` |
+| `.gitignore`, the `stayfixed:ignore` region | The block that keeps `.stayfixed/local/` and `.stayfixed/assessment.json` out of git, recorded in the manifest. `attach` and `detach` never touch `.gitignore` | `stayfixed init` |
+| `.stayfixed/local/attach.json` | What `attach` added to this repository, so `detach` can take exactly that back — hidden from git by the block `attach` writes in the repository's `info/exclude` | `stayfixed attach` |
+| `<overlay>/common/stayfixed.toml` | Preferences, session budgets, personal values and guard switches for every checkout on a machine that records this overlay, above the repository's `stayfixed.toml` and below the machine file. Read the way a session reads `stayfixed.toml`: what this stayfixed cannot use is ignored with a note, and a gate's input or a fact about the repository is never taken from it | you |
+| `<overlay>/projects/<name>/stayfixed.toml` | The same keys for one project, above the common file: read only for a checkout this machine binds to `<name>`, never for one whose own `stayfixed.toml` merely names it | you |
+| `<overlay>/projects/<name>/project.toml` | The remote this project was first attached with, and when; it binds nothing | `stayfixed attach`, while it records no remote |
+| `.git/stayfixed/binding` (in the git common directory every worktree shares) | The checkout's binding id: 32 random hexadecimal characters that never leave this machine and are printed only as their first eight. No clone carries it | `stayfixed attach`, once |
+| `~/.local/share/stayfixed/bindings/<id>.toml` | What this machine binds that id to: the project name, the `origin` at attach time and the checkout. Where the binding is decided, never from a name the repository supplies. `~` is `HOME`; no `XDG_*` variable is read | `stayfixed attach` |
+| `~/.local/share/stayfixed/delivery/<id>/` | The overlay's hooks, skills and agents rendered as a plugin, `overlay-<id>` in a marketplace `stayfixed-delivery-<id>`, both named by the binding id, and, when the overlay holds a rule with `paths:`, the `PostToolUse` entry that delivers it, run through whatever launched the stayfixed that ran `attach`: the plugin's hook wrapper, or an installed package's interpreter. A session runs the plugin from here in place, so each attach rewrites it, and `stayfixed detach` removes it | `stayfixed attach` |
+| `~/.local/share/stayfixed/sessions/` | One empty file per session and file a path-scoped rule was said for, both names hashed, so the rule is said once per file in a session. Nothing removes them | the hook dispatcher |
 
 Every write into a repository goes through a path walk that refuses a symlink at any component
 and refuses to leave the project root, and replaces files atomically, keeping the mode of the
@@ -259,7 +271,7 @@ to find the project root, and reaches no network.
 | `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
 | `git clone` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
 | `git push` | `stayfixed overlay publish-template --yes` | the template repository on GitHub, through the remote `gh repo clone` set up | when the rendered template differs from what the repository carries |
-| `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Claude Code, and its plugins' sources (note 4) | when the preset's agents include `claude` and it names a marketplace for it |
+| `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted), `stayfixed attach`, `stayfixed detach` | for `setup`, the marketplace the preset names for Claude Code, and its plugins' sources; for `attach` and `detach`, nothing past this machine (note 4) | `setup` when the preset's agents include `claude` and it names a marketplace for it; `attach` on every run; `detach` where the main checkout's `.claude/settings.local.json` names the plugin or its marketplace and no other checkout of the repository is attached |
 | `codex plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Codex (note 4) | when the preset's agents include `codex` and it names a marketplace for it |
 | `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
@@ -295,7 +307,10 @@ to find the project root, and reaches no network.
 4. **`claude plugin`** registers the marketplace the preset names for Claude Code
    (`anthropics/claude-plugins-official` in `recommended`), reads its list of plugins, and
    downloads each of the preset's plugins from the source its entry there names, which can be
-   another repository. **`codex plugin`** registers the marketplace the preset names for Codex and
+   another repository. For `attach`, it registers the directory `attach` renders the overlay's
+   hooks, skills and agents into, `~/.local/share/stayfixed/delivery/<id>/`, as a marketplace and
+   installs the one plugin in it, whose source is a directory inside it, so neither names a source
+   past this machine; `detach` uninstalls that plugin and removes that marketplace. **`codex plugin`** registers the marketplace the preset names for Codex and
    adds the preset's plugins from it; `recommended` names none, so it does not run. Once
    installed, a plugin runs in every session of its harness and reaches what it reaches.
 5. **`pre-commit install`** reaches nothing as it installs. On the first commit after it,
@@ -380,7 +395,7 @@ stayfixed memory session-context --bundle standing-rules --part 1
 stayfixed memory refs                                  # backticked paths in notes that no longer resolve, and the link graph as advice
 stayfixed trust list                                   # each approval kind's state here, and the command that approves it
 stayfixed trust list --all                             # every approval on this machine
-stayfixed trust approve memory                         # approve the notes inside this repository, yourself, in a terminal
+stayfixed trust approve memory                         # approve the notes inside this repository, and print what was recorded
 stayfixed trust revoke memory                          # withdraw that approval; needs no terminal
 
 # The bug ledger
@@ -414,8 +429,7 @@ stayfixed overlay publish-template --owner you --yes             # publish the t
 
 # Binding a repository to the overlay
 stayfixed attach --store ../stayfixed-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
-stayfixed attach --store ../stayfixed-private/projects/widget/memory --yes     # merge the diff you just read, and link the notes in
-stayfixed attach --store ../stayfixed-private/projects/widget/memory --trust-remote  # record this remote although the overlay recorded another
+stayfixed attach --store ../stayfixed-private/projects/widget/memory           # merge the allow rules, install the overlay's plugin, link the notes in; prints the binding and what will run
 stayfixed detach                                       # remove what attach added; the binding record stays
 
 # Machine setup
@@ -439,7 +453,7 @@ stayfixed adopt promote --builtin                      # the same, running none 
 stayfixed prove -- uv run --locked pytest tests/test_x.py   # run it here; proved, failed, not proven or refused, from the runner's own report
 
 # Diagnosing an installation
-stayfixed doctor                                       # eighteen checks over this installation, one line
+stayfixed doctor                                       # seventeen checks over this installation, one line
 stayfixed doctor --json                                # every check with its status, detail and remedy
 
 # Internal
@@ -466,11 +480,10 @@ erase what you typed. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/
 The one command with a consequence worth stating twice. It records a hash of everything the
 store yields — every note, `MEMORY.md`, and the repository-controlled configuration that is
 rendered into it — against the store's absolute path, in `~/.config/stayfixed/trust.json`.
-It is asked of you: run from anything whose standard input is not a terminal, an agent's shell
-tool among them, it refuses and names the command to run yourself. That check slows an agent's
-bare call and guarantees nothing against one that can open a terminal; `stayfixed trust list`
-shows every kind's state, and `stayfixed trust revoke memory` withdraws the approval from
-anywhere.
+It records and prints what it recorded, from wherever it is run: an approval holds against what a
+repository ships, not against an agent in your session, whose shell can write the record anyway,
+so no terminal is asked for. `stayfixed trust list` shows every kind's state, and `stayfixed trust
+revoke memory` withdraws the approval from anywhere.
 
 You are saying: *I have read what this repository committed under its memory directory, and it
 may reach the model as data.* Any later change to any of those files makes the hash disagree

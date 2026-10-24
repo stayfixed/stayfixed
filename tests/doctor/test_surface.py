@@ -31,15 +31,10 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "run_checks",
         "Check",
         # what an area's own `doctor.py` speaks: its `register()` returns a `Contribution`, whose
-        # checks take the `Context` and answer a `Row`, and whose `Claims` say what the area put
-        # into settings files
+        # checks take the `Context` and answer a `Row`
         "Row",
         "Context",
-        "Claims",
         "Contribution",
-        # the type `Claims.wording` declares: the words an area's claims are told in, which an
-        # area that hands over claims builds
-        "Wording",
         # the type `Row.status` declares, which a contributed check that decides its status
         # before building its row annotates
         "Status",

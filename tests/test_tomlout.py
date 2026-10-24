@@ -94,9 +94,9 @@ def test_a_control_character_survives_the_round_trip() -> None:
 
 
 def test_the_root_table_is_written_before_any_header() -> None:
-    # `projects/<name>/project.toml` holds `remote` at the top level, because
-    # `memory.store._bound` reads it there — one file, one place, or the writer and the reader
-    # disagree about the record that decides whether a store resolves at all.
+    # `projects/<name>/project.toml` holds `remote` at the top level, and the machine's binding
+    # record its keys, because their readers read them there — one file, one place, or the writer
+    # and the reader disagree about the record that decides whether a store resolves at all.
     text = dumps({"": {"remote": "u"}, "notes": {"kept": True}})
     assert text.splitlines()[0] == 'remote = "u"'
     assert tomllib.loads(text) == {"remote": "u", "notes": {"kept": True}}

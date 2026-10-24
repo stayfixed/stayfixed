@@ -7,20 +7,16 @@ repository-controlled, and committed settings that would widen a permission are 
 `.claude/settings.local.json` is read, and only to subtract: a rule the project already carries
 is not something this attach would add.
 
-**The two halves of the diff are not symmetric.** A hook entry carries `# stayfixed:<id>`
-inside its command string, so it has an in-band witness that survives the file being edited by
-hand — `scaffold.owned_ids` reads them back. A `permissions.allow` string cannot carry one:
-`scaffold.mark` appends to a *command*, and `scaffold.entries.unmarked` walks
-`groups → hooks → command`. So an allow rule has exactly one witness, the ledger `write.py`
-keeps, and this module numbers hook ids per entry rather than sharing one — `owned_ids` is a
-`dict[str, str]`, so one id for N entries yields one provenance row and the same id under two
-events keeps only the last.
+**The diff is allow rules alone.** The overlay's hook entries reach a session through the plugin
+`attach.render` renders, never through `settings.local.json`, which Claude Code rewrites whole and
+where no marker survives; this module reads the overlay's hook files for that render
+(`hook_groups`). An allow rule has exactly one witness, the ledger `write.py` keeps.
 
-**What may be printed.** `added_allow` and `added_hooks` are built out of the overlay, which is
-the owner's own repository, so a command may show them — and must, since a diff nobody reads is
-not a gate. `already_present` comes out of `.claude/settings.local.json`, which a hostile clone
-*can* commit, so it is repository-authored: this module carries the strings so a caller can
-subtract with them, and `attach.check` reports only how many there were.
+**What may be printed.** `added_allow` is built out of the overlay, which is the owner's own
+repository, so a command may show it, and `attach` does, on the screen it proceeds with.
+`already_present` comes out of `.claude/settings.local.json`, which a hostile clone *can* commit,
+so it is repository-authored: this module carries the strings so a caller can subtract with them,
+and `attach.check` reports only how many there were.
 """
 
 from __future__ import annotations
@@ -42,8 +38,6 @@ from stayfixed.printed import quoted
 from stayfixed.scaffold import (
     EntriesError,
     ParserLimitError,
-    judged_entries,
-    mark,
     settings_object,
     settings_text,
 )
@@ -57,41 +51,23 @@ HOOKS_FILE = "hooks.json"
 # The per-harness subdirectory of a project's own share of the overlay.
 PROJECT_CLAUDE = "claude"
 PROJECT_CODEX = "codex"
-# `stayfixed:overlay-<event>-<n>`: one id per entry, for the reason in the module docstring.
-ENTRY_PREFIX = "overlay"
 # Where Codex reads standing instructions.
 CODEX_RULES = ".codex/rules"
 
 
 @dataclass(frozen=True)
 class PermissionDiff:
-    """What `attach` would add, and what is already there.
-
-    `added_hooks` holds the *marked* command strings, which is what a reader has to see: the
-    marker is the key the merge is done on, and an entry whose marker changed is a different
-    entry however familiar its command looks.
-    """
+    """What `attach` would add to the allow rules, and what is already there."""
 
     added_allow: tuple[str, ...]
-    added_hooks: tuple[str, ...]
     already_present: tuple[str, ...]
-
-    @property
-    def widens(self) -> bool:
-        """Whether applying this diff would grant a capability the project does not have.
-
-        The `--yes` gate on the write is on *this*, not on the command: an overlay with no
-        allow rules and no hook entries — the state of a freshly created one — must still link
-        memory with no flag, or the flag becomes something people pass reflexively.
-        """
-        return bool(self.added_allow or self.added_hooks)
 
 
 def settings_document(text: str) -> dict[str, Any]:
     """The local settings file as an object, refusing a shape the merge could not read back.
 
-    `write.py` adds allow rules to this document and `scaffold.apply_entries` rewrites the hook
-    table in it, so both halves have to agree about what a readable document is — and a shape
+    `write.py` adds allow rules to this document and takes back the hook entries an earlier
+    release merged into it, so both have to agree about what a readable document is — and a shape
     this cannot read is refused rather than filtered, because what a filter drops here is
     somebody's own setting and nothing would say it went.
     """
@@ -170,7 +146,7 @@ def allow_list(raw: dict[str, Any], label: str) -> list[str]:
     `allow` as no rules, the other refused it, so `--check` exited 0 promising a rule for a file
     the real run then refused. A key that is absent is no rules; a key that is there must hold an
     object, and then a list of strings, and `null` is a value that is neither. A shape this cannot
-    read is a refusal and never a filter, for the reason `_hook_groups` gives. `label` names the
+    read is a refusal and never a filter, for the reason `hook_groups` gives. `label` names the
     file in the refusal.
     """
     if "permissions" not in raw:
@@ -192,8 +168,9 @@ def _allow_rules(document: str, path: Path) -> tuple[str, ...]:
     return tuple(allow_list(settings_object(document, label), label))
 
 
-def _hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, Any]]]:
-    """`event -> groups` out of a `hooks.json`-shaped document, refusing a shape it cannot read.
+def hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, Any]]]:
+    """`event -> groups` out of a `hooks.json`-shaped document, refusing a shape it cannot read:
+    each group's `hooks` a list, when it is there, of entries that each carry a command.
 
     A shape this cannot read is a refusal and never a filter, for `scaffold.entries`' own
     reason: what is dropped silently here is an entry the owner put in their overlay on
@@ -206,6 +183,15 @@ def _hook_groups(path: Path, *, share: Path | None) -> dict[str, list[dict[str, 
     for event, groups in hooks.items():
         if not isinstance(groups, list) or not all(isinstance(g, dict) for g in groups):
             raise EntriesError(f"{path}: 'hooks.{event}' is not a list of entry groups")
+        for group in groups:
+            # Absent is no entries; `null`, or any other value that is not a list, is refused, as
+            # `allow_list` refuses one where its list goes.
+            entries = group.get("hooks", [])
+            if not isinstance(entries, list):
+                raise EntriesError(f"{path}: an entry group's 'hooks' is not a list")
+            for entry in entries:
+                if not (isinstance(entry, dict) and isinstance(entry.get("command"), str)):
+                    raise EntriesError(f"{path}: an entry under {event} has no command")
         found[str(event)] = [dict(g) for g in groups]
     return found
 
@@ -218,11 +204,8 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
     that never appears in the report makes that promise false. A file Codex reads as standing
     instruction is exactly the kind of thing an owner wants named before it lands.
 
-    This is **reporting and not gating**, and the distinction is deliberate. The `--yes` gate is
-    about widening a *permission*, which only the overlay may grant and never a file the repository
-    commits; adding standing rules is the machine owner's to do, and the overlay is the machine
-    owner's own artifact — so a rule file does not make `widens` true, and `widens` keeps meaning
-    what its name says.
+    This is **reporting and not gating**, as everything the overlay grants is: the overlay is the
+    machine owner's own artifact, so `attach` shows what it places and proceeds.
 
     This project's own `codex/` is read second, so a file it shares a name with in `common/` is
     the one that lands; the pair is returned rather than two lists so the caller cannot pair
@@ -269,91 +252,9 @@ def _claude_sources(
     )
 
 
-def overlay_entries(binding: Binding) -> dict[str, list[dict[str, Any]]]:
-    """The hook entries the overlay would install, each command carrying its own marker id.
-
-    Shaped exactly as `scaffold.apply_entries` wants its `wanted` argument, because that is the
-    merge — this area does not own one. Numbering runs per event across both sources in read
-    order, so a second attach against an unchanged overlay produces the identical ids and the
-    merge is a no-op.
-    """
-    return _numbered(_claude_sources(binding, HOOKS_FILE))
-
-
-def common_entries(overlay: Path) -> dict[str, list[dict[str, Any]]]:
-    """`overlay_entries` for `common/` alone, which never opens anything under `projects/`.
-
-    For a caller that may not take any project's grants (`doctor`, for a checkout the overlay's
-    record does not bind, or whose record it cannot read), and asked of the overlay root rather
-    than of a `Binding`, because deciding a binding opens the record such a caller may not lean
-    on. `common/` is read first by `overlay_entries` too, so this is exactly the leading part of
-    its answer, with the same ids.
-    """
-    return _numbered(((overlay / COMMON_CLAUDE / HOOKS_FILE, None),))
-
-
-def _numbered(
-    sources: tuple[tuple[Path, Path | None], ...],
-) -> dict[str, list[dict[str, Any]]]:
-    """The hook entries in `sources`, read in order, each command marked with its own id."""
-    wanted: dict[str, list[dict[str, Any]]] = {}
-    seen: dict[str, int] = {}
-    for source, share in sources:
-        for event, groups in _hook_groups(source, share=share).items():
-            for group in groups:
-                # Absent is no entries; `null`, or any other value that is not a list, is
-                # refused, as `allow_list` refuses one where its list goes.
-                entries = group.get("hooks", [])
-                if not isinstance(entries, list):
-                    raise EntriesError(f"{source}: an entry group's 'hooks' is not a list")
-                marked: list[dict[str, Any]] = []
-                for entry in entries:
-                    command = entry.get("command") if isinstance(entry, dict) else None
-                    if not isinstance(command, str):
-                        raise EntriesError(f"{source}: an entry under {event} has no command")
-                    seen[event] = seen.get(event, 0) + 1
-                    entry_id = f"{ENTRY_PREFIX}-{event}-{seen[event]}"
-                    marked.append({**entry, "command": mark(command, entry_id)})
-                if marked:
-                    wanted.setdefault(event, []).append({**group, "hooks": marked})
-    return wanted
-
-
-def marked_commands(wanted: dict[str, list[dict[str, Any]]]) -> list[tuple[str, str]]:
-    """Every marked command in `overlay_entries`' or `common_entries`' answer, with its event, in
-    its order: the grants flattened once, for the diff and the ledger, which each ask only for
-    commands. Each is a string, because `_numbered` refuses an entry without one. `doctor` asks
-    where each one sits too, and reads that through `scaffold.wanted_placements`."""
-    return [
-        (event, entry["command"])
-        for event, groups in wanted.items()
-        for group in groups
-        for entry in group["hooks"]
-    ]
-
-
 def local_document(root: Path) -> str:
     """The project's own `settings.local.json`, or an empty string when it has none."""
     return _read(root / LOCAL_SETTINGS, label=LOCAL_SETTINGS)
-
-
-def _commands(document: str, label: str) -> set[str]:
-    """Every hook command already in a settings document, whoever wrote it, or a refusal.
-
-    Read by the strict walk (`scaffold.judged_entries`, not lenient), which refuses every shape
-    `scaffold.apply_entries` refuses when the real run merges into this document: a `hooks` that
-    is not an object, an event that is not a list of objects, a group whose `hooks` is not a list
-    of objects, `null` in any of those places included. This filtered them, so `--check` exited 0
-    for a file the real run then refused. A refusal names the file by `label`; one past a limit of
-    the parser keeps its own kind and words.
-    """
-    try:
-        walked = judged_entries(document, lenient=False)
-    except ParserLimitError:
-        raise
-    except EntriesError as exc:
-        raise EntriesError(f"{label}: {exc}") from None
-    return {placed.command for _, placed in walked.entries}
 
 
 # Room for the one key the settings fallback adds to the text `attach` writes back after the merge:
@@ -391,12 +292,6 @@ def diff_permissions(root: Path, binding: Binding) -> PermissionDiff:
     _refuse_unless_written_back(document)
     # Named by its project path, as every refusal of the project's own settings file is.
     held = set(_allow_rules(document, Path(LOCAL_SETTINGS)))
-    present = _commands(document, LOCAL_SETTINGS)
     added_allow = tuple(dict.fromkeys(rule for rule in granted if rule not in held))
     already = tuple(dict.fromkeys(rule for rule in granted if rule in held))
-    added_hooks = tuple(
-        command
-        for _, command in marked_commands(overlay_entries(binding))
-        if command not in present
-    )
-    return PermissionDiff(added_allow, added_hooks, already)
+    return PermissionDiff(added_allow, already)

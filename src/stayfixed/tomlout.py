@@ -36,9 +36,9 @@ remedy, so it cannot wedge a command silently either.
 header (`[personal.editor]`, after the parent's own keys, which is the order TOML requires). A
 dict *inside a list* becomes an inline table, because an array of tables has no header form
 that survives being nested in a value. The one table named `""` is written before any header,
-because the overlay's `projects/<name>/project.toml` holds its `remote` at the top level —
-`memory.store._bound` reads it there, and moving it under a header would make this serialiser
-and that reader disagree about one file.
+because the overlay's `projects/<name>/project.toml` and the machine's binding records
+(`stayfixed.binding`) hold their keys at the top level — their readers read them there, and moving
+them under a header would make this serialiser and those readers disagree about one file.
 
 **Comments are not preserved, and cannot be**: `tomllib` discards them on the way in, so a
 rewrite of a hand-edited file keeps every table, key and value and loses the prose around them.

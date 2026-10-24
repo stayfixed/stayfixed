@@ -707,7 +707,7 @@ def test_no_module_asks_pathlib_what_is_at_a_path_a_repository_can_shape() -> No
     # `attach` over a deep checkout was an internal error on 3.11 to 3.13 and attached on 3.14.
     # `fsops` answers one way on all of them, so the walk refuses any other call of the four but
     # the ones `OTHER_PREDICATES` names, each on a path no repository writes. Mutation (oracle):
-    # `mutations/`'s "the harness link's check asks pathlib what is there".
+    # `mutations/`'s "the hook's walk for .git asks pathlib what is there".
     source = Path(fsops.__file__).parent
     found: dict[tuple[str, str, str], int] = {}
     for path in sorted(source.rglob("*.py")):

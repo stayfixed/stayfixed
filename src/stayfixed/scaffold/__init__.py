@@ -3,10 +3,11 @@
 Everything a consumer needs is re-exported here, including the primitives other areas reach for
 directly: `judged_entries` for `doctor`'s provenance list, each entry a `Placed`, for
 `assess`'s foreign-hook probe, which reads the same walk, and for `attach --check`, which reads
-the settings file `attach` merges into as strictly as the merge does; `wanted_placements` for the
-grants it is compared with, which `attach` answers; `owned_ids` for the ids `attach` records in its
-ledger, `mark` for any caller that builds `Template.entries`, and `drop` / `apply_entries` for
-`uninstall`. The three refusals a consumer has to catch by name
+the settings file `attach` merges into as strictly as the merge does; `owned_ids` for the ids an
+earlier `attach` recorded in its ledger, `mark` for any caller that builds `Template.entries`,
+`drop` / `apply_entries` for
+`uninstall`, and `withdraw_entries` for `attach` and `detach`, which take back the entries an
+earlier `attach` recorded and no other. The three refusals a consumer has to catch by name
 are here too: a caller that cannot import `ManifestError`, `RegionError` or `EntriesError`
 from this list has no way to tell a bad merge from a bug except by catching `Refusal` whole;
 `ParserLimitError`, an `EntriesError` too, is the valid JSON past a limit of the parser that
@@ -49,7 +50,7 @@ from stayfixed.scaffold.entries import (
     owned_ids,
     settings_object,
     settings_text,
-    wanted_placements,
+    withdraw_entries,
 )
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LOCAL_DIGESTS, LOCAL_ROOT, LocalDigests
 from stayfixed.scaffold.manifest import (
@@ -111,5 +112,5 @@ __all__ = [
     "unlinks",
     "upsert",
     "validate_sources",
-    "wanted_placements",
+    "withdraw_entries",
 ]

@@ -28,8 +28,9 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         # path and the `.gitignore` block are `config.layout`'s, since the core names them too
         "ledger",
         "AttachLedger",  # what `ledger` returns; a consumer cannot annotate it otherwise
+        "Rendered",  # the type of `AttachLedger.render`, for the same reason
         "read_binding",
         "Binding",
-        "LOCAL_SETTINGS",  # the file the overlay's granted hook entries live in
+        "LOCAL_SETTINGS",  # the file an earlier release merged the overlay's hook entries into
     }
     assert required == set(attach.__all__)

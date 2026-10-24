@@ -10,23 +10,21 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
 
 from stayfixed import fsops, jsonobject
-from stayfixed.attach.write import GITIGNORE, GROUP_UNASKED_IN_TREE, Detached, detach
+from stayfixed.attach.write import GROUP_UNASKED_IN_TREE, Detached, detach
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
-from stayfixed.config.layout import IGNORE_BODY, IGNORE_REGION
 from stayfixed.errors import Failure, Refusal
 from stayfixed.memory.api import harness_memory_path, resolve
 from stayfixed.printed import quoted
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
-from stayfixed.scaffold import MANIFEST_PATH, Kind, Location, Manifest, Record, digest
-from stayfixed.scaffold.regions import RegionError, Style, extract, markers, upsert
+from stayfixed.scaffold import MANIFEST_PATH
+from stayfixed.scaffold.regions import Style, extract
 from tests.approved import record
 from tests.attach.test_binding import DEFAULT_MEMORY
 from tests.attach.test_links import _attach, _bound, _config, _trusted
@@ -38,7 +36,7 @@ from tests.pathfaults import (
     symlink_loop_at,
     unsearchable,
 )
-from tests.runners import LsRemote, git_that_cannot_run
+from tests.runners import LsRemote, Recorder, claude_code, git_that_cannot_run
 from tests.snapshot import (
     assert_snapshot_changed,
     assert_snapshot_unchanged,
@@ -66,8 +64,8 @@ def _grant(overlay: Path, *, allow: tuple[str, ...] = (), hooks: bool = False) -
     (overlay / "common" / "codex" / "common.rules").write_text("# rule\n", encoding="utf-8")
 
 
-def _detach(root: Path, machine: Path, home: Path) -> Detached:
-    return detach(root, machine=machine, home=home)
+def _detach(root: Path, machine: Path, home: Path, runner: Recorder | None = None) -> Detached:
+    return detach(root, machine=machine, runner=runner or Recorder(), home=home)
 
 
 def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
@@ -78,10 +76,262 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
     before = snapshot(root)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert_snapshot_changed(root, before)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
+
+
+def _render_of(root: Path) -> tuple[str, Path]:
+    """The binding id of `root`'s repository and the render directory it names."""
+    from stayfixed import binding
+    from stayfixed.attach.render import delivery_directory
+
+    id = binding.read_id(root)
+    assert id is not None
+    return id, delivery_directory(id)
+
+
+def _installed(root: Path, store: Path, machine: Path, home: Path) -> None:
+    """An attach whose two `claude plugin` calls wrote what Claude Code writes into the main
+    checkout's settings file: the `enabledPlugins` and `extraKnownMarketplaces` entries that name
+    the binding id."""
+    from stayfixed.attach.write import attach
+
+    runner = Recorder(on_call=claude_code(root))
+    attach(root, store=store, machine=machine, runner=runner, home=home)
+
+
+def _plugin_keys(root: Path) -> list[str]:
+    """Every key of the settings file's two plugin maps, the entries that name the binding id."""
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    return [*document.get("enabledPlugins", {}), *document.get("extraKnownMarketplaces", {})]
+
+
+def test_detach_withdraws_the_rendered_plugin_and_keeps_the_binding(tmp_path: Path) -> None:
+    # The plugin runs from its render directory in place, so the directory goes and Claude Code is
+    # told to forget the plugin and its marketplace, each once, from the main checkout whose
+    # settings file holds the plugin's entries. The id, this machine's record of it and the
+    # overlay's record stay: a later attach binds the same checkout again.
+    from stayfixed import binding
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _installed(root, store, machine, home)
+    id, delivery = _render_of(root)
+    assert (delivery / ".claude-plugin" / "marketplace.json").is_file()
+    record = store.parent / "project.toml"
+    kept = record.read_bytes()
+    runner = Recorder(on_call=claude_code(root))
+    _detach(root, machine, home, runner)
+    assert not delivery.exists()
+    assert list(zip(runner.calls, runner.cwds, strict=True)) == [
+        (
+            [
+                "claude",
+                "plugin",
+                "uninstall",
+                f"overlay-{id}@stayfixed-delivery-{id}",
+                "--scope",
+                "local",
+            ],
+            root.resolve(),
+        ),
+        (["claude", "plugin", "marketplace", "remove", f"stayfixed-delivery-{id}"], root.resolve()),
+    ]
+    assert _plugin_keys(root) == []
+    assert binding.read_id(root) == id
+    found = binding.bound_project(root)
+    assert found is not None and found.project == "p"
+    assert record.read_bytes() == kept
+
+
+def test_detach_with_the_render_directory_gone_still_asks_claude_code_to_forget_the_plugin(
+    tmp_path: Path,
+) -> None:
+    # Each call is decided by what the main checkout's settings file names, never by the render
+    # directory, which a data-directory cleanup can take away: a detach that skipped the calls for
+    # want of it withdrew the exclude block and left `enabledPlugins` naming the whole id in a file
+    # `git status` then offered for commit.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _installed(root, store, machine, home)
+    _, delivery = _render_of(root)
+    shutil.rmtree(delivery)
+    runner = Recorder(on_call=claude_code(root))
+    _detach(root, machine, home, runner)
+    assert [argv[2] for argv in runner.calls] == ["uninstall", "marketplace"]
+    assert _plugin_keys(root) == [] and not _exclude_block(root)
+    assert git(root, "status", "--porcelain", "-uall").strip() == "?? .claude/settings.local.json"
+
+
+def test_a_ledger_naming_another_directory_deletes_nothing_outside_the_delivery_directory(
+    tmp_path: Path,
+) -> None:
+    # The render directory is derived from the id, never read from the ledger, which a clone can
+    # commit: a ledger whose `store` and `render` name a directory elsewhere leaves it standing.
+    # Mutation: `mutations/`'s "detach deletes the directory the ledger names".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _, delivery = _render_of(root)
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("mine\n", encoding="utf-8")
+    raw = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    raw["store"] = str(outside)
+    raw["render"] = {"digest": "0" * 64, "parts": ["keep.txt"]}
+    (root / LEDGER).write_text(json.dumps(raw), encoding="utf-8")
+    _detach(root, machine, home)
+    assert (outside / "keep.txt").read_text(encoding="utf-8") == "mine\n"
+    assert not delivery.exists()
+
+
+def _exclude_block(root: Path) -> bool:
+    """Whether the repository's exclude file still holds `attach`'s block."""
+    exclude = root / ".git" / "info" / "exclude"
+    return exclude.is_file() and "# stayfixed:attach:begin" in exclude.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("ignoring", "left", "again"),
+    [
+        pytest.param(
+            ("marketplace remove",), ["extraKnownMarketplaces"], ["marketplace"], id="remove"
+        ),
+        pytest.param(
+            ("uninstall", "marketplace remove"),
+            ["enabledPlugins", "extraKnownMarketplaces"],
+            ["uninstall", "marketplace"],
+            id="both",
+        ),
+    ],
+)
+def test_a_settings_file_still_naming_the_plugin_keeps_the_delivery_hidden_and_detach_runs_again(
+    tmp_path: Path, ignoring: tuple[str, ...], left: list[str], again: list[str]
+) -> None:
+    # The plugin's entries in `settings.local.json` name the whole binding id, and only Claude Code
+    # takes them out. So while the file still names the id once the calls ran, whatever they
+    # exited with, everything that keeps the file hidden or lets `detach` run again stays: the
+    # exclude block, the ledger and the render. The failure names the entry left by its key and
+    # never the id. A second detach makes only the call the file still asks for.
+    # Mutation: `mutations/`'s "detach goes past a settings file that still names the plugin".
+    from stayfixed.attach.write import STILL_NAMED
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _installed(root, store, machine, home)
+    id, delivery = _render_of(root)
+    assert _exclude_block(root)
+    with pytest.raises(Failure) as failed:
+        _detach(root, machine, home, Recorder(on_call=claude_code(root, ignoring=ignoring)))
+    assert str(failed.value) == STILL_NAMED.format(keys=", ".join(f"`{key}`" for key in left))
+    assert id not in str(failed.value)
+    assert _exclude_block(root) and (root / LEDGER).is_file() and delivery.is_dir()
+    second = Recorder(on_call=claude_code(root))
+    _detach(root, machine, home, second)
+    assert [argv[2] for argv in second.calls] == again
+    assert not _exclude_block(root) and not (root / LEDGER).exists() and not delivery.exists()
+
+
+def test_a_detach_that_cannot_read_the_id_keeps_a_settings_file_naming_a_delivery_hidden(
+    tmp_path: Path,
+) -> None:
+    # With the id file gone, `detach` cannot name the plugin, and the settings file still names the
+    # old id under both keys: withdrawn, the block left that file for `git add -A` to commit. Any
+    # `stayfixed-delivery-` name there keeps the block, the ledger and the render, and fails.
+    # Mutation: `mutations/`'s "detach asks the settings file about this binding id's delivery
+    # alone".
+    from stayfixed.attach.write import STILL_NAMED
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _installed(root, store, machine, home)
+    _, delivery = _render_of(root)
+    (root / ".git" / "stayfixed" / "binding").unlink()
+    runner = Recorder(on_call=claude_code(root))
+    with pytest.raises(Failure) as failed:
+        _detach(root, machine, home, runner)
+    assert str(failed.value) == STILL_NAMED.format(
+        keys="`enabledPlugins`, `extraKnownMarketplaces`"
+    )
+    assert runner.calls == []
+    assert _exclude_block(root) and (root / LEDGER).is_file() and delivery.is_dir()
+
+
+def test_detach_after_an_attach_whose_marketplace_add_failed_runs_no_call_and_finishes(
+    tmp_path: Path,
+) -> None:
+    # A `claude` that is not on `PATH` failed the first call, so Claude Code wrote nothing and the
+    # attach exited 1. The settings file names no plugin, so `detach` asks Claude Code to forget
+    # nothing and withdraws: it used to run `marketplace remove` regardless, fail on it, and promise
+    # that running it again would finish, which it never did.
+    from stayfixed.attach.write import attach
+    from stayfixed.runner import Completed
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    absent = Recorder(answers={"claude": Completed(127, "", "")})
+    with pytest.raises(Failure):
+        attach(root, store=store, machine=machine, runner=absent, home=home)
+    _, delivery = _render_of(root)
+    runner = Recorder(answers={"claude": Completed(127, "", "")})
+    _detach(root, machine, home, runner)
+    assert runner.calls == []
+    assert not _exclude_block(root) and not (root / LEDGER).exists() and not delivery.exists()
+
+
+def test_detach_in_a_bare_repositorys_worktree_withdraws_this_checkouts_own_parts(
+    tmp_path: Path,
+) -> None:
+    # git names no main checkout in a bare repository, so `attach` refuses there and installed
+    # nothing; a ledger an earlier release wrote in such a worktree is withdrawn rather than refused
+    # in attach's words, which left the checkout neither detachable nor uninstallable.
+    from tests.attach.test_write import _attachable, _committed
+
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    _committed(root)
+    bare = tmp_path / "bare.git"
+    git(tmp_path, "clone", "-q", "--bare", str(root), str(bare))
+    side = tmp_path / "side"
+    git(bare, "worktree", "add", "-q", str(side), "main")
+    (side / ".stayfixed" / "local").mkdir(parents=True)
+    ledgered = {"format": 1, "store": str(store), "allow": [RULE], "entries": {}, "rules": []}
+    ledgered |= {"settings_keys": [], "directories": [".stayfixed/local", ".stayfixed"]}
+    (side / LEDGER).write_text(json.dumps(ledgered), encoding="utf-8")
+    (side / ".claude").mkdir()
+    (side / SETTINGS).write_text(json.dumps({"permissions": {"allow": [RULE]}}), encoding="utf-8")
+    runner = Recorder()
+    removed = _detach(side, machine, tmp_path / "home", runner)
+    assert removed.allow_removed == (RULE,)
+    assert runner.calls == [] and not (side / LEDGER).exists() and not (side / SETTINGS).exists()
+
+
+def test_detach_keeps_the_allow_rule_claude_code_added_to_a_rewritten_settings_file(
+    tmp_path: Path,
+) -> None:
+    # Claude Code rewrites `settings.local.json` whole, its keys in another order, and adds the
+    # allow rule a "don't ask again" answer grants. `detach` takes out the rule its ledger names
+    # and leaves Claude Code's.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    rewritten = {
+        "enabledPlugins": {"superpowers@claude-plugins-official": True},
+        "permissions": {"allow": ["Bash(git tag *)", RULE]},
+    }
+    (root / SETTINGS).write_text(json.dumps(rewritten, indent=4), encoding="utf-8")
+    removed = _detach(root, machine, home)
+    assert removed.allow_removed == (RULE,)
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert document["permissions"]["allow"] == ["Bash(git tag *)"]
 
 
 def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) -> None:
@@ -97,7 +347,7 @@ def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) 
     initialised = snapshot(root)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert_snapshot_changed(root, initialised)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, initialised)
@@ -118,7 +368,7 @@ def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
         json.dumps({"permissions": {"allow": ["Bash(rm:*)"]}}), encoding="utf-8"
     )
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     assert document["permissions"]["allow"] == ["Bash(rm:*)"]
@@ -136,7 +386,7 @@ def test_detach_leaves_a_hook_entry_that_was_never_marked(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     commands = [e["command"] for g in document["hooks"]["SessionStart"] for e in g["hooks"]]
@@ -150,7 +400,7 @@ def test_detach_without_a_ledger_says_so_and_changes_nothing(tmp_path: Path) -> 
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     (root / LEDGER).unlink()
     before = snapshot(root)
     # As in `test_a_mismatched_remote_refuses_and_writes_nothing`: `snapshot` is a walk and an
@@ -661,7 +911,7 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
@@ -679,7 +929,7 @@ def test_the_git_failure_is_reached_on_a_run_that_would_have_withdrawn(tmp_path:
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     before = snapshot(root)
     assert before
     removed = _detach(root, machine, home)
@@ -718,7 +968,7 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
     before = _directories(root)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # The walk the comparison below rests on, asserted non-empty before it is trusted: an
     # `rglob` that finds nothing would satisfy every equality in this case on its own.
     assert _directories(root) > before
@@ -739,7 +989,7 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
 
 
 def _detach_after_attach(root: Path, store: Path, machine: Path, home: Path) -> Detached:
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     return _detach(root, machine, home)
 
 
@@ -751,7 +1001,7 @@ def test_detach_keeps_a_directory_that_still_holds_something(tmp_path: Path) -> 
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     mine = root / ".codex" / "rules" / "zz-my-own.md"
     mine.write_text("# mine\n", encoding="utf-8")
     removed = _detach(root, machine, home)
@@ -788,7 +1038,7 @@ def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
     recorded["directories"] = ["src"]
     (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
@@ -808,7 +1058,7 @@ def test_a_home_that_is_not_there_refuses_above_every_withdrawal(tmp_path: Path)
     # `assert_snapshot_unchanged` reddens with the rule files already removed.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
-    _attach(root, store, machine, tmp_path / "home", confirmed=True)
+    _attach(root, store, machine, tmp_path / "home")
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal, match="never creates the home directory itself"):
@@ -816,187 +1066,6 @@ def test_a_home_that_is_not_there_refuses_above_every_withdrawal(tmp_path: Path)
     assert_snapshot_unchanged(root, before)
     assert (root / LEDGER).is_file()
     assert (root / ".codex" / "rules").is_dir()
-
-
-def test_a_gitignore_region_that_cannot_be_withdrawn_is_answered_before_anything_is(
-    tmp_path: Path,
-) -> None:
-    # The same shape as the `git` case above, one precondition over. `drop()` refuses a region
-    # opened twice — what a merge that kept both sides leaves — and it was asked *after* the
-    # settings withdrawal, the rule files and every link tree: rules gone, links gone, ledger
-    # still there, `doctor` still reporting the repository attached, and a second `detach`
-    # failing at the same line. The region is now read beside the ledger and `_checkouts`, so a
-    # broken one refuses above the first withdrawal.
-    #
-    # Mutation (`mutations/`'s "detach stops reading the ignore region before its first
-    # withdrawal"): the region is met only where it is written → the snapshot below changes.
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2], allow=(RULE,), hooks=True)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
-    begin, _end = markers(IGNORE_REGION, Style.HASH)
-    ignore = root / GITIGNORE
-    ignore.write_text(f"{begin}\n" + ignore.read_text(encoding="utf-8"), encoding="utf-8")
-    before = snapshot(root)
-    with pytest.raises(RegionError) as refused:
-        _detach(root, machine, home)
-    # The refusal names the file, as the exclude block's does. Mutation: `mutations/`'s "a
-    # doubled .gitignore region is refused without its file".
-    assert GITIGNORE in str(refused.value)
-    assert_snapshot_unchanged(root, before)
-    assert (root / LEDGER).is_file()
-    assert (root / "docs" / "memory" / "developer").is_symlink()
-
-
-def test_a_gitignore_past_the_read_cap_is_refused_by_detach_as_by_attach_and_removes_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `attach` reads `.gitignore` to the read cap, and `detach` read the same file whole: a
-    # `.gitignore` past the cap stopped an `attach` and was read to its end by the `detach` beside
-    # it. Both read it through `fsops.read_regular_text` now, and `detach` refuses it above the
-    # first withdrawal, naming the file as the project names it and never by the path it opened.
-    # The cap is lowered so the file is small. Mutation (oracle): `mutations/`'s "detach reads
-    # .gitignore with no bound" -> the region is withdrawn.
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    ignore = root / GITIGNORE
-    assert extract(ignore.read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH) is not None
-    limit = 16 * 1024
-    ignore.write_text(ignore.read_text(encoding="utf-8") + "#" * limit + "\n", encoding="utf-8")
-    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
-    before = snapshot(root)
-    with pytest.raises(Failure) as refused:
-        _detach(root, machine, home)
-    assert str(refused.value) == ".gitignore cannot be read (larger than this reader reads)"
-    assert_snapshot_unchanged(root, before)
-    assert (root / LEDGER).is_file()
-
-
-def test_a_whitespace_only_gitignore_survives_the_round_trip(tmp_path: Path) -> None:
-    # `docs/cli.md` promises the round trip is byte-for-byte, and the withdrawal removed the
-    # file whenever what remained was blank — so a `.gitignore` holding one newline before the
-    # attach was gone after the detach. Only a file the attach created is taken away.
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    (root / GITIGNORE).write_text("\n", encoding="utf-8")
-    before = snapshot(root)
-    _attach(root, store, machine, home)
-    _detach(root, machine, home)
-    assert_snapshot_unchanged(root, before)
-    assert (root / GITIGNORE).read_bytes() == b"\n"
-
-
-def test_a_region_init_recorded_survives_a_detach(tmp_path: Path) -> None:
-    """A region `init`'s footprint records is `init`'s: ownership decides, not last writer.
-
-    `stayfixed init` records the `stayfixed:ignore` region as a footprint artifact with exactly
-    the body `attach` writes — one spelling, imported rather than respelled, so neither command
-    can report the other's region as hand-edited. `attach`'s own write stays and is idempotent;
-    what changes is the withdrawal. A `detach` that dropped a region the manifest records would
-    take a line out of a *committed* file that `init` put there, and `upgrade` would then read
-    the footprint as hand-edited on a repository nobody edited.
-
-    The manifest is the authority because it is the only record of who wrote the region that
-    survives the region being written twice. There is no new ledger field: the attach ledger is
-    per-checkout and untracked, and the question "whose region is this" is answered for every
-    clone by the committed manifest.
-
-    Mutation: `mutations/`'s "detach withdraws a region the footprint owns".
-    """
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2])
-    (root / GITIGNORE).write_text(
-        "node_modules/\n" + upsert("", IGNORE_REGION, IGNORE_BODY, Style.HASH), encoding="utf-8"
-    )
-    Manifest(
-        {
-            "gitignore": Record(
-                "gitignore",
-                Kind.MANAGED_REGION,
-                Location.REPO,
-                GITIGNORE,
-                "gitignore",
-                "0.1.0",
-                digest(IGNORE_BODY),
-            )
-        }
-    ).write(root)
-    _attach(root, store, machine, tmp_path / "home", confirmed=True)
-    removed = _detach(root, machine, tmp_path / "home")
-    text = (root / GITIGNORE).read_text(encoding="utf-8")
-    assert removed.ignore_region_removed is False
-    assert text.startswith("node_modules/\n")
-    assert extract(text, IGNORE_REGION, Style.HASH) == IGNORE_BODY
-
-
-def _newer_format(manifest: Path, outside: Path) -> None:
-    manifest.write_text(json.dumps({"format": 99}), encoding="utf-8")
-
-
-def _not_utf8(manifest: Path, outside: Path) -> None:
-    manifest.write_bytes(b'{"a": "\xff"}')
-
-
-def _nested_past_the_stack(manifest: Path, outside: Path) -> None:
-    manifest.write_text(NESTED, encoding="utf-8")
-
-
-def _symlinked_out_of_the_root(manifest: Path, outside: Path) -> None:
-    outside.write_text("{}", encoding="utf-8")
-    manifest.symlink_to(outside)
-
-
-@pytest.mark.parametrize(
-    "commit",
-    [_newer_format, _not_utf8, _nested_past_the_stack, _symlinked_out_of_the_root],
-    ids=lambda commit: commit.__name__.lstrip("_"),
-)
-def test_a_manifest_a_clone_committed_cannot_block_the_withdrawal(
-    tmp_path: Path, commit: Callable[[Path, Path], None]
-) -> None:
-    """A repository may not disable the command that undoes an attach.
-
-    `.stayfixed/manifest.json` is **tracked** -- the ignore region covers `.stayfixed/local/` and
-    `.stayfixed/assessment.json` and nothing else -- so a clone commits whatever it likes there,
-    and `Manifest.read` refuses one that is unreadable, is not an object, or declares a `format`
-    past this stayfixed's. `attach` never reads the file, so a clone shipping `{"format": 99}`
-    attached cleanly, merged the owner's allow rules and hook entries, and then made `detach`
-    exit 2 on every run for ever: the ownership question is asked above every withdrawal, so
-    nothing was half-undone and nothing could ever be undone either.
-
-    Refusing with a better sentence is not the answer, because the act it would name is
-    "delete a tracked file out of somebody else's repository". An unreadable manifest is read
-    as no claim this command will act on and no claim it will act against: the region stays,
-    which is the conservative half, and the detach finishes. Everything else comes back, which
-    is what the settings file and the ledger assert here.
-
-    The first fix caught `ManifestError` alone, and a clone has three other ways to make the
-    read fail: bytes that are not UTF-8 (`UnicodeDecodeError`, a `ValueError` the reader did not
-    name), nesting deep enough to exhaust the parser's stack (`RecursionError`), and a manifest
-    committed as a symlink out of the root (`PathEscape`, raised before any byte is read). Each
-    one made the detach exit 2 exactly as `{"format": 99}` had.
-
-    Mutations: `mutations/`'s "an unreadable manifest blocks the detach again" and "a read
-    refusal lets undecodable bytes out as a crash again".
-    """
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2], allow=(RULE,), hooks=True)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
-    assert (root / LEDGER).is_file()
-    # Written after the attach, exactly as a clone's committed one is there before a later
-    # `detach` and never read by the run that wrote the ledger.
-    manifest = root / MANIFEST_PATH
-    manifest.parent.mkdir(parents=True, exist_ok=True)
-    commit(manifest, tmp_path / "outside.json")
-    removed = _detach(root, machine, home)
-    assert not (root / LEDGER).exists()
-    assert removed.allow_removed == (RULE,)
-    # The conservative half: ownership could not be established, so the block is left alone and
-    # the result says so rather than claiming a withdrawal it did not make.
-    assert removed.ignore_region_removed is False
-    assert extract((root / GITIGNORE).read_text(encoding="utf-8"), IGNORE_REGION, Style.HASH)
 
 
 def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harness_slug(
@@ -1011,11 +1080,11 @@ def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harne
     home = tmp_path / "home"
     before = _directories(root)
     assert not (root / "docs").exists()
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     resolved = resolve(root, _config(root, machine), machine=machine)
     assert resolved is not None
     record(resolved, _config(root, machine))
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     harness = harness_memory_path(root, home)
     exclude = root / ".git" / "info" / "exclude"
     # Non-vacuous: each of the three exists before the detach.
@@ -1031,12 +1100,9 @@ def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harne
 
 
 def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: Path) -> None:
-    # The settings file is a candidate for the exclude block only on a run that writes it, and
-    # the fallback key is written after the links. Whether it will be is decided before the
-    # first write (`write._fallback_possible`), so the run hides the file in its one block.
-    #
-    # Mutation: `mutations/`'s "attach decides the settings fallback only once it has
-    # written" reddens this through `check-ignore`.
+    # The fallback key is written after the links, into the settings file every run places and
+    # hides in its one block above the first write, since Claude Code writes the plugin's entry
+    # there too.
     from tests.attach.test_write import _check_ignore
 
     root, store, machine = _bound(tmp_path)
@@ -1052,7 +1118,7 @@ def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: P
     # Non-vacuous: the fallback was taken, so the file exists and is this run's.
     assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
     assert _check_ignore(root, SETTINGS)
-    # `.gitignore` shows, as it should: the fixture tracks it and the attach added its region.
+    # The block hides it, and `attach` wrote nothing into the fixture's tracked `.gitignore`.
     status = git(root, "status", "--porcelain", "--untracked-files=all")
     assert SETTINGS not in status
 
@@ -1073,36 +1139,12 @@ def _fallback_forced(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     return root, store, machine, home
 
 
-def test_a_fallback_that_would_write_through_a_symlinked_claude_is_skipped_with_a_note(
-    tmp_path: Path,
-) -> None:
-    # The fallback writes the settings file, and a `.claude` linked in from elsewhere is a layout
-    # the owner chose, not something to write through or refuse. So the fallback is not taken:
-    # the run goes through, writes nothing behind the link, and says what the harness link is
-    # missing and how to get it. Before, the write failed with an `OSError` after every earlier
-    # write; then, a refusal took the whole attach away from an ordinary layout.
-    #
-    # Mutation: `mutations/`'s "attach takes the fallback through a linked-in .claude".
-    from stayfixed.attach.write import FALLBACK_UNAVAILABLE
-
-    root, store, machine, home = _fallback_forced(tmp_path)
-    (tmp_path / "dotfiles-claude").mkdir()
-    (root / ".claude").symlink_to(tmp_path / "dotfiles-claude", target_is_directory=True)
-    attached = _attach(root, store, machine, home)
-    assert attached.notes == (FALLBACK_UNAVAILABLE,)
-    assert not attached.settings_written
-    assert list((tmp_path / "dotfiles-claude").iterdir()) == []
-    # Nothing to hide, so the block names no settings file.
-    exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
-    assert SETTINGS not in exclude
-
-
 def test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line(
     tmp_path: Path,
 ) -> None:
     # Every other path this run places is ignored already, so the only exclude line the run
-    # needs is the fallback's settings file. That need is known before the first write, and so
-    # is the refusal of a symlinked exclude file.
+    # needs is the settings file, which holds the fallback key. That need is known before the
+    # first write, and so is the refusal of a symlinked exclude file.
     root, store, machine, home = _fallback_forced(tmp_path)
     exclude = root / ".git" / "info" / "exclude"
     held = [
@@ -1122,78 +1164,6 @@ def test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_
     assert_snapshot_unchanged(overlay, overlay_files)
     assert elsewhere.read_bytes() == outside
     assert not (root / SETTINGS).exists()
-
-
-def test_a_first_attach_with_a_symlinked_exclude_that_hides_everything_attaches(
-    tmp_path: Path,
-) -> None:
-    # A real directory at the harness path, the harness's own, does not make a first attach need
-    # the fallback: no approval is recorded for a store that does not exist yet, so the gate
-    # cannot open and no settings file is written. A symlinked exclude file that already hides
-    # every path the run places is therefore never written, and never refused.
-    #
-    # Mutation: `mutations/`'s "a first attach treats the unapproved gate as possibly open":
-    # the settings file becomes a candidate, the exclude file must take a line, and its symlink
-    # is refused. (The linked-`.claude` case in `test_write.py` cannot see this guard: the
-    # fallback is off the table there for the link alone.)
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2])
-    home = tmp_path / "home"
-    harness_memory_path(root, home).mkdir(parents=True)
-    exclude = root / ".git" / "info" / "exclude"
-    elsewhere = tmp_path / "exclude-elsewhere"
-    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
-    # Everything the run places, and not the settings file: the run does not write it, so it is
-    # not a candidate, and nothing is left for the exclude file to take. The link tree is listed
-    # here too, beside the fixture's committed `.gitignore` line for it: the owner's own line
-    # hides it whatever that line says, so a path both hide needs no line of the block. (Asked
-    # which pattern decides, git names the `.gitignore`, which outranks the owner's file; read
-    # that way, the link tree needed a line and the symlinked file was refused.)
-    elsewhere.write_text(
-        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n.stayfixed/\n", encoding="utf-8"
-    )
-    exclude.unlink(missing_ok=True)
-    exclude.symlink_to(elsewhere)
-    outside = elsewhere.read_bytes()
-    attached = _attach(root, store, machine, home)
-    # Non-vacuous: the attach did run to the end and placed its tree.
-    assert attached.links.created
-    assert elsewhere.read_bytes() == outside
-    assert not (root / SETTINGS).exists()
-
-
-def test_a_tracked_settings_file_the_owners_symlinked_exclude_hides_does_not_refuse(
-    tmp_path: Path,
-) -> None:
-    # The owner's symlinked exclude file hides the whole footprint, and the repository tracks its
-    # own `.claude/settings.local.json`. git shows a tracked file whatever an exclude line says, so
-    # asking "does git show it?" gave it a line that hides nothing, and that line needed the
-    # symlinked file written, which is refused: an attach nothing had to write into the exclude
-    # file exited 2. Only what the owner's own two files leave visible gets a line.
-    #
-    # Mutation: `mutations/`'s "the exclude block also lists what git shows in spite of the
-    # owner's excludes".
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2], allow=(RULE,))
-    home = tmp_path / "home"
-    (root / ".claude").mkdir()
-    (root / SETTINGS).write_text("{}\n", encoding="utf-8")
-    git(root, "add", "-A")
-    git(root, "commit", "-qm", "the repository tracks its settings file")
-    exclude = root / ".git" / "info" / "exclude"
-    elsewhere = tmp_path / "exclude-elsewhere"
-    held = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
-    elsewhere.write_text(
-        held + f"/{DEFAULT_MEMORY}/\n/.codex/rules/\n/{SETTINGS}\n.stayfixed/\n", encoding="utf-8"
-    )
-    exclude.unlink(missing_ok=True)
-    exclude.symlink_to(elsewhere)
-    outside = elsewhere.read_bytes()
-    attached = _attach(root, store, machine, home, confirmed=True)
-    # Non-vacuous: the run wrote the tracked settings file, so it was a candidate for the block.
-    assert attached.settings_written
-    assert RULE in (root / SETTINGS).read_text(encoding="utf-8")
-    assert elsewhere.read_bytes() == outside
 
 
 # --- the exclude block is shared by every checkout, and is taken back exactly ----------------
@@ -1218,8 +1188,8 @@ def test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs(
     home = tmp_path / "home"
     side = tmp_path / "side"
     git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    _attach(root, store, machine, home, confirmed=True)
-    _attach(side, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
+    _attach(side, store, machine, home)
     # Non-vacuous: the worktree is attached, with files of its own for the block to hide.
     assert (side / LEDGER).is_file()
     assert (side / SETTINGS).is_file() and (side / ".codex" / "rules" / "common.rules").is_file()
@@ -1246,7 +1216,7 @@ def test_an_exclude_file_attach_created_is_removed_by_detach(tmp_path: Path) -> 
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     _exclude_file(root).unlink(missing_ok=True)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach did create the file for its block.
     assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
     _detach(root, machine, home)
@@ -1259,7 +1229,7 @@ def test_an_exclude_file_that_was_there_and_empty_stays_there_and_empty(tmp_path
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     _exclude_file(root).write_bytes(b"")
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
     _detach(root, machine, home)
     assert _exclude_file(root).read_bytes() == b""
@@ -1279,7 +1249,7 @@ def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
     home = tmp_path / "home"
     held = f"# the owner's{ending}/owner-only".encode()
     _exclude_file(root).write_bytes(held)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach wrote its block after a line it had to end.
     assert (
         _exclude_file(root)
@@ -1288,7 +1258,7 @@ def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
     )
     # A second attach that rewrites the block carries the record along.
     _grant(store.parents[2], allow=(RULE, "Bash(ls:*)"))
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     assert _exclude_file(root).read_bytes() == held
 
@@ -1300,7 +1270,7 @@ def test_a_line_the_owner_added_after_the_block_keeps_its_line_ending(tmp_path: 
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     _exclude_file(root).write_bytes(b"/owner-only")
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     with _exclude_file(root).open("a", encoding="utf-8") as stream:
         stream.write("/added-later\n")
     _detach(root, machine, home)
@@ -1320,7 +1290,7 @@ def test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach(
     home = tmp_path / "home"
     held = "# propriété de l'équipe\n/owner-only\n".encode("latin-1")
     _exclude_file(root).write_bytes(held)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     written = _exclude_file(root).read_bytes()
     assert written.startswith(held)
     assert b"# stayfixed:attach:begin" in written
@@ -1364,7 +1334,7 @@ def test_an_empty_docs_directory_the_owner_had_survives_the_round_trip(tmp_path:
     home = tmp_path / "home"
     parent = root / PurePosixPath(DEFAULT_MEMORY).parts[0]
     parent.mkdir()
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach built its tree below it, so the detach had an empty `docs/` to take.
     assert (root / DEFAULT_MEMORY).is_dir()
     _detach(root, machine, home)
@@ -1382,9 +1352,9 @@ def test_an_empty_memory_directory_the_owner_had_survives_the_round_trip(tmp_pat
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     (root / DEFAULT_MEMORY).mkdir(parents=True)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # A second attach finds the directory there, and must not forget whose it is.
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert (root / DEFAULT_MEMORY / "MEMORY.md").is_symlink()
     _detach(root, machine, home)
     assert (root / DEFAULT_MEMORY).is_dir()
@@ -1398,7 +1368,7 @@ def _withdrawable(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert (root / SETTINGS).is_file()
     return root, store, machine, home
 
@@ -1549,7 +1519,7 @@ def test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern
     _exclude_file(root).write_bytes(held)
     (root / "zz").write_text("mine\n", encoding="utf-8")
     assert "zz" not in git(root, "status", "--porcelain")
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert "zz" not in git(root, "status", "--porcelain")
     _detach(root, machine, home)
     assert _exclude_file(root).read_bytes() == held
@@ -1570,7 +1540,7 @@ def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     side = tmp_path / "side"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     if kind == "committed":
         git(root, "add", "-f", LEDGER)
         git(root, "commit", "-qm", "a ledger somebody committed")
@@ -1598,7 +1568,7 @@ def test_an_info_directory_attach_created_is_removed_by_detach(tmp_path: Path) -
     home = tmp_path / "home"
     info = _exclude_file(root).parent
     shutil.rmtree(info)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach did create the directory for its block.
     assert _exclude_file(root).is_file()
     _detach(root, machine, home)
@@ -1614,7 +1584,7 @@ def test_an_info_directory_the_owner_had_survives_detach(tmp_path: Path) -> None
     info = _exclude_file(root).parent
     _exclude_file(root).unlink()
     assert info.is_dir() and not any(info.iterdir())
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     assert info.is_dir()
 
@@ -1667,25 +1637,22 @@ def test_a_rule_copy_that_is_itself_a_symlink_is_withdrawn(tmp_path: Path) -> No
     assert mine.is_file()
 
 
-def test_a_linked_claude_directory_attach_never_wrote_into_does_not_stop_detach(
-    tmp_path: Path,
-) -> None:
-    # A `.claude` kept elsewhere and linked in is an ordinary layout, and an overlay that grants
-    # nothing gives `attach` nothing to write there. `detach` rewrote the settings file whether or
-    # not it held anything of stayfixed's, so the same layout that attached cleanly could not be
-    # detached. A file with nothing to withdraw is not written at all.
+def test_a_settings_file_detach_withdraws_nothing_from_is_not_rewritten(tmp_path: Path) -> None:
+    # An overlay that grants nothing gives `attach` nothing to write into the settings file, and
+    # `detach` then has nothing to take back out of it. Rewritten anyway, the file came back in
+    # another layout, a change to somebody's file the round trip promises not to make, and under
+    # the plugin's own entry Claude Code keeps there. A file with nothing to withdraw is not
+    # written at all.
     #
     # Mutation: `mutations/`'s "detach rewrites a settings file it withdraws nothing from".
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
-    dotfiles = tmp_path / "dotfiles-claude"
-    dotfiles.mkdir()
-    (dotfiles / "settings.local.json").write_text('{"theme": "dark"}', encoding="utf-8")
-    (root / ".claude").symlink_to(dotfiles, target_is_directory=True)
-    _attach(root, store, machine, home, confirmed=True)
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
-    assert (dotfiles / "settings.local.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
+    assert (root / SETTINGS).read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert not (root / LEDGER).exists()
 
 

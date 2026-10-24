@@ -120,16 +120,19 @@ command writes those paths and no others: a change that makes a command write so
 names the path there in the same commit. `stayfixed hook`, which is internal, is held to the same
 rule: its paragraph names what it keeps inside the one directory stayfixed owns under the data
 root the harness hands it (`${CLAUDE_PLUGIN_DATA}/stayfixed/`, which `src/stayfixed/hooks/sink.py`
-writes), and the one handler that writes outside it.
+writes), and the handlers that write outside it.
 
 Removal is held tighter. Every file or directory stayfixed removes is one it names before it looks —
 a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
 a directory above a file the same run removed — and none is found by listing a directory and
-removing what the listing returned, with two exceptions, each inside a directory only stayfixed
+removing what the listing returned, with three exceptions, each inside a directory only stayfixed
 writes. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
-prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. And `stayfixed uninstall` walks
+prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. `stayfixed uninstall` walks
 `.stayfixed/local/artifacts/` and removes the directories it finds there that are empty, because
-that tree holds nothing but the local artifacts the same run just removed. Both go through `fsops`,
+that tree holds nothing but the local artifacts the same run just removed. And `stayfixed detach`
+removes the render directory `$HOME/.local/share/stayfixed/delivery/<id>/` whole, as `attach` does
+the one its new render replaces, a directory named by the binding id and never by the ledger, which
+only `attach` writes into. Both go through `fsops`,
 as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 
@@ -272,18 +275,7 @@ too, since Python runs each package's `__init__.py` first.
   `Contribution` of `(name, check)` pairs, and one that contributes a name already in the report — a
   core check's, an earlier area's, or another of its own, since a check's name is unique in the
   report — each puts one red row named after the area where its rows would have been (numbered,
-  `<area> (2)`, when the report already has that name), and the rest of the report stands. The
-  area's claims (below) go with its rows, so `hook-entries` reads every entry that area put into
-  settings files as one nothing records, and goes red too when there is one. A `Contribution` may
-  also carry `claims`, which answers `Claims`: the marker ids the area recorded in settings files
-  and the commands it still grants there, each under the event and the matcher it grants it under,
-  which the core's `hook-entries` row asks with the same `Context`, so an entry the area put there
-  is told apart from a repository claiming it did. The record may be repository bytes and the grants
-  may not, and an entry is absolved only by an area that both records its id and grants its command
-  where the entry sits, never by one area's record and another's grant. `Claims` also carries the
-  area's `Wording`, the phrases the row tells its record, its source and their remedies in, so the
-  core names no area's files or commands of its own; they are printed verbatim, so they are
-  stayfixed's own fixed strings and never built from repository bytes.
+  `<area> (2)`, when the report already has that name), and the rest of the report stands.
   `register()` is called once per report, so anything it creates for its checks — an area that
   reads the note store creates a value that resolves it at most once — is fresh for every report.
   What the core owns and several areas read is on the `Context` instead: `Context.overlay_root`,

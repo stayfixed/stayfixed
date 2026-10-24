@@ -16,8 +16,8 @@ that harness's evidence when it arrives.
 A value also states its reach: for each enforcement surface stayfixed has (`Surface`), the tier at
 which that surface holds under this harness (`Tier`), or `None` where no tier is claimed there, and
 the evidence each rests on: what was observed, on which version, and where its record is. The
-README's table of what each agent enforces is held equal to these values by a test, and `doctor`'s
-`codex-hooks` row reads them, so a measurement that moves a tier is one edit here.
+README's table of what each agent enforces is held equal to these values by a test, so a
+measurement that moves a tier is one edit here.
 
 A new harness is a value with a positive `detects`, its project-root and plugin-root variables,
 its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, its
@@ -42,11 +42,15 @@ package that names a harness is pardoned there, each pardon by one of these item
 - `doctor` runs the wrapper for its `wrapper` row under `CLAUDE`'s two root variables whichever
   harness is in use, with every variable under Claude Code's and Codex's prefixes taken out of its
   environment first; names `CLAUDE_PLUGIN_ROOT` in the remedy of the rows that find no plugin
-  root and `${CLAUDE_PLUGIN_DATA}` in the `diagnostics` row's; and reads `CODEX` by name in its
-  `codex-hooks` row.
+  root and `${CLAUDE_PLUGIN_DATA}` in the `diagnostics` row's; and names Codex in the `cli-path`
+  row's sentence on what it does not substitute.
 - `setup` installs the plugin through each harness's own command-line verbs,
   `_MARKETPLACE_ADD` and `_PLUGIN_INSTALL` in `setup/run.py`, keyed by harness name, so another
   harness is another entry in each.
+- `attach` renders the overlay's hooks, skills and agents as a Claude Code plugin and installs it
+  with Claude Code's verbs, `PLUGIN_MARKETPLACE_ADD_LOCAL` and `PLUGIN_INSTALL_LOCAL` in
+  `attach.render`, and `detach` withdraws it with `PLUGIN_UNINSTALL_LOCAL` and
+  `PLUGIN_MARKETPLACE_REMOVE` beside them, so another harness is another render and other verbs.
 - `init` renders `CLAUDE.md`, Claude Code's pointer to `AGENTS.md`, whatever `[stayfixed] agents`
   lists (`project.templates`, from the template `claude.md`): a project that lists Codex alone
   gets it too.
@@ -128,8 +132,8 @@ class Tier(StrEnum):
 class Reach:
     """One surface under one harness."""
 
-    # `None`: no tier is claimed for the surface under this harness, which the README's table and
-    # `doctor`'s `codex-hooks` row print as "not verified".
+    # `None`: no tier is claimed for the surface under this harness, which the README's table
+    # prints as "not verified".
     tier: Tier | None
     # The observation the tier rests on and where its record is: a public record, named, or, for a
     # measurement whose record is not in this repository, the date it was made and that it is not

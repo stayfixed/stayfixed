@@ -89,10 +89,8 @@ Out of scope:
   agent's own writes, and Claude Code loads the first as instructions and can load the second,
   through an import or its project instructions setting (read in the documentation, not
   measured).
-  `stayfixed trust approve` refuses when standard input is not a terminal. Claude Code 2.1.296's
-  shell tool gave a command none, measured in a terminal session and on the desktop app's Code
-  tab; no other harness, Codex among them, was measured. The check slows a bare call and
-  guarantees nothing against an agent that can open a pseudo-terminal.
+  `stayfixed trust approve` asks for no terminal: against such an agent a terminal check only
+  slowed a bare call, and an agent that opened a pseudo-terminal passed it.
 - A repository being able to make stayfixed **refuse** — suppressing memory. Undesirable, and an
   ordinary bug, but not a vulnerability: the trust gate fails closed on purpose.
 - Findings in a dependency that stayfixed does not reach; it has no runtime dependencies.

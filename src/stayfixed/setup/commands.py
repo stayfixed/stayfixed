@@ -15,12 +15,6 @@ real paths, exactly as `--root` defaults to the current directory elsewhere in t
 the sandbox settings that keep an agent's shell out of the trust record's directory, which are the
 harness's to enforce and the person's to set (`trust.boundary` says why stayfixed sets none of
 them), so it runs alone.
-
-`--machine` is **not** gated behind an interactive shell here, unlike `attach`/`detach`'s. That
-gate is about a flag that decides which overlay a *read* trusts; `setup` is the command that
-*writes* the machine file in the first place, so gating its own `--machine` would refuse the
-very thing this command exists to do, on every non-interactive run — including every scripted
-check of the CLI's exit codes. Scoped to `attach`/`detach` on purpose, and left there.
 """
 
 from __future__ import annotations

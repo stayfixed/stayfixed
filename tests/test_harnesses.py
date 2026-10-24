@@ -227,9 +227,8 @@ def test_the_decision_check_finds_a_decision_in_either_shape() -> None:
 
 
 def test_every_harness_states_every_surface() -> None:
-    # The README's table and `doctor`'s `codex-hooks` row both read a harness's reach, and a
-    # surface a value leaves out is one neither can say anything true about: the table would
-    # lose a cell and the row would stop naming what is not verified. Mutation (declared, on
+    # The README's table reads a harness's reach, and a surface a value leaves out is one it can
+    # say nothing true about: the table would lose a cell. Mutation (declared, on
     # `harnesses`): drop the session-notices row from Codex's reach -> this reddens.
     for harness in HARNESSES:
         assert set(harness.reach) == set(Surface), harness.name
@@ -281,6 +280,10 @@ _HARNESS_MENTION = re.compile(
 LISTED = {
     ("src/stayfixed/setup/run.py", "claude"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
     ("src/stayfixed/setup/run.py", "codex"): (4, "`_MARKETPLACE_ADD` and `_PLUGIN_INSTALL`"),
+    ("src/stayfixed/attach/render.py", "claude"): (
+        6,
+        "`PLUGIN_MARKETPLACE_ADD_LOCAL` and `PLUGIN_INSTALL_LOCAL`",
+    ),
     ("src/stayfixed/project/templates.py", "claude"): (5, "`init` renders `CLAUDE.md`"),
     ("src/stayfixed/project/layout.py", "claude"): (1, "from the template `claude.md`"),
     ("src/stayfixed/overlay/layout.py", "claude"): (3, "(`overlay.layout`"),
@@ -296,7 +299,7 @@ LISTED = {
         "(`attach.permissions`, `attach.write`)",
     ),
     ("src/stayfixed/attach/permissions.py", "codex"): (2, "(`attach.permissions`, `attach.write`)"),
-    ("src/stayfixed/attach/write.py", "claude"): (3, "(`attach.permissions`, `attach.write`)"),
+    ("src/stayfixed/attach/write.py", "claude"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/attach/write.py", "codex"): (4, "(`attach.permissions`, `attach.write`)"),
     ("src/stayfixed/hooks/api.py", "claude"): (1, "`hooks.api.DATA_ROOT_VARIABLES`"),
     ("src/stayfixed/hooks/api.py", "plugin_data"): (2, "`hooks.api.DATA_ROOT_VARIABLES`"),
@@ -304,7 +307,7 @@ LISTED = {
         3,
         "every variable under Claude Code's and Codex's",
     ),
-    ("src/stayfixed/doctor/checks.py", "codex"): (4, "reads `CODEX` by name in its"),
+    ("src/stayfixed/doctor/checks.py", "codex"): (1, "names Codex in the `cli-path`"),
     ("src/stayfixed/doctor/checks.py", "plugin_root"): (
         1,
         "names `CLAUDE_PLUGIN_ROOT` in the remedy",
@@ -317,9 +320,6 @@ PROSE = {
     # Messages naming the Codex rule files `attach` places, and `--check` would place.
     ("src/stayfixed/attach/check.py", "codex"): 1,
     ("src/stayfixed/attach/commands.py", "codex"): 2,
-    # The `hook-entries` remedies, which name the harness that runs a skill's hooks and the
-    # directories to look through.
-    ("src/stayfixed/doctor/entries.py", "claude"): 2,
     # The refusal for a `.claude` the link walk cannot go through.
     ("src/stayfixed/memory/worktree.py", "claude"): 1,
     # The session's line for the same `.claude`, when it costs a worktree its harness link.

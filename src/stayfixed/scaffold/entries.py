@@ -18,9 +18,8 @@ again. `unmarked()` is that check, and `mark()` is what a caller is supposed to 
 
 from __future__ import annotations
 
-import json
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -214,42 +213,11 @@ def owned_ids(document: str) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class Placed:
-    """One hook entry where a harness reads it: its event, its group's matcher, its command, and
-    the whole entry.
+    """One hook entry where a harness reads it, by its command: the marker is read off it, and it
+    is the one field `doctor` and `assess` read. Never printed: a command is bytes a repository
+    chose."""
 
-    Each decides what the entry does: the event is when the harness runs it and the matcher is for
-    which tools, so one entry under another event or matcher is another hook; and every field of
-    the entry besides its command says what the harness does with it -- an entry of `type`
-    `http` posts the event's input to its `url` and ignores `command`, and `args`, `shell` or
-    `async` change what runs, or when. That is why `doctor` compares a grant as a `Placed` and
-    never as a command alone: a repository that hung a granted command somewhere it was not
-    granted, or inside an entry that does something else, would otherwise be vouched for.
-    `command` is kept beside the whole because the marker is read off it.
-
-    `matcher` is `None` for a group with no matcher, and otherwise the matcher as JSON text, with
-    each integer in it as its text, as `_read_entries` reads it: a string and anything else a
-    clone may commit there are each one value, and a matcher that is absent stays apart from one
-    that is empty or `*`, which a harness may read alike — this says where the entry *is*, and
-    never guesses what a harness makes of it. `entry` is the entry as JSON text by the same rule,
-    with its keys sorted, so the order a file spells them in changes nothing and any field it adds,
-    drops or changes does. One difference the rule cannot see: an integer and the string of its
-    digits read alike, so a `"timeout": "30"` equals a granted `30`. That is benign, because it
-    vouches for no entry that runs anything the grant does not: the command, the `type` and every
-    other field still have to match, and a timeout is how long, not what. Never printed: an event,
-    a matcher and an entry are bytes a repository chose.
-    """
-
-    event: str
-    matcher: str | None
     command: str
-    entry: str
-
-
-def _matcher(group: dict[str, Any]) -> str | None:
-    """A group's matcher as `Placed` holds it."""
-    if "matcher" not in group:
-        return None
-    return json.dumps(group["matcher"], sort_keys=True)
 
 
 def placed_entries(document: str) -> list[Placed]:
@@ -263,25 +231,14 @@ def placed_entries(document: str) -> list[Placed]:
     is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
     refuses, read by the same walk.
     """
-    return [_placed(event, group, entry) for event, group, entry in _read_entries(document)]
+    return [_placed(entry) for _, _, entry in _read_entries(document)]
 
 
-def _whole(entry: dict[str, Any]) -> str:
-    """An entry as `Placed.entry` holds it: JSON text with sorted keys, each integer as the walk
-    read it. Refused as `settings_text` refuses a document, where the encoder cannot follow the
-    entry or its text would pass the read cap: an entry the reader took meets neither, short of
-    one holding tens of megabytes of text outside ASCII, which the encoder escapes."""
-    return json_text(
-        entry, _DOCUMENT, error=EntriesError, limit=_past_parser(_DOCUMENT), sort_keys=True
-    )
-
-
-def _placed(event: str, group: dict[str, Any], entry: dict[str, Any]) -> Placed:
-    """One entry as `Placed` holds it: one place for every walk, so a grant read back through
-    `placed_entries` and an entry `live_entries` reads are compared in the same terms."""
+def _placed(entry: dict[str, Any]) -> Placed:
+    """One entry as `Placed` holds it: one place for every walk, so `placed_entries` and
+    `live_entries` read an entry in the same terms."""
     command = entry.get("command")
-    text = command if isinstance(command, str) else ""
-    return Placed(event, _matcher(group), text, _whole(entry))
+    return Placed(command if isinstance(command, str) else "")
 
 
 @dataclass(frozen=True)
@@ -348,7 +305,7 @@ def live_entries(document: str) -> Walked:
     found: list[tuple[int, Placed]] = []
     skipped: list[object] = []
     places = 0
-    for event, groups in _hooks_table(raw).items():
+    for groups in _hooks_table(raw).values():
         if not _admitted(groups, list, skipped):
             continue
         for group in groups:
@@ -362,7 +319,7 @@ def live_entries(document: str) -> Walked:
             for entry in entries:
                 places += 1
                 if _admitted(entry, dict, skipped):
-                    found.append((places, _placed(event, group, entry)))
+                    found.append((places, _placed(entry)))
     return Walked(tuple(found), places, bool(skipped), _claims_the_marker(skipped))
 
 
@@ -380,17 +337,6 @@ def judged_entries(document: str, *, lenient: bool) -> Walked:
         return live_entries(lenient_settings(document))
     placed = placed_entries(document)
     return Walked(tuple(enumerate(placed, start=1)), len(placed), partly=False, hidden=False)
-
-
-def wanted_placements(wanted: dict[str, list[dict[str, Any]]]) -> list[Placed]:
-    """Where `apply_entries` puts each entry of `wanted`, as `placed_entries` reads it back.
-
-    Read back through the document `apply_entries` would write and not off `wanted` itself,
-    because what a grant is compared with is what the walk reads out of a settings file: an
-    integer in a matcher or an entry, such as a `timeout`, is its text there, and a grant that kept
-    it a number would never equal the entry it installed. Refuses what `placed_entries` refuses.
-    """
-    return placed_entries(json.dumps({"hooks": wanted}))
 
 
 def owned(document: str) -> str:
@@ -415,8 +361,35 @@ def apply_entries(document: str, wanted: dict[str, list[dict[str, Any]]]) -> str
             hooks[event] = merged
         else:
             hooks.pop(event, None)
+    return _with_hooks(raw, hooks)
+
+
+def _with_hooks(raw: dict[str, Any], hooks: dict[str, Any]) -> str:
+    """`raw` written back with `hooks` as its hook table, and with none where it is empty."""
     if hooks:
         raw["hooks"] = hooks
     else:
         raw.pop("hooks", None)
     return settings_text(raw) + "\n"
+
+
+def withdraw_entries(document: str, recorded: Mapping[str, str]) -> str:
+    """The document without each entry `recorded` names: its marker id, under the event the record
+    gives it. Every other entry stays where it is, one claiming the marker that the record does not
+    name included, so a caller's record and never the marker alone decides what goes; a group left
+    with no entry is dropped, an event with no group, and `hooks` with no event. Read as strictly
+    as `apply_entries` reads, for the reason `_groups` gives."""
+    raw = settings_object(document)
+    hooks = dict(_hooks_table(raw))
+    for event in list(hooks):
+        groups = []
+        for group in _groups(raw, event):
+            entries = _entries_of(group)
+            kept = [entry for entry in entries if recorded.get(_claimed(entry) or "") != event]
+            if kept:
+                groups.append(group if len(kept) == len(entries) else {**group, "hooks": kept})
+        if groups:
+            hooks[event] = groups
+        else:
+            hooks.pop(event)
+    return _with_hooks(raw, hooks)

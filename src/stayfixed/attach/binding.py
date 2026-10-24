@@ -17,9 +17,15 @@ equivalent variables "is not a partial defence, it is a redirect with a longer n
 
 The third rule is a write and lives in `write.py`.
 
+**Whether a checkout is bound is this machine's answer, not the overlay's.** The binding is the id
+in the checkout's git common directory and the machine's record of it (`stayfixed.binding`); the
+overlay's `projects/<name>/project.toml` keeps the remote and the first attach's date for the
+owner to read, and decides nothing.
+
 **The two remotes on a `Binding` are repository-authored bytes** (principle 5), and nothing
-here puts either into a summary, a `Result.data` or a refusal message. What is computed *about*
-them — one of `memory.store.binding_state`'s four labels — is stayfixed's own and may be printed.
+here puts either into a refusal message or a `Result.data`. They reach a line only inside
+`note`, through `printed.quoted` (`memory.store.origin_note`). The state is one of
+`memory.store.binding_state`'s two labels, stayfixed's own, and may be printed.
 """
 
 from __future__ import annotations
@@ -30,27 +36,30 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stayfixed import fsops
+from stayfixed.binding import bound_project
 from stayfixed.config.loader import load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.reading import UNPARSEABLE, toml_position
-from stayfixed.config.schema import OVERLAY_MODE, Config
+from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import said
 from stayfixed.gitenv import origin_remote
 from stayfixed.memory.api import (
+    BOUND,
     PROJECT_RECORD,
     PROJECTS,
     STORE_DIR,
     binding_state,
     link_sources,
+    origin_note,
     permitted_roots,
     read_binding_record,
 )
 
 # The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
 # decides between them (`binding_state`): this module answered the same question with a copy of
-# its own that called a checkout with no `origin` a mismatch.
+# its own once, and the two came to disagree.
 # One sentence, said by both `binding_for` and `read_binding`: neither reads an overlay root
 # that was not recorded through `stayfixed setup`.
 NO_OVERLAY = (
@@ -85,19 +94,6 @@ MEMORY_GROUP_ESCAPES = (
 MEMORY_GROUP_UNASKED = (
     "a memory.groups entry's place under this project's paths.memory cannot be checked for a "
     "symlink ({fault}), so the entry is refused rather than counted"
-)
-
-
-# The first refusal `attach` owes, and `--check` with it. `worktree.attach_main` asks the same
-# question as the floor under this one, but it runs after every write `attach` makes: refused
-# there, a `local-only` project had `.gitignore`'s region, `.codex/rules/`, the settings merge,
-# the ledger and, in the overlay, `project.toml` and its group directories, and `doctor` then
-# read the ledger as "attached". `memory.mode` is one of the loader's enumerated values, so it
-# prints.
-NOT_OVERLAY = (
-    "memory.mode is {mode!r}, so this repository keeps its own note store and there is nothing "
-    f"in an overlay to bind it to; only a repository whose memory.mode is {OVERLAY_MODE!r} is "
-    "attached"
 )
 
 
@@ -281,21 +277,16 @@ def _too_long(path: Path) -> bool:
     return False
 
 
-def not_overlay(config: Config) -> str | None:
-    """The refusal a repository whose notes do not live in the overlay earns, or `None`: one
-    spelling for `attach`, which raises it, and `attach --check`, which reports it."""
-    if config.memory.mode == OVERLAY_MODE:
-        return None
-    return NOT_OVERLAY.format(mode=config.memory.mode)
-
-
 @dataclass(frozen=True)
 class Binding:
-    """What the overlay records about this repository, and what this repository says it is.
+    """Whether this machine binds this repository, and what the overlay and the checkout say.
 
     `remote` is this checkout's `origin` and `recorded` is what the overlay wrote down for
-    `project`; both are repository-authored and neither is safe to print. `state` is this
-    module's own answer and is.
+    `project`; both are repository-authored and neither is printed raw. `state` is this
+    module's own answer and prints. `note` is `memory.store.origin_note`'s, said beside the
+    state: the `origin` against the one the machine's record holds for a bound checkout, or the
+    overlay's record for one about to be bound, and `None` where it is that one or where nothing
+    is recorded to compare with.
     """
 
     project: str
@@ -304,17 +295,17 @@ class Binding:
     remote: str | None
     recorded: str | None
     state: str
+    note: str | None = None
+    # The project this machine's record binds the checkout to now, or `None` where it binds none.
+    bound: str | None = None
+    # Why the overlay's record could not be read, where it could not: it binds nothing, so this
+    # is said and stops nothing, and the record is compared with nothing and never written over.
+    fault: str | None = None
 
 
 class UnreadableRecord(Failure):
-    """The overlay's binding record for this project is there and cannot be read.
-
-    A `Failure`, so `attach`, `--check` and the session-start handler stop on it as on any other.
-    Its own class for the one caller that may not: `doctor`'s grant question, where the record is
-    the one `project.name` picks out of `projects/` -- a name the repository commits -- so a record
-    that cannot be read must not be able to turn that question into "could not be asked"
-    (`attach.doctor._granted_commands`).
-    """
+    """The overlay's binding record for this project is there and cannot be read: `_bound` says it
+    as the binding's `fault` and goes on, since the record binds nothing."""
 
 
 def _record(overlay: Path, project: str) -> Path:
@@ -322,13 +313,11 @@ def _record(overlay: Path, project: str) -> Path:
 
 
 def _recorded(overlay: Path, project: str) -> str | None:
-    """The remote the overlay bound to this project, or `None` when it has bound none.
+    """The remote the overlay recorded for this project, or `None` when it has recorded none.
 
-    A record that exists and cannot be read raises `UnreadableRecord` rather than answering `None`.
-    `memory.store._bound` answers "unreadable" for the same file, which is right for the hook
-    path — it degrades closed and says to repair the file, then run `stayfixed attach`. Here
-    "no record" is the state that invites a rebind, so a broken record has to stop the run
-    instead of quietly becoming a first attach.
+    A record that exists and cannot be read raises `UnreadableRecord` rather than answering `None`:
+    "no record" is the state in which `attach` writes one, so a broken record must not read as
+    that and be written over.
     """
     record = _record(overlay, project)
     # The shape and not the path: `record` embeds `project.name`, which is repository-authored
@@ -388,9 +377,17 @@ def _bound(root: Path, config: Config, overlay: Path) -> Binding:
     """
     project = config.project.name
     store = permitted_roots(overlay, project)[1]
-    recorded = _recorded(overlay, project)
+    try:
+        recorded, fault = _recorded(overlay, project), None
+    except UnreadableRecord as exc:
+        recorded, fault = None, str(exc)
     origin = origin_remote(root)
-    return Binding(project, overlay, store, origin, recorded, binding_state(recorded, origin))
+    found = bound_project(root)
+    state = binding_state(found, project)
+    against = found.origin if found is not None and state == BOUND else recorded
+    note = origin_note(against, origin) if state == BOUND or against is not None else None
+    earlier = found.project if found is not None else None
+    return Binding(project, overlay, store, origin, recorded, state, note, earlier, fault)
 
 
 def read_binding(

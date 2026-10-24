@@ -1,10 +1,8 @@
 """`stayfixed trust list | approve | revoke`: every approval on this machine, one command family.
 
-`approve` is asked of a person: it refuses with `NOT_A_TERMINAL` when standard input is not a
-terminal (`kinds.interactive`), before it reads anything a kind describes, and nothing takes
-`--yes`. That check slows an agent's bare call and guarantees nothing (`kinds`' docstring says
-why). `revoke` needs no terminal: withdrawing an approval is the direction that fails safe.
-`list` reads the record and writes nothing.
+`approve` records every subject of a kind at its digest now and prints what it recorded, asking
+for no terminal (`approving`' docstring says why), and nothing takes `--yes`. `revoke` needs no
+terminal either. `list` reads the record and writes nothing.
 """
 
 from __future__ import annotations
@@ -44,8 +42,8 @@ UNDESCRIBED = (
 
 
 def run_approve(args: argparse.Namespace) -> Result:
-    context, given = kind_context(args)
-    return approve_kind(args.kind, context, given)
+    context, _ = kind_context(args)
+    return approve_kind(args.kind, context)
 
 
 def run_list(args: argparse.Namespace) -> Result:

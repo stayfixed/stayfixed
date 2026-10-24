@@ -1240,17 +1240,16 @@ reddens = [
   "tests/memory/test_notes.py::test_a_note_named_in_bytes_that_are_not_utf_8_is_quarantined",
 ]
 
-# The hostile clone: the clone chooses `project.name`, it does not choose which remote the overlay
-# recorded under that name. Stop comparing and every clone declaring a real project's name reads as
-# bound.
+# A checkout this machine binds to one project is not bound to another its `stayfixed.toml` names
+# later: the name is the repository's, and a share it picks that the binding never named would
+# read another project's notes.
 [[mutation]]
-name = "attach stops comparing the recorded remote"
+name = "a checkout's binding reads a project it was not bound to"
 file = "src/stayfixed/memory/store.py"
-before = "    return BOUND if named is not None and named == _repository(origin) else MISMATCH"
-after = "    return BOUND"
+before = "    return BOUND if found is not None and found.project == project else UNBOUND"
+after = "    return BOUND if found is not None else UNBOUND"
 reddens = [
-  "tests/attach/test_binding.py::test_a_different_remote_is_a_mismatch_and_never_a_bind",
-  "tests/memory/test_store.py::test_a_clone_named_after_the_project_binds_only_as_the_recorded_repository[https://example.com/acme/other-False]",
+  "tests/memory/test_store.py::test_a_checkout_bound_to_another_project_reads_none_of_this_ones_notes",
 ]
 
 # `detach_main`'s own docstring: "only a symlink whose own target is this store is removed,
@@ -1547,16 +1546,6 @@ after = "    except tomllib.TOMLDecodeError as exc:"
 reddens = [
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_document_nested_past_the_parser_as_one_that_does_not_parse[trail]",
   "tests/config/test_deep_toml.py::test_a_reader_answers_a_number_past_the_parser_as_a_document_that_does_not_parse[trail]",
-]
-
-[[mutation]]
-name = "the binding check meets an overlay record nested past the parser as an internal error"
-file = "src/stayfixed/memory/store.py"
-before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
-after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
-reddens = [
-  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_deep_one[store-bound]",
-  "tests/config/test_deep_toml.py::test_a_reader_that_degrades_on_a_broken_record_degrades_on_a_long_number[store-bound]",
 ]
 
 # A `trail.toml` theme pattern is repository-authored, and `re` backtracks exponentially on some:
@@ -2203,17 +2192,6 @@ reddens = [
   "tests/memory/test_commands.py::test_the_store_named_by_its_overlay_path_is_the_store_the_link_tree_names",
 ]
 
-# The binding check answered one `False` for four causes, and one sentence for all of them. Folding
-# the missing record back into the mismatch's answer sends a first attach to `--trust-remote`.
-[[mutation]]
-name = "the binding check answers a missing record with the mismatch's way out"
-file = "src/stayfixed/memory/store.py"
-before = "_UNBOUND_CAUSES = {UNBOUND: NO_RECORD, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}"
-after = "_UNBOUND_CAUSES = {UNBOUND: REMOTE_MISMATCH, NO_ORIGIN: NO_REMOTE, MISMATCH: REMOTE_MISMATCH}"
-reddens = [
-  "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[no-record]",
-]
-
 # A command with no store to walk says why in the resolver's own sentence, and a missing store
 # directory -- the commonest cause -- had none, so the line fell back to a pointer that named no
 # reason at all.
@@ -2248,25 +2226,6 @@ before = "        if not fsops.is_dir(overlay):"
 after = "        if False:"
 reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
-]
-
-# A checkout with no `origin` was classified twice, and `attach.binding`'s copy called it a
-# mismatch: `attach`, `--check` and `doctor` pointed at `--trust-remote`, which then refused for
-# the missing `origin`, while the memory commands said to add it.
-[[mutation]]
-name = "the binding classifier reads a missing origin as a different remote"
-file = "src/stayfixed/memory/store.py"
-before = """    if origin is None:
-        return NO_ORIGIN
-    if recorded is None:
-        return UNBOUND"""
-after = """    if recorded is None:
-        return UNBOUND
-    if origin is None:
-        return MISMATCH"""
-reddens = [
-  "tests/test_binding_answers.py::test_a_checkout_with_no_origin_hears_one_cause_and_one_way_out_everywhere",
-  "tests/attach/test_binding.py::test_a_repository_with_no_origin_remote_is_its_own_state_and_not_a_machine_fault",
 ]
 
 # The index `attach` renders rewrites a file the store's approval covers; without carrying the
@@ -3121,66 +3080,6 @@ before = "    if any(_unlink(home_root, harness_relative, target) for target in 
 after = "    if any(_unlink(home_root, harness_relative, target) for target in targets[:1]):"
 reddens = ["tests/memory/test_worktree.py::test_a_harness_link_to_either_target_is_withdrawn"]
 
-# The binding classifier holds the three transport spellings of one repository equal, and holds
-# nothing else equal: a record made over ssh binds a clone made over https, and a different owner,
-# repository, host or case off github.com is still a different remote.
-[[mutation]]
-name = "a remote binds only the URL the overlay recorded byte for byte"
-file = "src/stayfixed/memory/store.py"
-before = "    return BOUND if named is not None and named == _repository(origin) else MISMATCH"
-after = "    return MISMATCH"
-reddens = [
-  "tests/attach/test_write.py::test_the_same_repository_under_another_url_form_attaches_and_keeps_its_record",
-  "tests/attach/test_doctor.py::test_an_owners_checkout_cloned_over_https_is_bound_by_a_record_made_over_ssh",
-]
-
-[[mutation]]
-name = "a remote binds any other remote neither side's shape is read in"
-file = "src/stayfixed/memory/store.py"
-before = "    return BOUND if named is not None and named == _repository(origin) else MISMATCH"
-after = "    return BOUND if named == _repository(origin) else MISMATCH"
-reddens = [
-  "tests/memory/test_remote_binding.py::test_a_different_repository_is_still_a_mismatch[unread-paths]",
-]
-
-[[mutation]]
-name = "a remote's path is compared without its case on every host"
-file = "src/stayfixed/memory/store.py"
-before = "    return host, path.lower() if host in _CASELESS_PATHS else path"
-after = "    return host, path.lower()"
-reddens = [
-  "tests/memory/test_remote_binding.py::test_a_different_repository_is_still_a_mismatch[path-case-off-github]",
-]
-
-[[mutation]]
-name = "a remote's host is compared with its case"
-file = "src/stayfixed/memory/store.py"
-before = "    host = host.lower()\n"
-after = ""
-reddens = [
-  "tests/memory/test_remote_binding.py::test_case_folds_where_the_server_ignores_it[host-case]",
-]
-
-[[mutation]]
-name = "a remote's dot segments are compared across transports"
-file = "src/stayfixed/memory/store.py"
-before = '    return part.strip(".") != "" and set(part) <= _NAMED'
-after = '    return part != "" and set(part) <= _NAMED'
-reddens = [
-  "tests/memory/test_remote_binding.py::test_a_different_repository_is_still_a_mismatch[dot-segments]",
-]
-
-# In the block led by `mutations/`'s "a remote binds only the URL the overlay recorded byte for
-# byte": the exact comparison stays underneath the transport rule.
-[[mutation]]
-name = "a remote outside the three spellings stops binding the record that names it exactly"
-file = "src/stayfixed/memory/store.py"
-before = "    if recorded == origin:\n        return BOUND\n"
-after = ""
-reddens = [
-  "tests/memory/test_remote_binding.py::test_a_url_still_binds_itself_whatever_its_shape[unread-path]",
-]
-
 # The worktree link is about the project. Its broad backstop answers nothing for an exception, so a
 # check dropped for `None` stays silent all the same; what a test can catch is the check turned
 # round, which silences the link on a real file.
@@ -3286,14 +3185,13 @@ before = "    if DELIMITER in text:\n        raise UnsafeNote("
 after = "    if False:\n        raise UnsafeNote("
 reddens = ["tests/memory/test_trust.py::test_a_body_that_forges_the_marker_is_refused"]
 
-# The old spelling runs the same approve path, terminal check included, and never records on its
-# own.
+# The old spelling runs the same approve path, and never records on its own.
 [[mutation]]
-name = "the memory trust alias asks no terminal"
+name = "the memory trust alias records without the approve path"
 file = "src/stayfixed/memory/commands.py"
-before = "    approved = approve_kind(trust.MEMORY, context, given)"
+before = "    approved = approve_kind(trust.MEMORY, context)"
 after = '    trust.record(*_store(args))\n    return Result("recorded")'
-reddens = ["tests/trust/test_commands.py::test_no_terminal_no_approval[memory-trust]"]
+reddens = ["tests/trust/test_commands.py::test_an_approval_with_no_terminal_records_and_prints_what_it_recorded[memory-trust]"]
 
 # For as long as the old spelling lives, its `--json` keeps its old keys, each read off the new run.
 [[mutation]]
@@ -3939,3 +3837,11 @@ file = "src/stayfixed/ledger/index.py"
 before = '        parts.append(f"\n## {section.heading} ({len(selected)})\n\n")'
 after = '        parts.append(f"\n## {section.heading}\n\n")'
 reddens = ["tests/ledger/test_literals.py::test_the_index_is_the_one_it_rendered"]
+
+# The origin note names both remotes; a token in either one's userinfo is taken out before it does.
+[[mutation]]
+name = "the origin note names a remote's credentials"
+file = "src/stayfixed/memory/store.py"
+before = "        origin=NO_REMOTE_SAID if origin is None else quoted(without_userinfo(origin)),"
+after = "        origin=NO_REMOTE_SAID if origin is None else quoted(origin),"
+reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]

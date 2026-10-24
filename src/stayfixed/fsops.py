@@ -641,13 +641,20 @@ def _sync_directory(dir_fd: int) -> None:
 
 
 def write_atomically_at(
-    dir_fd: int, name: str, text: str, *, encoding: str = "utf-8", errors: str = "strict"
+    dir_fd: int,
+    name: str,
+    text: str,
+    *,
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    mode: int | None = None,
 ) -> None:
-    """Replace `name` inside the already-opened directory, keeping the mode it had.
+    """Replace `name` inside the already-opened directory, keeping the mode it had, or giving it
+    `mode` where the caller names one: a copy that keeps its source's mode.
 
     `errors` is the codec's: `surrogateescape` writes back the bytes a file was read with under
     the same handler, for a caller that must keep bytes that are not UTF-8 exactly."""
-    mode = _mode_of(dir_fd, name)
+    mode = _mode_of(dir_fd, name) if mode is None else mode
     temporary = f".stayfixed-{os.getpid()}-{name}.tmp"
     create = NEW_FILE_MODE if mode is None else 0o600
     handle = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, create, dir_fd=dir_fd)
@@ -759,11 +766,14 @@ def mkdirs_within(root: Path, target: str) -> None:
             os.mkdir(name, dir_fd=dir_fd)
 
 
-def write_within(root: Path, target: str, text: str, *, encoding: str = "utf-8") -> None:
-    """Create the parents and replace `root/target`, reaching it through the `O_NOFOLLOW` walk."""
+def write_within(
+    root: Path, target: str, text: str, *, encoding: str = "utf-8", mode: int | None = None
+) -> None:
+    """Create the parents and replace `root/target`, reaching it through the `O_NOFOLLOW` walk;
+    `mode` is `write_atomically_at`'s."""
     mkdirs_within(root, target)
     with open_within(root, target) as (dir_fd, name):
-        write_atomically_at(dir_fd, name, text, encoding=encoding)
+        write_atomically_at(dir_fd, name, text, encoding=encoding, mode=mode)
 
 
 def remove_within(root: Path, target: str) -> None:

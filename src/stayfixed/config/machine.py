@@ -30,19 +30,9 @@ from __future__ import annotations
 
 import os
 import pwd
-import sys
 from pathlib import Path
 
 DEFAULT_CONFIG_DIR = Path(".config")
-
-
-def override_is_honoured(interactive: bool | None = None) -> bool:
-    if interactive is not None:
-        return interactive
-    try:
-        return sys.stdin.isatty()
-    except (AttributeError, ValueError, OSError):
-        return False
 
 
 def passwd_home() -> Path | None:
