@@ -254,8 +254,6 @@ def run_session_context(args: argparse.Namespace) -> Result:
         # reports the binding and the store, and `hook SessionStart` says the binding once.
         missing = found[1].said == STORE_MISSING + BUILT_BY_ATTACH
         if missing and bundle is Bundle.STANDING_RULES and args.part == 1:
-            # A bound checkout whose composed store is gone: the harness reads no memory, so the
-            # session hears it once, the store named by its short id (`store.shown`).
             return Result(STORE_GONE.format(store=quoted(found[1].detail or "")))
         if found[1].said in _NOTHING_TO_DELIVER:
             return Result("")

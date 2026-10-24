@@ -3233,7 +3233,7 @@ reddens = [
 [[mutation]]
 name = "the index labels an unreviewed note outside a composed store"
 file = "src/stayfixed/memory/index.py"
-before = "    if on_this_machine(_destination(store, config)):"
+before = "    if stores_holding(_destination(store, config)) is not None:"
 after = "    if True:"
 reddens = [
   "tests/memory/test_index.py::test_an_in_repo_index_carries_no_label_another_machines_record_would_change",

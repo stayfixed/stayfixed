@@ -85,8 +85,9 @@ def composed_directory(id: str) -> Path:
     return data_directory() / STORES / id
 
 
-def _stores_holding(path: Path) -> Path | None:
-    """`<data>/stores/`, spelled or resolved, where `path` is in a composed store, else `None`."""
+def stores_holding(path: Path) -> Path | None:
+    """`<data>/stores/`, spelled or resolved, where `path` is in a composed store on this machine,
+    which no repository commits and no overlay shares; else `None`."""
     try:
         stores = data_directory() / STORES
     except Failure:
@@ -95,17 +96,11 @@ def _stores_holding(path: Path) -> Path | None:
     return next((base for base in held if path != base), None)
 
 
-def on_this_machine(path: Path) -> bool:
-    """Whether `path` is in a composed store, under this machine's data directory, which no
-    repository commits and no overlay shares."""
-    return _stores_holding(path) is not None
-
-
 def shown(path: Path) -> str:
     """`path` as every message names a store path: one under `<data>/stores/` with the binding id
     it names cut to its short form and an ellipsis (`binding.short`), since the whole id is the
     secret a clone would need and is never printed; any other path whole."""
-    base = _stores_holding(path)
+    base = stores_holding(path)
     if base is None:
         return str(path)
     id, *rest = path.relative_to(base).parts

@@ -34,7 +34,7 @@ from stayfixed.memory.notes import (
     write_note,
 )
 from stayfixed.memory.reviewed import UNREVIEWED, UNREVIEWED_LABEL, record, status
-from stayfixed.memory.store import Store, in_repository, on_this_machine, permitted_roots, shown
+from stayfixed.memory.store import Store, in_repository, permitted_roots, shown, stores_holding
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"
@@ -175,16 +175,10 @@ def index_source(store: Store, config: Config) -> Path | None:
 
 
 def _outside(path: Path | None) -> list[str]:
-    """The lines of the index `path` outside the region stayfixed renders: where the native writer
-    appends, from the file `index_source` said the index is. A file with no region holds no render
-    of stayfixed's, so every line of it is outside.
-
-    The harvest reads only these. Read back out of the region, the last render's line for a note
-    whose description was edited since was taken for the native writer's and written into the note.
-    Harvesting goes through the same target rule as injection, and for the same reason turned
-    around: `reconcile` writes what it finds here into each note's `index:` frontmatter, so an
-    index symlinked at another project's share would persist that project's text into this one's.
-    """
+    """The lines of the index `path` (`index_source`'s, the injection's target rule turned around)
+    outside the region stayfixed renders, where the native writer appends; all of a file with no
+    region. The harvest reads only these: read back out of the region, the last render's line for
+    an edited note was written into it as the native writer's."""
     if path is None or not fsops.is_file(path):
         return []
     try:
@@ -199,11 +193,6 @@ def _outside(path: Path | None) -> list[str]:
     return lines
 
 
-def _appended(outside: list[str]) -> dict[str, str]:
-    """What the second writer appended outside the rendered region, by the target it names."""
-    return {target: title for title, target in entries_in("\n".join(outside))}
-
-
 def _native(store: Store, outside: list[str]) -> list[str]:
     """The native writer's own pointer lines outside the rendered region: each line that links a
     topic file at the top of the store, outside every group, which the store still holds —
@@ -213,9 +202,7 @@ def _native(store: Store, outside: list[str]) -> list[str]:
     line in `MEMORY.md`; a store it wrote into holds them beside stayfixed's groups. They are not
     notes this area walks, so a render made of the groups alone took every one of those lines out
     of the index. A line whose file is gone names nothing and is not kept; a line naming a note is
-    harvested into it, and the render carries it from there. The lines come out of the file the
-    render is written back to (`_destination`), so nothing crosses from one trust domain to
-    another.
+    harvested into it, and the render carries it from there.
     """
     kept: list[str] = []
     for line in outside:
@@ -288,7 +275,7 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     """
     source = index_source(store, config)
     outside = _outside(source)
-    appended = _appended(outside)
+    appended = {target: title for title, target in entries_in("\n".join(outside))}
     to_machine = _to_machine(store, config)
     groups = config.memory.groups
     found = walk(store.path, [g for g in groups if g in store.groups])
@@ -415,22 +402,17 @@ def _extra(config: Config, store: Store) -> list[str]:
 
 
 def render_index(reconciled: Reconciliation, config: Config, store: Store) -> str:
-    """The rendered `MEMORY.md` text: stayfixed's render between `REGION_BEGIN` and `REGION_END`,
-    then the native writer's pointer lines outside it, where it appends. `memory.index_extra` is
-    held back where the destination reaches outside this repository (`_to_machine`), which happens
-    only in overlay mode.
-
-    An unreviewed note's line is labelled only in an index on this machine, a composed store's own
-    `MEMORY.md` under the data directory: the label follows this machine's trust record, and an
-    index a repository commits or the overlay shares would carry one machine's record to another.
-    """
+    """The rendered `MEMORY.md` text: the render between `REGION_BEGIN` and `REGION_END`, then the
+    native writer's pointer lines, where it appends; `memory.index_extra` held back where the
+    destination reaches outside this repository (`_to_machine`). An unreviewed note is labelled
+    only in a composed store's own index, since the label follows this machine's record."""
     to_machine = _to_machine(store, config)
     lines = [REGION_BEGIN, HEADER.rstrip("\n"), ""]
     by_group: dict[str, list[Note]] = {}
     for note in reconciled.notes:
         by_group.setdefault(note.group_name, []).append(note)
     unreviewed: set[Path] = set()
-    if on_this_machine(_destination(store, config)):
+    if stores_holding(_destination(store, config)) is not None:
         held = record(store)
         unreviewed = {n.path for n in reconciled.notes if status(store, n, held) == UNREVIEWED}
     for group in config.memory.groups:
