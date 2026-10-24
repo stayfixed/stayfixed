@@ -1207,14 +1207,6 @@ def attach(
     enumerated nowhere because it has no ordinal of its own; it is named here so that the count
     above reads as "five checks" rather than as "five ways this can refuse".
 
-    **All five checks are above every write, and two of them were not.** The ledger's lived in
-    `_write_ledger`, and the `memory.groups` one in `_prepare_store` — which runs after the
-    ignore region, the Codex rule files, the settings merge, the ledger *and* the binding. Each
-    could exit 2 having written four or five artifacts, with `doctor._attached` — which keys on
-    the ledger existing — then reporting the repository attached, and in the second case
-    *bound*, because the binding had been written too. A refusal that leaves a repository looking
-    attached is not a refusal.
-
     **Neither a missing `origin` nor one the records do not name refuses.** The binding is the id
     `stayfixed.binding` writes into the git common directory, which no clone carries, and the
     machine's record of it; the remote decides nothing, so it is a note (`NO_ORIGIN_NOTE`,
@@ -1633,8 +1625,7 @@ KNOWN_MARKETPLACES = "extraKnownMarketplaces"
 
 
 def _plugin_keys(main: Path) -> dict[str, tuple[str, ...]]:
-    """The names under each of the two keys in the main checkout's settings file: what Claude Code
-    holds for this machine's plugins there, which `detach` decides each call by."""
+    """The names under each of the two keys in the main checkout's settings file."""
     document = settings_document(local_document(main))
     return {
         key: tuple(document[key]) if isinstance(document.get(key), dict) else ()
@@ -1643,15 +1634,10 @@ def _plugin_keys(main: Path) -> dict[str, tuple[str, ...]]:
 
 
 def _withdraw_plugin(id: str, main: Path, held: dict[str, tuple[str, ...]], runner: Runner) -> None:
-    """Ask Claude Code to forget the plugin where `held` says the main checkout's settings file
-    names it, and its marketplace where the file names that, from the main checkout it was
-    installed from; then read the file again, and stop with `STILL_NAMED` while any name under
-    either key still carries the id, before anything that hides the file or lets `detach` run
-    again is withdrawn.
-
-    The file decides and the exit codes do not: an `uninstall` of a plugin Claude Code no longer
-    has exits 1, and so does a `marketplace remove` of one it never added, while what has to be
-    true before the exclude block goes is only that the file names the id nowhere."""
+    """Ask Claude Code, from the main checkout, to forget the plugin and its marketplace, each where
+    `held` says that checkout's settings file names it; then read the file again and stop with
+    `STILL_NAMED` while a name under either key carries the id. The file decides, never the exit
+    codes: what must hold before the exclude block goes is that the file names the id nowhere."""
     plugin = f"{plugin_name(id)}@{marketplace_name(id)}"
     if plugin in held[ENABLED_PLUGINS]:
         runner.launch(filled(PLUGIN_UNINSTALL_LOCAL, plugin), main)

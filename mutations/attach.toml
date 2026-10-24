@@ -760,8 +760,8 @@ reddens = [
 [[mutation]]
 name = "attach asks git alone whether a placed path is tracked"
 file = "src/stayfixed/attach/exclude.py"
-before = "        or _identity(root / relative) in files.get(_folded(posixpath.dirname(relative)), set())"
-after = "        or False"
+before = "        if _folded(relative) in listed or _identity(root / relative) in files - {None}"
+after = "        if _folded(relative) in listed"
 reddens = [
   "tests/attach/test_write.py::test_a_placed_path_that_is_the_same_file_as_a_tracked_one_is_refused",
 ]

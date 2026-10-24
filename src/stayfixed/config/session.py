@@ -201,12 +201,8 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
 
 def command_config(root: Path, *, machine: Path | None, owner: Owner | None = None) -> Config:
     """The `Config` a command acts on: `loader.loads`', which refuses what it cannot use, with the
-    keys `RESOLVED` names taken from the one resolution `session_config` builds over the preset,
-    the repository, the overlay's common and project files and the machine file. So `attach`,
-    `detach`, `attach --check` and the memory commands act on what a session runs on, and an
-    overlay that sets `memory.mode` reaches the command that builds the store as it reaches the
-    session. The overlay layers' notes are not said here: `doctor`'s `preferences` row names them.
-    """
+    keys `RESOLVED` names taken from the resolution `session_config` builds, overlay layers and
+    all, so a command acts on what a session runs on; `doctor` names the layers' notes."""
     text = read_document(root)
     if text is None:
         return load(root, machine=machine, owner=owner)

@@ -1040,8 +1040,8 @@ def _binding_answer(context: Context, config: Config, ledger: _Ledger) -> Bindin
     two of them: `context.overlay_root` is the answer of the same `overlay_root(machine)` that
     function calls with the same argument, so asking it first takes the overlay-is-missing arm
     off the table, and what is left of `Refusal` is the store that is not this project's
-    permitted root. Anything else that goes wrong — a `Failure` out of the overlay's own record,
-    a ledger this process may not read — answers `UNASKABLE`, which is the conservative
+    permitted root. Anything else that goes wrong — a `git` that cannot be asked, a ledger this
+    process may not read — answers `UNASKABLE`, which is the conservative
     direction: it never accuses the repository for something it may not have done.
     """
     from pathlib import Path

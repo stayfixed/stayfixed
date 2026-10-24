@@ -26,14 +26,11 @@ _NO_STORE = (
 )
 
 
-def _machine(args: argparse.Namespace) -> Path | None:
-    return Path(args.machine) if args.machine else None
-
-
 def _target(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
     if args.store is None:
         raise Refusal(_NO_STORE)
-    return Path(args.root).resolve(), Path(args.store), _machine(args)
+    machine = Path(args.machine) if args.machine else None
+    return Path(args.root).resolve(), Path(args.store), machine
 
 
 def run_attach(args: argparse.Namespace) -> Result:
@@ -120,7 +117,7 @@ def run_detach(args: argparse.Namespace) -> Result:
     from stayfixed.attach.write import detach
     from stayfixed.runner import subprocess_runner
 
-    machine = _machine(args)
+    machine = Path(args.machine) if args.machine else None
     removed = detach(
         Path(args.root).resolve(),
         machine=machine,

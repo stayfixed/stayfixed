@@ -53,7 +53,7 @@ _READ_LIMIT = 64 * 1024
 
 # Said where a write under the data directory fails: the directory, the id's short form and the
 # system's words, never the path, which ends in the whole id (`fsops.said`).
-NOT_WRITTEN = "{directory} could not take the files of binding {short} ({fault})"
+NOT_WRITTEN = "{0} could not take the files of binding {1} ({2})"
 CANNOT_TELL = (
     "cannot tell which git repository {root} belongs to, so there is no binding id to read or "
     "write there"
@@ -163,8 +163,4 @@ def record(root: Path, project: str, origin: str | None) -> Bound:
 
 def unwritten(directory: Path, id: str, error: OSError) -> Failure:
     """`NOT_WRITTEN` for a write of `id`'s files under `directory` that raised `error`."""
-    return Failure(
-        NOT_WRITTEN.format(
-            directory=quoted(str(directory)), short=short(id), fault=fsops.said(error)
-        )
-    )
+    return Failure(NOT_WRITTEN.format(quoted(str(directory)), short(id), fsops.said(error)))
