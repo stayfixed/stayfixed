@@ -291,3 +291,16 @@ def test_a_symlinked_note_is_neither_delivered_nor_digested_and_is_counted_skipp
     assert code == 0, err
     assert (json.loads(out)["notes"], json.loads(out)["skipped"]) == (0, 2)
     assert cli(root, tmp_path, "memory", "promote", "developer/b.md")[0] == 2
+
+
+def test_the_data_region_says_the_note_is_unreviewed_and_not_where_it_was_committed(
+    tmp_path: Path,
+) -> None:
+    # The region's lead called every note in it "memory committed to this repository", which an
+    # overlay or `local-only` note, or one an agent wrote, is not; what each of them is, is a note
+    # nobody promoted.
+    root = _project(tmp_path)
+    volatile = _bundle(root, tmp_path, "volatile-notes")
+    region = volatile[volatile.index(DELIMITER) :]
+    assert "committed to this repository" not in region
+    assert "not reviewed by the owner" in region
