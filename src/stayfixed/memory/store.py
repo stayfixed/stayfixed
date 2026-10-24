@@ -154,8 +154,8 @@ def _registered_worktree(root: Path) -> Path | None:
 
     Not whether the worktree lives *under* the main checkout: in git's own documented layout,
     `git worktree add ../side` puts the tree beside the checkout, so a containment test would
-    answer that there is no store at all — and nothing would be linked in the one place this
-    module exists for.
+    answer that there is no store at all for a `local-only` worktree, whose store is the main
+    checkout's.
 
     **Registration is the question containment would only stand in for.** A linked worktree's
     private git directory is `<common-dir>/worktrees/<name>`, and that directory holds a
@@ -225,7 +225,7 @@ NO_REMOTE_SAID = "no remote"
 
 # Asked before any of the four: a machine record naming an overlay root that is not there (the
 # overlay moved, or this machine never cloned it) must not read as "no record of this project",
-# whose way out, `stayfixed attach`, refuses a `--store` outside the root the machine records. The
+# whose way out, `stayfixed attach`, binds only to the root the machine records. The
 # root is the owner's own configuration and not the repository's, so it is part of this sentence,
 # through `printed.quoted`, rather than a detail printed inside the region that marks repository
 # text.

@@ -257,16 +257,17 @@ def local_document(root: Path) -> str:
     return _read(root / LOCAL_SETTINGS, label=LOCAL_SETTINGS)
 
 
-# Room for the one key the settings fallback adds to the text `attach` writes back after the merge:
-# the key's name and a path, and no path a filesystem resolves passes 4,096 bytes.
+# Room for the one key `attach` adds to the text it writes back after the merge, the
+# `autoMemoryDirectory` pointer at the composed store: the key's name and a path, and no path a
+# filesystem resolves passes 4,096 bytes.
 _FALLBACK_ROOM = 8 * 1024
 
 
 def _refuse_unless_written_back(document: str) -> None:
     """Refuse a settings document whose write-back the next read would refuse.
 
-    `attach` writes the file back indented -- the merge, and the settings fallback after the
-    links -- and a short document many levels deep grows by its depth on every line: 12 KB six
+    `attach` writes the file back indented -- the merge, and the `autoMemoryDirectory` pointer
+    after it -- and a short document many levels deep grows by its depth on every line: 12 KB six
     thousand lists deep is 72 MB, past `fsops.REGULAR_READ_LIMIT`, so the read after the write
     refused, after every other write of the run, and so did every `detach` after it. Asked where
     `attach` and `--check` both read the file, so the two answer alike and `attach` answers before
