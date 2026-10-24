@@ -526,6 +526,33 @@ def test_attach_points_the_harness_at_the_composed_store_in_the_main_checkout(
     assert ledger(root).settings_keys == ("autoMemoryDirectory",)
 
 
+def test_the_composed_store_is_the_recorded_projects_and_moves_only_when_attach_rebinds(
+    tmp_path: Path,
+) -> None:
+    # The project a composed store is built for is the one this machine's binding record names,
+    # never the repository's `[project] name` read on its own: a checkout bound to `p` whose
+    # `stayfixed.toml` now names `q` keeps `p`'s store until `attach` records the new binding, and
+    # then gets `q`'s.
+    from stayfixed import binding
+    from stayfixed.memory.composed import store_directory
+
+    root, store, machine = _attachable(tmp_path)
+    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    id = binding.read_id(root)
+    assert id is not None
+    composed = store_directory(id)
+    overlay = store.parents[2]
+    (store / "project-stable").mkdir(exist_ok=True)
+    root, other = _project_and_store(tmp_path, recorded=None, origin="git@x:o/p.git", name="q")
+    (other / "project-stable").mkdir(exist_ok=True)
+    assert (composed / "MEMORY.md").readlink() == overlay / "projects/p/memory/MEMORY.md"
+    attach(root, store=other, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    found = binding.bound_project(root)
+    assert found is not None and found.project == "q"
+    assert (composed / "MEMORY.md").readlink() == overlay / "projects/q/memory/MEMORY.md"
+    assert (composed / "project-stable").resolve() == (other / "project-stable").resolve()
+
+
 def test_attach_needs_no_store_argument(tmp_path: Path) -> None:
     # The store is derived: this project's share of the overlay the machine records.
     from stayfixed import binding

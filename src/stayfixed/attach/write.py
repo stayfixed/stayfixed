@@ -86,7 +86,7 @@ from stayfixed.attach.render import (
     remove_tree,
 )
 from stayfixed.attach.render import write as write_render
-from stayfixed.binding import ensure_id, read_id, record, short
+from stayfixed.binding import bound_project, ensure_id, read_id, record, short
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.owner import Owner
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
@@ -1428,7 +1428,10 @@ def _carry_out(
     # The composed store, rebuilt, and the one key that points the harness at it, in the main
     # checkout's settings file, whose placed-path rule passed above; the ledger already records the
     # key (`carried`), so a run that stops here leaves `detach` able to take it back.
-    written = _point(owner, build_composed(binding.overlay, binding.project, id)) or written
+    # The project is the one this machine's binding record names, read back after `record` above
+    # wrote it, never `[project] name` on its own.
+    project = (bound_project(root) or bound).project
+    written = _point(owner, build_composed(binding.overlay, project, id)) or written
     if links.revoked:
         notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
     if links.refresh_refused:
