@@ -44,6 +44,7 @@ import json
 import os
 import stat
 import sys
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,7 +54,7 @@ import stayfixed
 from stayfixed import fsops
 from stayfixed.attach.permissions import HOOKS_FILE, PROJECT_CLAUDE, hook_groups
 from stayfixed.attach.rules import scoped_exist
-from stayfixed.binding import unwritten
+from stayfixed.binding import short, unwritten
 from stayfixed.config.paths import data_directory
 from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECTS
@@ -104,25 +105,22 @@ class Part(NamedTuple):
 
 @dataclass(frozen=True)
 class Rendered:
-    """What the attach ledger keeps of a render: its digest and its parts, never the id and never
-    a path on this machine, since the directory is always `delivery_directory(id)`."""
+    """What the attach ledger keeps of a render: its digest, never the id and never a path on this
+    machine, since the directory is always `delivery_directory(id)`."""
 
     digest: str
-    parts: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class RenderRecord:
-    """One render: the id it is named by, the digest over its files, and those files' paths
-    relative to the render directory, sorted."""
+    """One render: the id it is named by and the digest over its files."""
 
     id: str
     digest: str
-    parts: tuple[str, ...]
 
     @property
     def rendered(self) -> Rendered:
-        return Rendered(self.digest, self.parts)
+        return Rendered(self.digest)
 
 
 def marketplace_name(id: str) -> str:
@@ -308,35 +306,57 @@ def digest(id: str, parts: Mapping[str, Part]) -> str:
     return _digest(_files(id, parts))
 
 
-def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) -> RenderRecord:
-    """Write the marketplace, the plugin's manifest and `parts` under `<data>/delivery/<id>/`,
-    replacing what is there, and remove each of `stale` this render no longer holds.
-
-    `stale` is the parts an earlier render recorded, paths relative to the render directory, named
-    before anything is looked at and each removed through the contained walk, so none can reach
-    past the directory the id names."""
+def write(id: str, parts: Mapping[str, Part]) -> RenderRecord:
+    """Render the marketplace, the plugin's manifest and `parts` whole into a new directory beside
+    `<data>/delivery/<id>/`, then swap it into place: the directory holds what the overlay holds
+    now, whatever an earlier render or a ledger recorded. Each file goes through the walk that
+    refuses a symlink; the directory before is removed whole (`remove_tree`)."""
     files = _files(id, parts)
     directory = delivery_directory(id)
     try:
-        # The plain-path form for the directory itself, as `binding.record` writes this machine's
-        # own data directory; every file inside it goes through the walk that refuses a symlink.
-        directory.mkdir(parents=True, exist_ok=True)
+        # The plain-path form for the data directory itself, as `binding.record` writes it.
+        directory.parent.mkdir(parents=True, exist_ok=True)
+        fresh = Path(tempfile.mkdtemp(prefix=f".{short(id)}-", dir=directory.parent))
         for relative, part in files.items():
-            fsops.write_within(directory, relative, part.text, mode=part.mode)
+            fsops.write_within(fresh, relative, part.text, mode=part.mode)
+        before = Path(tempfile.mkdtemp(prefix=f".{short(id)}-", dir=directory.parent))
+        if fsops.exists(directory) or fsops.is_symlink(directory):
+            os.replace(directory, before / "render")
+        os.replace(fresh, directory)
+        remove_tree(before)
     except OSError as exc:
         raise unwritten(directory.parent, id, exc) from None
-    for relative in stale:
-        if relative not in files:
-            try:
+    return RenderRecord(id, _digest(files))
+
+
+def remove_tree(directory: Path) -> None:
+    """Remove `directory` whole, a link in its place by unlinking it, or raise the `OSError`.
+
+    A removal driven by a listing, allowed for the reason the hook sink's is
+    (CONTRIBUTING.md#enumerated-writes): the directory is `delivery_directory(id)`, derived from
+    the id and never read from the ledger a clone can commit, or a directory `write` made beside it,
+    and only `attach` writes inside either. Each entry goes through the contained walk, which
+    follows no link: a link inside is unlinked."""
+
+    def refuse(error: OSError) -> None:
+        raise error
+
+    if fsops.is_symlink(directory):
+        fsops.remove_within(directory.parent, directory.name)
+        return
+    for current, names, files in os.walk(directory, topdown=False, onerror=refuse):
+        here = Path(current).relative_to(directory)
+        for name in files:
+            fsops.remove_within(directory, (here / name).as_posix())
+        for name in names:
+            relative = (here / name).as_posix()
+            if fsops.is_symlink(directory / relative):
                 fsops.remove_within(directory, relative)
-            except FileNotFoundError:
-                # Gone already, with a directory on the way to it: the render directory was deleted
-                # since, or another checkout's attach took the part out first.
-                continue
-            fsops.rmdir_parents_within(directory, relative)
-    return RenderRecord(id, _digest(files), tuple(sorted(files)))
+            else:
+                fsops.rmdir_within(directory, relative)
+    fsops.rmdir_within(directory.parent, directory.name)
 
 
-def render(overlay: Path, project: str, id: str, *, stale: tuple[str, ...] = ()) -> RenderRecord:
+def render(overlay: Path, project: str, id: str) -> RenderRecord:
     """`read_parts`, then `write`: the overlay's executable parts as the plugin `overlay-<id>`."""
-    return write(id, read_parts(overlay, project), stale=stale)
+    return write(id, read_parts(overlay, project))

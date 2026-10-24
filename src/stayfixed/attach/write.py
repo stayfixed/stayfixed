@@ -70,6 +70,7 @@ from stayfixed.attach.permissions import (
 from stayfixed.attach.render import (
     COPIED,
     HOOK_FILE,
+    MARKETPLACE_PREFIX,
     PLUGIN_DIRECTORY,
     PLUGIN_INSTALL_LOCAL,
     PLUGIN_MARKETPLACE_ADD_LOCAL,
@@ -82,6 +83,7 @@ from stayfixed.attach.render import (
     marketplace_name,
     plugin_name,
     read_parts,
+    remove_tree,
 )
 from stayfixed.attach.render import write as write_render
 from stayfixed.binding import ensure_id, read_id, record, short
@@ -452,24 +454,13 @@ def ledger(root: Path) -> AttachLedger:
 
 def _render(value: object, path: Path) -> Rendered | None:
     """The ledger's `render`, or `None` where it records none, or a `Failure` for one no attach
-    wrote: `attach` writes a digest and a list of paths inside the render directory, each one the
-    contained walk accepts, since a part the render no longer holds is removed through it."""
+    wrote: `attach` writes a digest."""
     if value is None:
         return None
-    unwritten = Failure(f"{path} is not a ledger `stayfixed attach` wrote: its 'render' is not one")
-    if not isinstance(value, dict):
-        raise unwritten
-    digest, parts = value.get("digest"), value.get("parts")
-    if not (isinstance(digest, str) and isinstance(parts, list)):
-        raise unwritten
-    for part in parts:
-        if not isinstance(part, str):
-            raise unwritten
-        try:
-            fsops.checked_components(part)
-        except UnsafePath:
-            raise unwritten from None
-    return Rendered(digest, tuple(parts))
+    digest = value.get("digest") if isinstance(value, dict) else None
+    if not isinstance(digest, str):
+        raise Failure(f"{path} is not a ledger `stayfixed attach` wrote: its 'render' is not one")
+    return Rendered(digest)
 
 
 def existing_ledger(root: Path) -> AttachLedger | None:
@@ -766,10 +757,8 @@ def _write_ledger(
         # The same union once more: a second attach finds the directory the first one made.
         "memory_created": planned.memory_created
         or (previous is not None and previous.memory_created),
-        # Digest and parts, never the id and never a path on this machine (`render.Rendered`).
-        "render": None
-        if render is None
-        else {"digest": render.digest, "parts": list(render.parts)},
+        # The digest, never the id and never a path on this machine (`render.Rendered`).
+        "render": None if render is None else {"digest": render.digest},
     }
     fsops.write_within(root, ATTACH_LEDGER, json.dumps(document, indent=2, sort_keys=True) + "\n")
 
@@ -1468,7 +1457,7 @@ def _carry_out(
     # What ran before this render, read out of the render directory before it is rewritten, and
     # what will run after it, read out of the parts: the screen's executable diff.
     before, after = _carried_in(delivery_directory(id)), _carried(planned.parts)
-    rendered = write_render(id, planned.parts, stale=recorded.parts if recorded else ())
+    rendered = write_render(id, planned.parts)
     # Installed on every run, since both calls are idempotent: what Claude Code knows is its own
     # state, which a copy's detach or a lost id can take away whatever this ledger says. A call
     # that fails exits 1 with no render recorded and the exclude block standing, so a re-run
@@ -1633,47 +1622,30 @@ def _plugin_keys(main: Path) -> dict[str, tuple[str, ...]]:
     }
 
 
-def _withdraw_plugin(id: str, main: Path, held: dict[str, tuple[str, ...]], runner: Runner) -> None:
-    """Ask Claude Code, from the main checkout, to forget the plugin and its marketplace, each where
-    `held` says that checkout's settings file names it; then read the file again and stop with
-    `STILL_NAMED` while a name under either key carries the id. The file decides, never the exit
-    codes: what must hold before the exclude block goes is that the file names the id nowhere."""
-    plugin = f"{plugin_name(id)}@{marketplace_name(id)}"
-    if plugin in held[ENABLED_PLUGINS]:
-        runner.launch(filled(PLUGIN_UNINSTALL_LOCAL, plugin), main)
-    if marketplace_name(id) in held[KNOWN_MARKETPLACES]:
-        runner.launch(filled(PLUGIN_MARKETPLACE_REMOVE, marketplace_name(id)), main)
-    left = [key for key, names in _plugin_keys(main).items() if any(id in name for name in names)]
+def _withdraw_plugin(
+    id: str | None, main: Path, held: dict[str, tuple[str, ...]], runner: Runner
+) -> None:
+    """Ask Claude Code, from the main checkout, to forget the plugin `id` names and its marketplace,
+    each where `held` says that checkout's settings file names it; then read the file again and
+    stop with `STILL_NAMED` while a name under either key names a `stayfixed-delivery-`
+    marketplace, which needs no id. The file decides, never the exit codes: what must hold before
+    the exclude block goes is that the file names no delivery."""
+    if id is not None:
+        plugin = f"{plugin_name(id)}@{marketplace_name(id)}"
+        if plugin in held[ENABLED_PLUGINS]:
+            runner.launch(filled(PLUGIN_UNINSTALL_LOCAL, plugin), main)
+        if marketplace_name(id) in held[KNOWN_MARKETPLACES]:
+            runner.launch(filled(PLUGIN_MARKETPLACE_REMOVE, marketplace_name(id)), main)
+    named = _plugin_keys(main).items()
+    left = [key for key, names in named if any(MARKETPLACE_PREFIX in name for name in names)]
     if left:
         raise Failure(STILL_NAMED.format(keys=", ".join(f"`{key}`" for key in left)))
 
 
 def _remove_render(directory: Path) -> None:
-    """Remove the render directory whole, a link in its place by unlinking it.
-
-    The one removal of `detach` driven by a listing, and allowed for the reason the hook sink's is
-    (CONTRIBUTING.md#enumerated-writes): the directory is `delivery_directory(id)`, derived from the
-    id and never read from the ledger a clone can commit, and only `attach` writes inside it. Each
-    entry goes through the contained walk, which follows no link: a link inside is unlinked."""
-
-    def refuse(error: OSError) -> None:
-        raise error
-
+    """Remove the render directory whole (`render.remove_tree`), or say why it stayed."""
     try:
-        if fsops.is_symlink(directory):
-            fsops.remove_within(directory.parent, directory.name)
-            return
-        for current, names, files in os.walk(directory, topdown=False, onerror=refuse):
-            here = Path(current).relative_to(directory)
-            for name in files:
-                fsops.remove_within(directory, (here / name).as_posix())
-            for name in names:
-                relative = (here / name).as_posix()
-                if fsops.is_symlink(directory / relative):
-                    fsops.remove_within(directory, relative)
-                else:
-                    fsops.rmdir_within(directory, relative)
-        fsops.rmdir_within(directory.parent, directory.name)
+        remove_tree(directory)
     except OSError as exc:
         raise Failure(RENDER_STAYED.format(fault=fsops.said(exc))) from exc
 
@@ -2097,7 +2069,7 @@ def detach(
     settings = _planned_settings(root, recorded)
     # What the main checkout's settings file names, which decides each `claude plugin` call: read
     # here, so a file that cannot be read refuses while nothing is withdrawn.
-    plugin = None if kept or main is None or id is None else (id, main, _plugin_keys(main))
+    plugin = None if kept or main is None else (id, main, _plugin_keys(main))
     # Where each checkout's harness link may point and be ours, asked here because it walks the
     # owning checkout's `paths.memory` as well as the checkout's own, and while another ledger
     # stands `_refuse_unwithdrawable` walks no tree but `--root`'s. Asked from inside the

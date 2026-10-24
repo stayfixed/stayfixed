@@ -237,6 +237,28 @@ def test_the_screen_names_what_a_render_adds_and_removes_against_the_last_one(
     assert (second.added.skills, second.removed.agents, second.allow_added) == ((), (), ())
 
 
+def test_a_skill_the_overlay_dropped_after_a_failed_install_is_never_rendered_again(
+    tmp_path: Path,
+) -> None:
+    # A failed install records no render, so a render that took out only the parts the ledger
+    # named left a skill the overlay dropped in the directory Claude Code runs, for good, while
+    # `doctor`'s digest said the delivery was in place. Each render is the overlay as it is now,
+    # whole, whatever any ledger recorded.
+    from stayfixed.runner import Completed
+
+    root, store, machine = _attachable(tmp_path)
+    claude = store.parents[2] / COMMON_CLAUDE
+    (claude / "skills" / "old").mkdir(parents=True)
+    (claude / "skills" / "old" / "SKILL.md").write_text("old\n", encoding="utf-8")
+    broken = Recorder(answers={"claude plugin install": Completed(1, "", "")})
+    with pytest.raises(Failure):
+        attach(root, store=store, machine=machine, runner=broken, home=tmp_path / "home")
+    assert (_delivered_hooks(root).parents[1] / "skills" / "old" / "SKILL.md").is_file()
+    shutil.rmtree(claude / "skills" / "old")
+    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    assert not (_delivered_hooks(root).parents[1] / "skills").exists()
+
+
 def _delivered_hooks(root: Path) -> Path:
     """The hook file of the plugin rendered for `root`'s binding id."""
     from stayfixed import binding
@@ -560,7 +582,7 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
     recorded = ledger(root)
     assert recorded.allow == (RULE,)
     assert recorded.entries == {}
-    assert recorded.render is not None and "plugin/hooks/hooks.json" in recorded.render.parts
+    assert recorded.render is not None
     assert (root / LEDGER).is_file()
 
 

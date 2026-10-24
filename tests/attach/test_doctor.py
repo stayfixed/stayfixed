@@ -1878,7 +1878,7 @@ def test_a_launcher_the_path_scoped_rules_run_through_that_is_gone_warns(tmp_pat
     gone = tmp_path / "gone" / "run-hook.sh"
     command = f'"{gone}" hook PostToolUse'
     rendered = render_write(_id(root), read_parts(overlay, "p", command=command))
-    _ledger_field(root, render={"digest": rendered.digest, "parts": list(rendered.parts)})
+    _ledger_field(root, render={"digest": rendered.digest})
     assert _delivered_row(tmp_path, root) == Check(
         "attached",
         WARN,

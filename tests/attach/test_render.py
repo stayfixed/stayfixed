@@ -106,10 +106,7 @@ def test_render_writes_the_marketplace_and_the_plugin_under_names_carrying_the_w
     # A copied file keeps its mode: a skill's script stays executable.
     assert (delivery / "plugin" / "skills" / "review" / "check.sh").stat().st_mode & 0o777 == 0o750
     assert record.id == ID
-    assert record.parts == tuple(
-        sorted(p.relative_to(delivery).as_posix() for p in delivery.rglob("*") if p.is_file())
-    )
-    assert len(record.parts) == 6
+    assert len([p for p in delivery.rglob("*") if p.is_file()]) == 6
     assert record.digest == _digest(delivery)
 
 
@@ -125,9 +122,9 @@ def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path
     (overlay / "common" / "claude" / "skills" / "review" / "SKILL.md").unlink()
     # A mode changed in the overlay reaches the render too, over the file already there.
     (overlay / "common" / "claude" / "skills" / "review" / "check.sh").chmod(0o640)
-    # The parts the first render recorded are what the second takes back, as `attach` hands
-    # them over from its ledger: nothing in the directory is found by listing it.
-    second = render(overlay, "p", ID, stale=first.parts)
+    # Rendered whole beside the directory and swapped in, so no record of the first render's
+    # parts is needed, and nothing is left beside the directory.
+    second = render(overlay, "p", ID)
     delivery = _delivery()
     hooks = _json(delivery / "plugin" / "hooks" / "hooks.json")
     assert isinstance(hooks, dict)
@@ -138,21 +135,6 @@ def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path
     assert second.digest != first.digest
     assert second.digest == _digest(delivery)
     assert [p.name for p in delivery.parent.iterdir()] == [ID]
-
-
-def test_a_rerender_whose_stale_parts_directory_is_gone_renders_again(tmp_path: Path) -> None:
-    # `doctor`'s remedy for a deleted render directory is a re-render, whose stale list, read out
-    # of the ledger, names a skill the overlay no longer holds; the walk to its parent raised for a
-    # directory that was gone, after every other write of the attach, and on every attach after.
-    import shutil
-
-    overlay = _overlay(tmp_path)
-    first = render(overlay, "p", ID)
-    shutil.rmtree(_delivery())
-    shutil.rmtree(overlay / "common" / "claude" / "skills" / "review")
-    second = render(overlay, "p", ID, stale=first.parts)
-    assert second.digest == _digest(_delivery())
-    assert not (_delivery() / "plugin" / "skills").exists()
 
 
 def _scoped_rule(overlay: Path) -> None:

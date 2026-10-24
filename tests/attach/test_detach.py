@@ -238,6 +238,32 @@ def test_a_settings_file_still_naming_the_plugin_keeps_the_delivery_hidden_and_d
     assert not _exclude_block(root) and not (root / LEDGER).exists() and not delivery.exists()
 
 
+def test_a_detach_that_cannot_read_the_id_keeps_a_settings_file_naming_a_delivery_hidden(
+    tmp_path: Path,
+) -> None:
+    # With the id file gone, `detach` cannot name the plugin, and the settings file still names the
+    # old id under both keys: withdrawn, the block left that file for `git add -A` to commit. Any
+    # `stayfixed-delivery-` name there keeps the block, the ledger and the render, and fails.
+    # Mutation: `mutations/`'s "detach asks the settings file about this binding id's delivery
+    # alone".
+    from stayfixed.attach.write import STILL_NAMED
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _installed(root, store, machine, home)
+    _, delivery = _render_of(root)
+    (root / ".git" / "stayfixed" / "binding").unlink()
+    runner = Recorder(on_call=claude_code(root))
+    with pytest.raises(Failure) as failed:
+        _detach(root, machine, home, runner)
+    assert str(failed.value) == STILL_NAMED.format(
+        keys="`enabledPlugins`, `extraKnownMarketplaces`"
+    )
+    assert runner.calls == []
+    assert _exclude_block(root) and (root / LEDGER).is_file() and delivery.is_dir()
+
+
 def test_detach_after_an_attach_whose_marketplace_add_failed_runs_no_call_and_finishes(
     tmp_path: Path,
 ) -> None:
@@ -298,7 +324,7 @@ def test_detach_keeps_the_allow_rule_claude_code_added_to_a_rewritten_settings_f
     home = tmp_path / "home"
     _attach(root, store, machine, home)
     rewritten = {
-        "enabledPlugins": {"overlay-x@stayfixed-delivery-x": True},
+        "enabledPlugins": {"superpowers@claude-plugins-official": True},
         "permissions": {"allow": ["Bash(git tag *)", RULE]},
     }
     (root / SETTINGS).write_text(json.dumps(rewritten, indent=4), encoding="utf-8")

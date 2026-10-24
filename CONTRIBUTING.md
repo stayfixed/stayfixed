@@ -130,8 +130,9 @@ writes. The hook sink's sessions are unbounded in number, so it lists its `marke
 prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. `stayfixed uninstall` walks
 `.stayfixed/local/artifacts/` and removes the directories it finds there that are empty, because
 that tree holds nothing but the local artifacts the same run just removed. And `stayfixed detach`
-removes the render directory `$HOME/.local/share/stayfixed/delivery/<id>/` whole, a directory
-named by the binding id and never by the ledger, which only `attach` writes into. Both go through `fsops`,
+removes the render directory `$HOME/.local/share/stayfixed/delivery/<id>/` whole, as `attach` does
+the one its new render replaces, a directory named by the binding id and never by the ledger, which
+only `attach` writes into. Both go through `fsops`,
 as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 

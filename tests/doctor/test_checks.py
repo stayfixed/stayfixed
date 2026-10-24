@@ -272,7 +272,7 @@ def _attached(tmp_path: Path) -> Path:
                 "entries": {},
                 "rules": [],
                 "settings_keys": [],
-                "render": {"digest": rendered.digest, "parts": list(rendered.parts)},
+                "render": {"digest": rendered.digest},
             }
         ),
         encoding="utf-8",

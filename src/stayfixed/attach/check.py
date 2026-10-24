@@ -53,7 +53,6 @@ def check(
     run does, and it is keyword-required for `attach`'s reason: no caller reaches the developer's
     own `~/.claude/` by leaving it out. The command passes `None`, the machine owner's own.
     `owner` is the owner's layer the command resolved (`config.loader.loads`' own).
-
     """
     config = command_config(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)

@@ -2459,19 +2459,19 @@ root itself is **not** taken from that path — it comes from the `[overlay] roo
 configuration records, which `stayfixed setup` writes. A `--store` anywhere else is refused (`2`),
 including a directory elsewhere under the same overlay: the session-start path holds every linked
 group to this project's own share, so attaching to a sibling would produce a store every session
-then refuses. A `[project] name` no directory can carry there — the name of a file the overlay
-keeps under `projects/`, which on a filesystem that ignores case includes `readme.md`, or a name
-longer than the filesystem allows — is refused (`2`) before anything is written, by `--check` as
-well, and the refusal names the shape of the path and never the name. So is a name whose directory
-there fits under the longest path the system allows while a path `attach` makes inside it does
-not — the `project.toml` that keeps the first attach's remote and date, the notes index
-`MEMORY.md`, or the directory of one of `memory.groups` — because nothing could read that record back or link the notes to that
-path; a long `memory.groups` entry reaches it as a long name does, and the refusal names neither.
-Both hold where the overlay has no directory for the project yet, `projects/` included. An overlay
-whose root, or whose `projects/`, is there and is not a directory is refused (`2`) as damaged, by
-`--check` as well, with that path named and the overlay's repair as the way out; no name is blamed
-for it, and `stayfixed doctor`'s `attached` row warns about the same path rather than offering to
-remove the ledger.
+then refuses. A `[project] name` no directory can carry there — the name of a file the overlay keeps
+under `projects/`, which on a filesystem that ignores case includes `readme.md`, or a name longer
+than the filesystem allows — is refused (`2`) before anything is written, by `--check` as well, and
+the refusal names the shape of the path and never the name. So is a name whose directory there fits
+under the longest path the system allows while a path `attach` makes inside it does not — the
+`project.toml` that keeps the first attach's remote and date, the notes index `MEMORY.md`, or the
+directory of one of `memory.groups` — because nothing could read that record back or link the notes
+to that path; a long `memory.groups` entry reaches it as a long name does, and the refusal names
+neither. Both hold where the overlay has no directory for the project yet, `projects/` included. An
+overlay whose root, or whose `projects/`, is there and is not a directory is refused (`2`) as
+damaged, by `--check` as well, with that path named and the overlay's repair as the way out; no name
+is blamed for it, and `stayfixed doctor`'s `attached` row warns about the same path rather than
+offering to remove the ledger.
 
 **The notes are linked only in overlay mode; the rest is delivered whatever the mode.** A
 `stayfixed.toml` whose `memory.mode` is not `overlay` keeps its notes in the repository, so for it
@@ -2517,29 +2517,28 @@ renamed in a pulled commit moves every worktree's binding — says so on one lin
 **The overlay's hooks, skills and agents are delivered as a plugin.** Every run renders them into
 `$HOME/.local/share/stayfixed/delivery/<id>/`, named by the binding id below: a marketplace
 `stayfixed-delivery-<id>` holding one plugin, `overlay-<id>`, whose `hooks/hooks.json` is the union
-of `common/claude/hooks.json` and `projects/<name>/claude/hooks.json` — each event's entry groups
-in that order, as the overlay wrote them — and whose `skills/` and `agents/` are copied from the
-same two directories, this project's copy of a file winning over the common one and each copy
-keeping its source's permission bits, so a skill's script stays executable. A session runs
-the plugin from that directory in place, so a later `attach` re-renders it there and an edit
-reaches the next session with no reinstall; a file the overlay no longer holds is taken out of it,
-named by the ledger's record of the previous render (its digest and its files' paths, never the
-id). Every run installs it with `claude plugin marketplace add <that directory> --scope local` and
-`claude plugin install overlay-<id>@stayfixed-delivery-<id> --scope local`, run from the main
-checkout, whose `.claude/settings.local.json` Claude Code reads from every worktree and writes the
-plugin's entries into; both calls succeed for a marketplace and a plugin Claude Code already has,
-so what Claude Code holds is asked of Claude Code each time rather than of the ledger. A linked
-worktree of a bare repository has no main checkout, so `attach` refuses it (`2`) before anything is
-written, saying it cannot tell which checkout is the main one. A call that does not succeed fails
-the run (`1`), naming the call and its exit code and never what it printed, since that names the
-plugin; the ledger records no render, the exclude block stays, and the next `attach` installs it
-again. Claude
-Code records a local-scope marketplace for the whole machine, so the names carry the whole id,
-which a clone never sees; the plugin's entry is the reason `.claude/settings.local.json` is placed
-and hidden on every run (below). No hook entry goes into `.claude/settings.local.json` any more,
-since Claude Code rewrites that file whole: the entries an earlier release's `attach` merged there
-are taken back, the ones its ledger records under the event it records and never one by its
-marker alone, and the new ledger records none.
+of `common/claude/hooks.json` and `projects/<name>/claude/hooks.json` — each event's entry groups in
+that order, as the overlay wrote them — and whose `skills/` and `agents/` are copied from the same
+two directories, this project's copy of a file winning over the common one and each copy keeping its
+source's permission bits, so a skill's script stays executable. A session runs the plugin from that
+directory in place, so a later `attach` re-renders it there and an edit reaches the next session
+with no reinstall. Each render is written whole into a new directory beside it and swapped into
+place, so a file the overlay no longer holds is gone, whatever an earlier run recorded; the ledger
+keeps the render's digest alone, never the id. Every run installs it with `claude plugin marketplace
+add <that directory> --scope local` and `claude plugin install overlay-<id>@stayfixed-delivery-<id>
+--scope local`, run from the main checkout, whose `.claude/settings.local.json` Claude Code reads
+from every worktree and writes the plugin's entries into; both calls succeed for a marketplace and a
+plugin Claude Code already has, so what Claude Code holds is asked of Claude Code each time rather
+than of the ledger. A linked worktree of a bare repository has no main checkout, so `attach` refuses
+it (`2`) before anything is written, saying it cannot tell which checkout is the main one. A call
+that does not succeed fails the run (`1`), naming the call and its exit code and never what it
+printed, since that names the plugin; the ledger records no render, the exclude block stays, and the
+next `attach` installs it again. Claude Code records a local-scope marketplace for the whole
+machine, so the names carry the whole id, which a clone never sees; the plugin's entry is the reason
+`.claude/settings.local.json` is placed and hidden on every run (below). No hook entry goes into
+`.claude/settings.local.json` any more, since Claude Code rewrites that file whole: the entries an
+earlier release's `attach` merged there are taken back, the ones its ledger records under the event
+it records and never one by its marker alone, and the new ledger records none.
 
 **The binding is an id this machine keeps, not a remote.** `attach` draws a random binding id
 (32 hexadecimal characters) the first time, writes it into the repository's git common directory,
@@ -2589,8 +2588,9 @@ worktree shares), written first,
 `.claude/settings.local.json`, `.codex/rules/`, the ledger `.stayfixed/local/attach.json`, the
 binding id `stayfixed/binding` in the git common directory when there is none yet, this machine's
 binding record `$HOME/.local/share/stayfixed/bindings/<id>.toml`, the render
-`$HOME/.local/share/stayfixed/delivery/<id>/` and, through the two `claude plugin` calls on the
-first attach, Claude Code's own records of the marketplace and the plugin and the main checkout's
+`$HOME/.local/share/stayfixed/delivery/<id>/` (written whole into a directory beside it, then
+swapped into place, the render before removed whole) and, through the two `claude plugin` calls,
+Claude Code's own records of the marketplace and the plugin and the main checkout's
 `.claude/settings.local.json`; where the notes are linked, the link tree under
 `paths.memory` in this checkout and in every existing worktree, the harness memory link, and — in
 the overlay — `projects/<name>/project.toml` while it records no remote, this project's note
@@ -2810,42 +2810,43 @@ or none.
 `.claude/settings.local.json`, drops the hook entries an earlier release's `attach` merged there —
 the ones its ledger records, under the event it records, and never one by its `# stayfixed:…` marker
 alone (a group that mixes one of those with your own entry is split, never replaced) — and leaves
-the file unwritten when none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
-this checkout and every worktree together with each one's harness memory link — while another checkout is
-attached, only this checkout's link, and its tree unless it is the main checkout, as above —
-withdraws the overlay's rendered plugin where no other checkout of the repository is attached —
-`claude plugin uninstall overlay-<id>@stayfixed-delivery-<id> --scope local` where the main
-checkout's `.claude/settings.local.json` names that plugin under `enabledPlugins`, and `claude
-plugin marketplace remove stayfixed-delivery-<id>` where it names that marketplace under
-`extraKnownMarketplaces`, each run from the main checkout, then the render directory
-`$HOME/.local/share/stayfixed/delivery/<id>/` removed whole where it is there, a link there
-unlinked — removes the `stayfixed:attach` block in the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`.
-The render directory is derived from the binding id and never read from the ledger, so a ledger a
-clone committed naming another directory removes nothing outside it. The plugin goes before the
-exclude block, so Claude Code takes the plugin's entries, which name the id, out of
-`.claude/settings.local.json` while that file is still hidden. Each call is decided by what that
-file names, never by the ledger or the render directory, and the file is read again once they ran:
-while a name under either key still carries the id, whatever the calls exited with, `detach` fails
-(`1`) naming the key and never the id; the exclude block, the ledger and the render directory are
-kept, so the file stays hidden, and running `detach` again finishes the withdrawal. In a linked
-worktree of a bare repository git names no main checkout, `attach` installed nothing there, and
-`detach` withdraws that checkout's own parts with no `claude plugin` call. A render
-directory that cannot be removed fails (`1`) the same way, with the ledger kept. An allow rule Claude Code
-added to `.claude/settings.local.json` — the one a "don't ask again" answer writes — is not on the
-ledger and stays, whatever order Claude Code rewrote the file's keys in. A file left holding nothing is
-removed rather than left empty — for the exclude file, only when `attach` created it, which the block records, so
-an exclude file you had, empty or not, stays, and the `info/` directory it sat in goes with it only
-when `attach` created that too and it is empty; the line ending `attach` added to your exclude
-file's last line before its block is taken back too, when nothing follows the block. The exclude
-file is read and written as bytes, so bytes in it that are not UTF-8 are kept as they are. An
-exclude file that is a symlink is left alone, because `attach` never writes through one. **The
-exclude block stays while another checkout is attached.** The exclude file is shared by every
-worktree of the repository, while the ledger, the settings file and the `.codex/rules/` copies are
-each checkout's own; so when another checkout still holds a ledger, the block is kept for its files,
-the line ends by saying so, and `--json` reports `exclude_block_kept: true`. Only a ledger an
-attach wrote counts: one git does not track (a clone that committed the file has it in every
-worktree) and that reads as a ledger. A `git` that cannot say whether the file is tracked counts
-it, and the block stays.
+the file unwritten when none of those is in it, removes the `.codex/rules/` files it wrote,
+withdraws the link tree from this checkout and every worktree together with each one's harness
+memory link — while another checkout is attached, only this checkout's link, and its tree unless it
+is the main checkout, as above — withdraws the overlay's rendered plugin where no other checkout of
+the repository is attached — `claude plugin uninstall overlay-<id>@stayfixed-delivery-<id> --scope
+local` where the main checkout's `.claude/settings.local.json` names that plugin under
+`enabledPlugins`, and `claude plugin marketplace remove stayfixed-delivery-<id>` where it names that
+marketplace under `extraKnownMarketplaces`, each run from the main checkout, then the render
+directory `$HOME/.local/share/stayfixed/delivery/<id>/` removed whole where it is there, a link
+there unlinked — removes the `stayfixed:attach` block in the repository's exclude file, and deletes
+the ledger, `.stayfixed/local/attach.json`. The render directory is derived from the binding id and
+never read from the ledger, so a ledger a clone committed naming another directory removes nothing
+outside it. The plugin goes before the exclude block, so Claude Code takes the plugin's entries,
+which name the id, out of `.claude/settings.local.json` while that file is still hidden. Each call
+is decided by what that file names, never by the ledger or the render directory, and the file is
+read again once they ran: while a name under either key names a `stayfixed-delivery-` marketplace,
+whatever the calls exited with and whether or not the binding id can be read, `detach` fails (`1`)
+naming the key and never the id; the exclude block, the ledger and
+the render directory are kept, so the file stays hidden, and running `detach` again finishes the
+withdrawal. In a linked worktree of a bare repository git names no main checkout, `attach` installed
+nothing there, and `detach` withdraws that checkout's own parts with no `claude plugin` call. A
+render directory that cannot be removed fails (`1`) the same way, with the ledger kept. An allow
+rule Claude Code added to `.claude/settings.local.json` — the one a "don't ask again" answer writes
+— is not on the ledger and stays, whatever order Claude Code rewrote the file's keys in. A file left
+holding nothing is removed rather than left empty — for the exclude file, only when `attach` created
+it, which the block records, so an exclude file you had, empty or not, stays, and the `info/`
+directory it sat in goes with it only when `attach` created that too and it is empty; the line
+ending `attach` added to your exclude file's last line before its block is taken back too, when
+nothing follows the block. The exclude file is read and written as bytes, so bytes in it that are
+not UTF-8 are kept as they are. An exclude file that is a symlink is left alone, because `attach`
+never writes through one. **The exclude block stays while another checkout is attached.** The
+exclude file is shared by every worktree of the repository, while the ledger, the settings file and
+the `.codex/rules/` copies are each checkout's own; so when another checkout still holds a ledger,
+the block is kept for its files, the line ends by saying so, and `--json` reports
+`exclude_block_kept: true`. Only a ledger an attach wrote counts: one git does not track (a clone
+that committed the file has it in every worktree) and that reads as a ledger. A `git` that cannot
+say whether the file is tracked counts it, and the block stays.
 
 Then it removes, each only when empty: the `paths.memory` directory in this checkout when it
 withdrew this checkout's tree and the ledger records `attach` as having created it, and in every
