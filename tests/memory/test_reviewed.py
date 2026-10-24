@@ -209,6 +209,23 @@ def test_a_revoked_record_makes_the_note_unreviewed_again(tmp_path: Path) -> Non
     assert _status_of(root, tmp_path, "rule") == UNREVIEWED
 
 
+def test_revoking_one_entry_unreviews_every_note_holding_its_bytes(tmp_path: Path) -> None:
+    # The record matches on the digest alone, so a revocation follows the same rule: withdrawn by
+    # one subject, the bytes are no longer reviewed through another entry holding them — the
+    # same note promoted from a second worktree, or a copy of it. Mutation (oracle):
+    # `mutations/`'s "a revoke leaves another entry holding the same digest".
+    root = _project(tmp_path)
+    base = root / ".stayfixed" / "local" / "memory" / "developer"
+    (base / "copy.md").write_bytes((base / "rule.md").read_bytes())
+    assert cli(root, tmp_path, "memory", "promote", "--changed")[0] == 0
+    rows = json.loads(cli(root, tmp_path, "trust", "list", "--json")[1])["approvals"]
+    subject = next(row["subject"] for row in rows if row["subject"].endswith("rule.md"))
+    assert cli(root, tmp_path, "trust", "revoke", "reviewed", "--subject", subject)[0] == 0
+    assert _status_of(root, tmp_path, "rule") == UNREVIEWED
+    assert "RULE-BODY" not in _bundle(root, tmp_path, "standing-rules")
+    assert _status_of(root, tmp_path, "other") == REVIEWED
+
+
 def test_a_trust_record_that_cannot_be_read_leaves_every_note_unreviewed(tmp_path: Path) -> None:
     # Closed: a record nothing can read promotes nothing, so no note becomes a standing rule on
     # it, and the session still gets every note as data.

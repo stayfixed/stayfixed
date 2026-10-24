@@ -1,6 +1,6 @@
 """The machine's one trust record (`src/stayfixed/trust/record.py`): a versioned document of kinds
-and subjects beside the machine file, which still reads the flat map `0.3.0` wrote and which
-`0.3.0` reads as holding no approval."""
+and subjects beside the machine file, which reads the flat map `0.3.x` wrote as holding no approval
+and which `0.3.x` reads the same way."""
 
 from __future__ import annotations
 
@@ -23,15 +23,12 @@ from stayfixed.trust.record import (
     RECORD,
     SANDBOXED,
     VERSION,
-    Approval,
     SandboxedWrite,
-    State,
     UnreadableTrust,
     approve_all,
     record_path,
     recorded,
     revoke_all,
-    state,
 )
 from tests import parserlimits
 
@@ -51,31 +48,23 @@ def machine(tmp_path: Path) -> Path:
     return tmp_path / "config.toml"
 
 
-def test_a_0_3_0_record_keeps_every_memory_approval(tmp_path: Path) -> None:
-    # Upgrading over a record `0.3.0` wrote keeps every approval in it. Mutation (`mutations/`'s
-    # "the trust record no longer reads 0.3.0's flat map"): the approval reads missing.
+def test_a_0_3_record_holds_no_approval_and_the_first_write_replaces_it(tmp_path: Path) -> None:
+    # Every entry of `0.3.x`'s flat map approved a whole store, which nothing asks about since,
+    # so an upgrade reads none of them and is never refused over the file it left; the first write
+    # is a version-1 record of what this release approved.
     (tmp_path / RECORD).write_text(json.dumps({"/s": "d", "/t": "e"}), encoding="utf-8")
-    assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
-    assert state(machine(tmp_path), "memory", "/t", "e") is State.APPROVED
-    assert recorded(machine(tmp_path))[("memory", "/s")] == Approval("memory", "/s", "d", "")
-
-
-def test_the_first_write_upgrades_the_file_in_place(tmp_path: Path) -> None:
-    # The old entry is carried into the version-1 record beside the new one. Mutation: as above,
-    # the flat map's entry is lost on the write.
-    (tmp_path / RECORD).write_text(json.dumps({"/s": "d"}), encoding="utf-8")
-    approve_all(machine(tmp_path), "memory", {"/t": "e"}, now=T0)
+    assert recorded(machine(tmp_path)) == {}
+    approve_all(machine(tmp_path), "reviewed", {"/n": "e"}, now=T0)
     written = json.loads((tmp_path / RECORD).read_text(encoding="utf-8"))
     assert written == {
         "version": VERSION,
         "approvals": [
-            {"kind": "memory", "subject": "/s", "digest": "d", "approved_at": ""},
             {
-                "kind": "memory",
-                "subject": "/t",
+                "kind": "reviewed",
+                "subject": "/n",
                 "digest": "e",
                 "approved_at": "2026-10-16T09:30:00+00:00",
-            },
+            }
         ],
     }
 
@@ -199,24 +188,17 @@ def test_a_record_that_does_not_parse_says_why_and_that_it_is_kept(
     assert str(caught.value) == f"{path} {said}; {KEPT}"
 
 
-def test_lapsed_missing_and_approved_are_told_apart(tmp_path: Path) -> None:
-    # Mutations (`mutations/`'s "the trust record ignores the digest" -> the changed digest reads
-    # approved; "a lapsed approval reads as missing" -> it reads missing).
-    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
-    assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
-    assert state(machine(tmp_path), "memory", "/s", "changed") is State.LAPSED
-    assert state(machine(tmp_path), "memory", "/elsewhere", "d") is State.MISSING
-
-
 def test_two_kinds_never_share_a_subject(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "the trust record keys an approval by its subject alone"): the
-    # second approval replaces the first, and the first kind reads lapsed.
+    # second approval replaces the first, and the first kind is gone.
     approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
     approve_all(machine(tmp_path), "other", {"/s": "e"}, now=T0)
-    assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
-    assert state(machine(tmp_path), "other", "/s", "e") is State.APPROVED
+    assert {key: a.digest for key, a in recorded(machine(tmp_path)).items()} == {
+        ("memory", "/s"): "d",
+        ("other", "/s"): "e",
+    }
     assert revoke_all(machine(tmp_path), "other", ["/s"]) == ["/s"]
-    assert state(machine(tmp_path), "memory", "/s", "d") is State.APPROVED
+    assert list(recorded(machine(tmp_path))) == [("memory", "/s")]
 
 
 def test_revoke_of_nothing_says_so(tmp_path: Path) -> None:
@@ -228,14 +210,13 @@ def test_revoke_of_nothing_says_so(tmp_path: Path) -> None:
     assert revoke_all(machine(tmp_path), "memory", ["/elsewhere"]) == []
     assert (path.read_bytes(), path.stat().st_ino) == before
     assert revoke_all(machine(tmp_path), "memory", ["/s"]) == ["/s"]
-    assert state(machine(tmp_path), "memory", "/s", "d") is State.MISSING
+    assert recorded(machine(tmp_path)) == {}
 
 
 def test_no_record_at_all_holds_no_approval(tmp_path: Path) -> None:
     # The fresh machine. No mutation of its own: the absent file is the arm every write test
     # passes through first.
     assert recorded(machine(tmp_path)) == {}
-    assert state(machine(tmp_path), "memory", "/s", "d") is State.MISSING
 
 
 def test_the_record_ignores_xdg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -384,9 +365,8 @@ def test_every_subject_of_a_kind_is_approved_in_one_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A kind with several subjects is approved whole or not at all: one replacement of the record,
-    # so a write that fails part-way leaves it as it was. And it answers what the record said of
-    # each before. Mutation (`mutations/`'s "approving a kind writes the record once per subject"):
-    # two writes.
+    # so a write that fails part-way leaves it as it was. Mutation (`mutations/`'s "approving a
+    # kind writes the record once per subject"): two writes.
     machine = tmp_path / "config.toml"
     approve_all(machine, "memory", {"/a": "old"}, now=T0)
     writes: list[Path] = []
@@ -397,11 +377,12 @@ def test_every_subject_of_a_kind_is_approved_in_one_write(
         real(path, text)
 
     monkeypatch.setattr(fsops, "write_atomically", counting)
-    was = approve_all(machine, "memory", {"/a": "new", "/b": "d"}, now=T0)
+    approve_all(machine, "memory", {"/a": "new", "/b": "d"}, now=T0)
     assert writes == [tmp_path / RECORD]
-    assert was == {"/a": State.LAPSED, "/b": State.MISSING}
-    assert state(machine, "memory", "/a", "new") is State.APPROVED
-    assert state(machine, "memory", "/b", "d") is State.APPROVED
+    assert {key: a.digest for key, a in recorded(machine).items()} == {
+        ("memory", "/a"): "new",
+        ("memory", "/b"): "d",
+    }
 
 
 def test_every_subject_of_a_kind_is_revoked_in_one_write(
@@ -411,7 +392,7 @@ def test_every_subject_of_a_kind_is_revoked_in_one_write(
     # subjects, answering those that had an approval in the order given, and leaving the rest.
     # Mutation (`mutations/`'s "revoking a kind writes the record once per subject"): two writes.
     machine = tmp_path / "config.toml"
-    approve_all(machine, "memory", {"/a": "d", "/b": "d", "/c": "d"}, now=T0)
+    approve_all(machine, "memory", {"/a": "d", "/b": "e", "/c": "f"}, now=T0)
     writes: list[Path] = []
     real = fsops.write_atomically
 
@@ -430,7 +411,7 @@ def test_approving_no_subject_writes_nothing(tmp_path: Path) -> None:
     # included. Mutation (`mutations/`'s "approving no subject writes the record"): an empty
     # version-1 record appears.
     machine = tmp_path / "config.toml"
-    assert approve_all(machine, "memory", {}, now=T0) == {}
+    approve_all(machine, "memory", {}, now=T0)
     assert not (tmp_path / RECORD).exists()
 
 

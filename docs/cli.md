@@ -153,23 +153,21 @@ plays no part in it.
 ## `stayfixed trust list [--root PATH] [--machine PATH]`
 
 Every approval recorded on the machine, one line each with its kind, its subject and when it was
-approved. It names each subject — for `reviewed`, the note's resolved absolute path; for `memory`,
-the store's — escaped where it leaves the path grammar and, past 120 characters, by its start and
+approved. It names each subject — for `reviewed`, the resolved absolute path the note was
+promoted at, a label only, since its digest is what is matched — escaped where it leaves the path grammar and, past 120 characters, by its start and
 its length; a subject under `HOME` is named from `~/`. `--json` carries every subject whole.
 
 One command records an approval in this release: [`stayfixed memory
-promote`](#stayfixed-memory-promote-note----changed), of kind `reviewed`, one per note. The
-approvals of kind `memory` an earlier release recorded are inert, since the notes a repository
-commits reach a session with no approval, as data, and `trust revoke` withdraws them.
+promote`](#stayfixed-memory-promote-note----changed), of kind `reviewed`, one per note.
 
 `--json` keys: `approvals`, one object per approval with its `kind`, `subject`, `digest` and
-`approved_at` (empty for one `0.3.0` recorded).
+`approved_at`.
 
 **The record** is the machine's one record of approvals, of every kind. It is versioned: a JSON
 object holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
-`approved_at`. The flat map `0.3.0` wrote, a store's path to its digest, is read as approvals of
-kind `memory`, and the first write upgrades the file in place; a `0.3.0` reading a version-1
-record finds no approval in it. Every write replaces the whole file in one atomic step, and no lock
+`approved_at`. The flat map `0.3.x` wrote, a store's path to its digest, approved whole stores,
+which nothing asks about any more, so it is read as holding no approval and the first write
+replaces it; a `0.3.x` reading a version-1 record finds no approval in it. Every write replaces the whole file in one atomic step, and no lock
 is taken: two commands writing at once each replace it whole, the last one wins, and neither leaves
 it torn.
 
@@ -202,12 +200,14 @@ release's approvals.
 
 ## `stayfixed trust revoke KIND --subject KEY [--root PATH] [--machine PATH]`
 
-Withdraw the approval of kind `KIND` recorded for `KEY`, as `trust list --json` spells the two. It
-needs no terminal: withdrawing is the direction that fails safe. A revoke that matches nothing
+Withdraw the approval of kind `KIND` recorded for `KEY`, as `trust list --json` spells the two,
+and every other approval of that kind holding the same digest: a digest is what an approval is
+matched on, so a note promoted from two worktrees, or a copy of it, is unreviewed once either is
+revoked. It needs no terminal: withdrawing is the direction that fails safe. A revoke that matches nothing
 exits `1`, writes nothing, and lists what the kind has recorded, each subject named as `trust list`
 names it.
 
-`--json` keys: `kind`, and `revoked`, the subjects withdrawn; a revoke that matched nothing adds
+`--json` keys: `kind`, and `revoked`, every subject withdrawn; a revoke that matched nothing adds
 `recorded`, every subject the kind has recorded, whole.
 
 **Reads** the machine's trust record.
@@ -2093,7 +2093,7 @@ other. Run it on a checkout you trust.
 
 **What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
 machine's stays: the deny rules `stayfixed setup` added to the user settings file, and every
-approval in `~/.config/stayfixed/trust.json`. `stayfixed trust revoke memory --subject KEY`, with a
+approval in `~/.config/stayfixed/trust.json`. `stayfixed trust revoke reviewed --subject KEY`, with a
 key `stayfixed trust list --json` prints, withdraws one.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file

@@ -3,9 +3,8 @@
 A person lists and revokes approvals through `stayfixed trust`, whose commands are this package's
 own. The `memory` area keeps its reviewed notes in the record under kind `reviewed`, with no
 approval kind registered for it: it reads `recorded`, with the `Approval` it answers in and the
-`UnreadableTrust` it refuses with, asks `state_in` of each note, with the `State` it answers in,
-and `memory promote` writes through `approve_all`. A consumer that needs another reader or writer
-grows this list in a commit that names it.
+`UnreadableTrust` it refuses with, and `memory promote` writes through `approve_all`. A consumer
+that needs another reader or writer grows this list in a commit that names it.
 
 `setup --approval-boundary` prints what keeps an agent's shell out of the record, and writes none
 of it (`boundary`): `record_deny_rules` over the directory `record_path` names, `SANDBOX_ON` for
@@ -27,12 +26,10 @@ from stayfixed.trust.boundary import (
 )
 from stayfixed.trust.record import (
     Approval,
-    State,
     UnreadableTrust,
     approve_all,
     record_path,
     recorded,
-    state_in,
 )
 
 __all__ = [
@@ -41,7 +38,6 @@ __all__ = [
     "SANDBOX_ON",
     "SANDBOX_REFUSED",
     "Approval",
-    "State",
     "UnreadableTrust",
     "approve_all",
     "managed_named",
@@ -49,5 +45,4 @@ __all__ = [
     "record_path",
     "recorded",
     "sandbox_refused",
-    "state_in",
 ]

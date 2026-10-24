@@ -4187,18 +4187,7 @@ before = '            f"{path} cannot be read ({fsops.said(exc)}); refusing to a
 after = '            f"{path} cannot be read ({exc}); refusing to answer about trust or to "'
 reddens = ["tests/trust/test_record.py::test_a_record_that_cannot_be_read_says_why_in_words"]
 
-# The record reads `0.3.0`'s flat map as approvals of kind `memory`, and refuses, never reads as
-# empty, a version it does not know.
-[[mutation]]
-name = "the trust record no longer reads 0.3.0's flat map"
-file = "src/stayfixed/trust/record.py"
-before = "            if isinstance(digest, str)\n        }"
-after = "            if isinstance(digest, str) and False\n        }"
-reddens = [
-  "tests/trust/test_record.py::test_a_0_3_0_record_keeps_every_memory_approval",
-  "tests/trust/test_record.py::test_the_first_write_upgrades_the_file_in_place",
-]
-
+# The record refuses, never reads as empty, a version it does not know.
 [[mutation]]
 name = "a trust record of a later version is read as empty"
 file = "src/stayfixed/trust/record.py"
@@ -4279,27 +4268,12 @@ reddens = [
 [[mutation]]
 name = "an approval over an unreadable trust record writes the record anyway"
 file = "src/stayfixed/trust/record.py"
-before = "    approvals = recorded(machine)\n    was = {"
-after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    was = {"
+before = "    approvals = recorded(machine)\n    if not digests:"
+after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    if not digests:"
 reddens = [
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[not-json]",
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
 ]
-
-# An approval holds at its digest, and the record tells a changed digest from none at all.
-[[mutation]]
-name = "the trust record ignores the digest"
-file = "src/stayfixed/trust/record.py"
-before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
-after = "    return State.APPROVED"
-reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
-
-[[mutation]]
-name = "a lapsed approval reads as missing"
-file = "src/stayfixed/trust/record.py"
-before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
-after = "    return State.APPROVED if approval.digest == current else State.MISSING"
-reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
 
 # An approval is one kind and one subject: approving another kind of the same subject replaces
 # nothing.
@@ -4326,6 +4300,17 @@ before = "    if revoked:\n        _write(machine, approvals)\n    return revoke
 after = "    for _ in revoked:\n        _write(machine, approvals)\n    return revoked"
 reddens = [
   "tests/trust/test_record.py::test_every_subject_of_a_kind_is_revoked_in_one_write",
+]
+
+# A revocation follows the record's matching rule: withdrawn by one subject, a digest is withdrawn
+# from every entry of the kind holding it.
+[[mutation]]
+name = "a revoke leaves another entry holding the same digest"
+file = "src/stayfixed/trust/record.py"
+before = "    revoked = list(dict.fromkeys([*named, *same]))"
+after = "    revoked = named"
+reddens = [
+  "tests/memory/test_reviewed.py::test_revoking_one_entry_unreviews_every_note_holding_its_bytes",
 ]
 
 # The record is beside the machine file, and with no home there is none.
@@ -4640,8 +4625,8 @@ reddens = [
 [[mutation]]
 name = "approving no subject writes the record"
 file = "src/stayfixed/trust/record.py"
-before = "    if not digests:\n        return was"
-after = "    if False:\n        return was"
+before = "    if not digests:\n        return\n"
+after = "    if False:\n        return\n"
 reddens = [
   "tests/trust/test_record.py::test_approving_no_subject_writes_nothing",
 ]
