@@ -70,6 +70,7 @@ from stayfixed.attach.permissions import (
 from stayfixed.attach.render import (
     PLUGIN_INSTALL_LOCAL,
     PLUGIN_MARKETPLACE_ADD_LOCAL,
+    Part,
     Rendered,
     delivery_directory,
     filled,
@@ -641,6 +642,14 @@ def _placed(binding: Binding, config: Config, *, memory: bool) -> tuple[str, ...
     )
 
 
+def _main_settings(root: Path, checkouts: tuple[Path, ...]) -> tuple[str, ...]:
+    """The main checkout's settings file as a placed path of its own, where `root` is a linked
+    worktree: Claude Code writes the plugin's entry, which names the binding id, into the main
+    checkout's file whichever worktree `attach` runs from, so that file is held to the rule every
+    placed path is. Nothing where `root` is the main checkout, whose own placed paths include it."""
+    return () if checkouts[0] == root.resolve() else (LOCAL_SETTINGS,)
+
+
 def _named(config: Config, paths: tuple[str, ...]) -> str:
     """Placed paths as a refusal names them: those the checkout or the overlay names through
     `printed.quoted`, and the link tree's counted, because each carries a `memory.groups` entry,
@@ -1083,7 +1092,7 @@ class AttachPlan:
     # Each `.codex/rules/` target and the text to copy there.
     rules: tuple[tuple[str, str], ...]
     # What the rendered plugin carries, read from the overlay (`render.read_parts`).
-    parts: dict[str, str]
+    parts: dict[str, Part]
     checkouts: tuple[Path, ...]
 
 
@@ -1345,6 +1354,10 @@ def plan_writes(
     # asked once the block stands (`_carry_out`).
     if found := exclude.tracked(root, placed):
         raise Refusal(exclude.TRACKED.format(paths=_named(config, found)))
+    # And the main checkout's settings file, the one `claude plugin install --scope local` writes
+    # the plugin's entry into from any worktree, asked of the main checkout's own index.
+    if found := exclude.tracked(checkouts[0], _main_settings(root, checkouts)):
+        raise Refusal(exclude.TRACKED.format(paths=_named(config, found)))
     hidden = exclude.planned_block(root, placed)
     # The reads the writes below would otherwise make for themselves, each of which can refuse
     # after the first write: the overlay's rule sources (a file that is not UTF-8), what the
@@ -1397,6 +1410,11 @@ def _carry_out(
         exclude.write(planned.hidden)
     # The rule's second half: a `.gitignore` re-including a placed path (`!`) outranks the block.
     if shown := exclude.unignored(root, planned.placed):
+        raise Refusal(exclude.NOT_IGNORED.format(paths=_named(config, shown)))
+    # The main checkout's settings file too, asked of its own `.gitignore`: a worktree's branch can
+    # ignore it while the main checkout's re-includes it. The block is shared, so it is in place.
+    main = planned.checkouts[0]
+    if shown := exclude.unignored(main, _main_settings(root, planned.checkouts)):
         raise Refusal(exclude.NOT_IGNORED.format(paths=_named(config, shown)))
     for target, text in planned.rules:
         fsops.write_within(root, target, text)

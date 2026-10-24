@@ -31,9 +31,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from stayfixed import fsops
 from stayfixed.attach.permissions import HOOKS_FILE, PROJECT_CLAUDE, hook_groups
@@ -63,6 +65,14 @@ _DESCRIPTION = "The hooks, skills and agents of your stayfixed overlay, rendered
 SLOT = "<slot>"
 PLUGIN_MARKETPLACE_ADD_LOCAL = ("claude", "plugin", "marketplace", "add", SLOT, "--scope", "local")
 PLUGIN_INSTALL_LOCAL = ("claude", "plugin", "install", SLOT, "--scope", "local")
+
+
+class Part(NamedTuple):
+    """One file the plugin carries: its text, and the permission bits it is written with, `None`
+    for a file stayfixed generates, which keeps the mode it has or is made with the default."""
+
+    text: str
+    mode: int | None = None
 
 
 @dataclass(frozen=True)
@@ -110,15 +120,16 @@ def _unreadable(sentence: str) -> Failure:
     return Failure(f"{sentence}, so nothing was written")
 
 
-def _copied(source: Path) -> dict[str, str]:
+def _copied(source: Path) -> dict[str, Part]:
     """Every regular file under `source` by its path relative to it, its text with its own line
-    endings; dot-named files and directories are left out. The overlay is the owner's, so a path in
-    it prints, through `quoted` since a project's directory carries `project.name`."""
+    endings and its permission bits, so a skill's script stays executable; dot-named files and
+    directories are left out. The overlay is the owner's, so a path in it prints, through `quoted`
+    since a project's directory carries `project.name`."""
 
     def refuse(error: OSError) -> None:
         raise error
 
-    found: dict[str, str] = {}
+    found: dict[str, Part] = {}
     with fsops.reading(quoted(str(source)), _unreadable):
         for directory, names, files in os.walk(source, onerror=refuse):
             # Pruned in place, which is how `os.walk` is told not to enter a directory.
@@ -129,11 +140,14 @@ def _copied(source: Path) -> dict[str, str]:
                     continue
                 with fsops.reading(quoted(str(path)), _unreadable):
                     text = fsops.read_regular_text(path, newline="")
-                found[path.relative_to(source).as_posix()] = text
+                    # The permission bits alone: a set-id or sticky bit is not the overlay's to
+                    # hand to a file under this machine's data directory.
+                    mode = stat.S_IMODE(path.stat().st_mode) & 0o777
+                found[path.relative_to(source).as_posix()] = Part(text, mode)
     return found
 
 
-def read_parts(overlay: Path, project: str) -> dict[str, str]:
+def read_parts(overlay: Path, project: str) -> dict[str, Part]:
     """What the plugin carries, by path relative to the plugin directory, read and nothing
     written: the hook file's union and the copied directories."""
     share = overlay / PROJECTS / project
@@ -142,58 +156,55 @@ def read_parts(overlay: Path, project: str) -> dict[str, str]:
     for source, owner in sources:
         for event, groups in hook_groups(source / HOOKS_FILE, share=owner).items():
             hooks.setdefault(event, []).extend(groups)
-    parts = {HOOK_FILE: json.dumps({"hooks": hooks}, indent=2) + "\n"}
+    parts = {HOOK_FILE: Part(json.dumps({"hooks": hooks}, indent=2) + "\n")}
     for source, _ in sources:
         for copied in COPIED:
             directory = source / copied
             if fsops.is_dir(directory):
-                for relative, text in _copied(directory).items():
-                    parts[f"{copied}/{relative}"] = text
+                for relative, part in _copied(directory).items():
+                    parts[f"{copied}/{relative}"] = part
     return parts
 
 
-def _digest(files: Mapping[str, str]) -> str:
+def _digest(files: Mapping[str, Part]) -> str:
     digest = hashlib.sha256()
     for relative in sorted(files):
-        content = files[relative].encode("utf-8")
+        content = files[relative].text.encode("utf-8")
         digest.update(f"{relative}\0{len(content)}\0".encode())
         digest.update(content)
     return digest.hexdigest()
 
 
-def write(id: str, parts: Mapping[str, str], *, stale: tuple[str, ...] = ()) -> RenderRecord:
+def write(id: str, parts: Mapping[str, Part], *, stale: tuple[str, ...] = ()) -> RenderRecord:
     """Write the marketplace, the plugin's manifest and `parts` under `<data>/delivery/<id>/`,
     replacing what is there, and remove each of `stale` this render no longer holds.
 
     `stale` is the parts an earlier render recorded, paths relative to the render directory, named
     before anything is looked at and each removed through the contained walk, so none can reach
     past the directory the id names."""
-    files = {
-        MARKETPLACE_FILE: json.dumps(
+    marketplace = {
+        "name": marketplace_name(id),
+        "owner": {"name": "stayfixed"},
+        "plugins": [
             {
-                "name": marketplace_name(id),
-                "owner": {"name": "stayfixed"},
-                "plugins": [
-                    {
-                        "name": plugin_name(id),
-                        "source": f"./{PLUGIN_DIRECTORY}",
-                        "description": _DESCRIPTION,
-                    }
-                ],
-            },
-            indent=2,
-        )
-        + "\n",
-        PLUGIN_FILE: json.dumps({"name": plugin_name(id), "description": _DESCRIPTION}, indent=2)
-        + "\n",
-        **{f"{PLUGIN_DIRECTORY}/{relative}": text for relative, text in parts.items()},
+                "name": plugin_name(id),
+                "source": f"./{PLUGIN_DIRECTORY}",
+                "description": _DESCRIPTION,
+            }
+        ],
+    }
+    plugin = {"name": plugin_name(id), "description": _DESCRIPTION}
+    files = {
+        MARKETPLACE_FILE: Part(json.dumps(marketplace, indent=2) + "\n"),
+        PLUGIN_FILE: Part(json.dumps(plugin, indent=2) + "\n"),
+        **{f"{PLUGIN_DIRECTORY}/{relative}": part for relative, part in parts.items()},
     }
     directory = delivery_directory(id)
     # The plain-path form for the directory itself, as `binding.record` writes this machine's own
     # data directory; every file inside it goes through the walk that refuses a symlink.
     directory.mkdir(parents=True, exist_ok=True)
-    for relative, text in files.items():
-        fsops.write_within(directory, relative, text)
+    for relative, part in files.items():
+        fsops.write_within(directory, relative, part.text, mode=part.mode)
     for relative in stale:
         if relative not in files:
             fsops.remove_within(directory, relative)

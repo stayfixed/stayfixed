@@ -47,6 +47,8 @@ def _overlay(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (common / "skills" / "review" / "SKILL.md").write_text("review\n", encoding="utf-8")
+    (common / "skills" / "review" / "check.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (common / "skills" / "review" / "check.sh").chmod(0o750)
     # Dot-named files and directories are the editor's and the system's, never delivered.
     (common / "skills" / ".cache").mkdir()
     (common / "skills" / ".cache" / "index.md").write_text("cache\n", encoding="utf-8")
@@ -97,11 +99,13 @@ def test_render_writes_the_marketplace_and_the_plugin_under_names_carrying_the_w
     }
     assert (delivery / "plugin" / "skills" / "review" / "SKILL.md").read_text() == "review\n"
     assert (delivery / "plugin" / "agents" / "helper.md").read_text() == "helper\n"
+    # A copied file keeps its mode: a skill's script stays executable.
+    assert (delivery / "plugin" / "skills" / "review" / "check.sh").stat().st_mode & 0o777 == 0o750
     assert record.id == ID
     assert record.parts == tuple(
         sorted(p.relative_to(delivery).as_posix() for p in delivery.rglob("*") if p.is_file())
     )
-    assert len(record.parts) == 5
+    assert len(record.parts) == 6
     assert record.digest == _digest(delivery)
 
 
@@ -115,6 +119,8 @@ def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path
         json.dumps({"hooks": {"Stop": [{"hooks": [COMMON]}]}}), encoding="utf-8"
     )
     (overlay / "common" / "claude" / "skills" / "review" / "SKILL.md").unlink()
+    # A mode changed in the overlay reaches the render too, over the file already there.
+    (overlay / "common" / "claude" / "skills" / "review" / "check.sh").chmod(0o640)
     # The parts the first render recorded are what the second takes back, as `attach` hands
     # them over from its ledger: nothing in the directory is found by listing it.
     second = render(overlay, "p", ID, stale=first.parts)
@@ -123,7 +129,8 @@ def test_a_second_render_replaces_the_files_in_the_same_directory(tmp_path: Path
     assert isinstance(hooks, dict)
     assert hooks["hooks"]["Stop"] == [{"hooks": [COMMON]}]
     assert hooks["hooks"]["SessionStart"] == [{"hooks": [PROJECT]}]
-    assert not (delivery / "plugin" / "skills").exists()
+    assert not (delivery / "plugin" / "skills" / "review" / "SKILL.md").exists()
+    assert (delivery / "plugin" / "skills" / "review" / "check.sh").stat().st_mode & 0o777 == 0o640
     assert second.digest != first.digest
     assert second.digest == _digest(delivery)
     assert [p.name for p in delivery.parent.iterdir()] == [ID]

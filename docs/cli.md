@@ -2504,7 +2504,8 @@ no flag, because the gate is on the capability and not on the command.
 `stayfixed-delivery-<id>` holding one plugin, `overlay-<id>`, whose `hooks/hooks.json` is the union
 of `common/claude/hooks.json` and `projects/<name>/claude/hooks.json` — each event's entry groups
 in that order, as the overlay wrote them — and whose `skills/` and `agents/` are copied from the
-same two directories, this project's copy of a file winning over the common one. A session runs
+same two directories, this project's copy of a file winning over the common one and each copy
+keeping its source's permission bits, so a skill's script stays executable. A session runs
 the plugin from that directory in place, so a later `attach` re-renders it there and an edit
 reaches the next session with no reinstall; a file the overlay no longer holds is taken out of it,
 named by the ledger's record of the previous render (its digest and its files' paths, never the
@@ -2603,6 +2604,10 @@ each of those paths is ignored** (`git check-ignore --no-index`, every ignore fi
 it would still show — one a `.gitignore` re-includes with a `!` line, which outranks the exclude
 file — refuses the run before that path, or anything after the block, is written. The binding id is
 placed in the git common directory, which git never tracks, so it is neither listed nor asked about.
+Run from a linked worktree, the main checkout's `.claude/settings.local.json`, which the install
+writes the plugin's entry into, is held to the same two questions as well, asked of the main
+checkout's own index before the first write and of its own `.gitignore` once the block stands, since
+a worktree's branch can ignore that file while the main checkout's re-includes it.
 A `.claude` linked in from elsewhere is refused before the first write, since what lands there names
 the binding id and git cannot be asked whether it is ignored. A checkout that already hides all of them in its
 own exclude file or a global excludes file gets no block, and `git status` after an attach shows

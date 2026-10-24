@@ -2854,3 +2854,24 @@ after = '    return MARKETPLACE_PREFIX.rstrip("-")'
 reddens = [
   "tests/attach/test_render.py::test_render_writes_the_marketplace_and_the_plugin_under_names_carrying_the_whole_id",
 ]
+
+# Claude Code's local-scope install writes the plugin's entry, which names the binding id, into the
+# main checkout's settings file whichever worktree `attach` runs from. Asked of the worktree alone,
+# a main checkout whose branch tracks that file, or re-includes it with a `!` line, took the id.
+[[mutation]]
+name = "attach asks the worktree alone whether the main checkout's settings file is tracked"
+file = "src/stayfixed/attach/write.py"
+before = "    if found := exclude.tracked(checkouts[0], _main_settings(root, checkouts)):"
+after = "    if found := exclude.tracked(checkouts[0], ()):"
+reddens = [
+  "tests/attach/test_write.py::test_attach_from_a_worktree_refuses_a_settings_file_the_main_checkout_tracks",
+]
+
+[[mutation]]
+name = "attach asks the worktree alone whether the main checkout's settings file is ignored"
+file = "src/stayfixed/attach/write.py"
+before = "    if shown := exclude.unignored(main, _main_settings(root, planned.checkouts)):"
+after = "    if shown := exclude.unignored(main, ()):"
+reddens = [
+  "tests/attach/test_write.py::test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_places",
+]

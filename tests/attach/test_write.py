@@ -294,6 +294,67 @@ def test_the_first_attach_installs_the_rendered_plugin_from_the_main_checkout_an
     assert _claude_calls(second) == []
 
 
+def test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_places(
+    tmp_path: Path,
+) -> None:
+    # Claude Code writes the plugin's entry, which names the binding id, into the main checkout's
+    # settings file whichever worktree `attach` runs from, so that file is asked about in the main
+    # checkout too. Here the worktree's branch ignores the settings file and the main checkout's
+    # re-includes it: asked of the worktree alone, every check passed and the plugin was installed
+    # into a file `git status` offered the main checkout for commit. Mutation: `mutations/`'s
+    # "attach asks the worktree alone whether the main checkout's settings file is ignored".
+    root, store, machine = _attachable(tmp_path)
+    (root / ".gitignore").write_text(f"{SETTINGS}\n", encoding="utf-8")
+    _committed(root)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    (root / ".gitignore").write_text(f"!{SETTINGS}\n", encoding="utf-8")
+    _git(root, "commit", "-qam", "re-include the settings file")
+    runner = Recorder()
+    with pytest.raises(Refusal) as refused:
+        attach(
+            side,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            runner=runner,
+            home=tmp_path / "home",
+        )
+    assert str(refused.value) == NOT_IGNORED.format(paths=quoted(SETTINGS))
+    assert runner.calls == []
+    assert not (root / SETTINGS).exists() and not (side / SETTINGS).exists()
+
+
+def test_attach_from_a_worktree_refuses_a_settings_file_the_main_checkout_tracks(
+    tmp_path: Path,
+) -> None:
+    # The tracked half of the same rule, asked of the main checkout's own index: its branch commits
+    # the settings file the install would write the binding id into, the worktree's does not.
+    # Mutation: `mutations/`'s "attach asks the worktree alone whether the main checkout's settings
+    # file is tracked".
+    root, store, machine = _attachable(tmp_path)
+    _committed(root)
+    side = tmp_path / "side"
+    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text("{}\n", encoding="utf-8")
+    _git(root, "add", SETTINGS)
+    _git(root, "commit", "-qm", "commit the settings file")
+    runner = Recorder()
+    with pytest.raises(Refusal) as refused:
+        attach(
+            side,
+            store=store,
+            machine=machine,
+            confirmed=True,
+            runner=runner,
+            home=tmp_path / "home",
+        )
+    assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
+    assert runner.calls == []
+    assert (root / SETTINGS).read_text(encoding="utf-8") == "{}\n"
+
+
 def test_an_install_that_did_not_succeed_is_said_by_its_code_and_tried_again(
     tmp_path: Path,
 ) -> None:

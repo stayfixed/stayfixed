@@ -3,7 +3,10 @@ plugin. Every run renders them into `~/.local/share/stayfixed/delivery/<id>/`, a
 plugin named by the checkout's binding id, and the first attach installs it with
 `claude plugin marketplace add … --scope local` and `claude plugin install … --scope local`, run
 from the main checkout so every worktree gets it; a session runs the plugin from that directory, so
-an edit in the overlay reaches the next session after the next `attach`, with no reinstall. No
+an edit in the overlay reaches the next session after the next `attach`, with no reinstall; a
+copied file keeps its mode, so a skill's script stays executable. Run from a worktree, `attach`
+also refuses when the main checkout tracks `.claude/settings.local.json`, where the install
+writes, or its `.gitignore` re-includes it. No
 hook entry goes into `.claude/settings.local.json` any more: it keeps only the allow rules `attach`
 merges, and the entries an earlier release merged there are taken back, the ones its ledger
 records and no other. `attach --check` and `--json` no longer report `added_hooks`, and `--yes` now
