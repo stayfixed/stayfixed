@@ -17,7 +17,7 @@ import pytest
 import stayfixed
 from stayfixed.config.overlay import overlay_root
 from stayfixed.doctor.api import OK, RED, SKIP, WARN
-from stayfixed.overlay.api import PLUGIN_MANIFEST
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from tests.doctor.test_checks import (
     OVERLAY,
     _attached,
@@ -144,7 +144,7 @@ def test_overlay_requires_is_ok_when_the_floor_is_met_and_skips_without_an_overl
 def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None:
     machine = _recorded_overlay(tmp_path, "~=1.0")
     row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
-    assert row.status == WARN and PLUGIN_MANIFEST in row.remedy
+    assert row.status == WARN and IDENTITY_RECORD in row.remedy
 
 
 def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_path: Path) -> None:

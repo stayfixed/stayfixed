@@ -20,13 +20,10 @@ COMMON = "common"
 COMMON_MEMORY = f"{COMMON}/memory"
 COMMON_CLAUDE = f"{COMMON}/claude"
 COMMON_CODEX = f"{COMMON}/codex"
-PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
-MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
-# The Codex half of `PLUGIN_MANIFEST`, named here rather than spelled as a literal inside
-# `OVERLAY_FILES`: `overlay init` has to suffix it for the same reason it suffixes the other
-# two — a harness installs a plugin by the name in its manifest, and this project ships a Codex
-# half of everything else.
-CODEX_PLUGIN_MANIFEST = ".codex-plugin/plugin.json"
+# The overlay's identity record, at its root: what makes a tree a stayfixed overlay
+# (`identity.overlay_fault`), and where the floor `requires.requires_of` reads is declared. It
+# replaced the plugin manifests the overlay carried while it was a plugin of its own.
+IDENTITY_RECORD = "stayfixed-overlay.toml"
 # The overlay's commit-time secret scan, and the hook `pre-commit install` writes for it: `attach`
 # installs the hook when it is missing, and `doctor`'s `pre-commit` row asks whether it is there.
 # The hook's *name* only: where it lives is `guards.hooks_dir`'s answer and never `.git/hooks`,
@@ -52,10 +49,7 @@ PRE_COMMIT_HOOK = "pre-commit"
 CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
 
 OVERLAY_FILES = (
-    PLUGIN_MANIFEST,
-    MARKETPLACE_MANIFEST,
-    CODEX_PLUGIN_MANIFEST,
-    "hooks/hooks.json",
+    IDENTITY_RECORD,
     f"{COMMON_MEMORY}/_README.md",
     *CAPABILITY_NAMES,
     f"{COMMON_CODEX}/common.rules",

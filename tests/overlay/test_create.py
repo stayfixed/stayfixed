@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import NoReturn
 
@@ -10,6 +9,7 @@ from stayfixed import jsonobject
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import create, init_instance
 from stayfixed.overlay.create import RETRY_WAIT_SECONDS, _is_template
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from stayfixed.runner import Completed
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
@@ -36,9 +36,9 @@ def _populate(argv: list[str], cwd: Path) -> None:
     """Stand in for a successful template generation: write the probe `create` looks for."""
     if argv[:3] != ["gh", "repo", "create"]:
         return
-    target = cwd / argv[3].split("/")[-1] / ".claude-plugin"
+    target = cwd / argv[3].split("/")[-1]
     target.mkdir(parents=True, exist_ok=True)
-    (target / "plugin.json").write_text(json.dumps({"name": "stayfixed-overlay"}), encoding="utf-8")
+    (target / IDENTITY_RECORD).write_text("layout = 1\n", encoding="utf-8")
 
 
 def _the_create_call(runner: Recorder) -> list[str]:
@@ -82,10 +82,8 @@ def test_a_clone_that_raced_generation_is_retried_once_before_failing(tmp_path: 
 def test_an_existing_populated_clone_is_left_alone(tmp_path: Path) -> None:
     # `create` is idempotent because `gh` may give up on the clone with the repository already
     # created — so the second run finds a tree and must not re-create.
-    (tmp_path / "stayfixed-private" / ".claude-plugin").mkdir(parents=True)
-    (tmp_path / "stayfixed-private" / ".claude-plugin" / "plugin.json").write_text(
-        "{}", encoding="utf-8"
-    )
+    (tmp_path / "stayfixed-private").mkdir()
+    (tmp_path / "stayfixed-private" / IDENTITY_RECORD).write_text("", encoding="utf-8")
     runner = Recorder()
     created = create("octo", "stayfixed-private", source="template", root=tmp_path, runner=runner)
     assert runner.calls == []
@@ -101,8 +99,7 @@ def test_the_local_source_touches_no_network(tmp_path: Path) -> None:
     # its own below. It used to read `runner.calls == []`, which was that claim while `--local`
     # ran nothing at all.
     assert [argv for argv in runner.calls if argv[0] == "gh"] == []
-    assert (created.root / ".claude-plugin" / "plugin.json").is_file()
-    assert (created.root / "hooks" / "hooks.json").is_file()
+    assert (created.root / IDENTITY_RECORD).is_file()
 
 
 @pytest.mark.parametrize("name", ["../escape", "a/b", "", "-flag"])
@@ -112,18 +109,6 @@ def test_a_name_that_is_not_one_path_segment_is_refused(tmp_path: Path, name: st
     # option never reaches a subprocess in an option's position.
     with pytest.raises(Refusal):
         create("octo", name, source="local", root=tmp_path, runner=Recorder())
-
-
-def test_init_renames_the_plugin_and_marketplace_for_the_owner(tmp_path: Path) -> None:
-    # The owner's suffix is what keeps two overlays installed into one harness from colliding.
-    # A measured trial added and installed an owner-suffixed pair, pushed to a private SSH
-    # remote, without error under a scratch CLAUDE_CONFIG_DIR.
-    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
-    init_instance(created.root, "OctoCat", runner=Recorder())
-    plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
-    market = json.loads((created.root / ".claude-plugin" / "marketplace.json").read_text())
-    assert plugin["name"] == "stayfixed-overlay-octocat"
-    assert market["name"] == "stayfixed-overlay-marketplace-octocat"
 
 
 def test_init_installs_pre_commit_and_says_so_when_it_cannot(tmp_path: Path) -> None:
@@ -142,27 +127,16 @@ def test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it(
     tmp_path: Path,
 ) -> None:
     # `--root` defaults to `.`, and `init` asked nothing of it: run inside the stayfixed checkout
-    # itself, it renamed all three plugin manifests and installed a commit hook there. `upgrade`
-    # had the guard and `setup` uses it twice; this is the caller `identity.py` was written for
-    # that it did not list. Mutation: the `require_overlay` line removed → the manifest below is
-    # renamed and the runner is called.
+    # itself, it rewrote files there and installed a commit hook. `upgrade` had the guard and
+    # `setup` uses it twice; this is the caller `identity.py` was written for that it did not
+    # list. Mutation: the `require_overlay` line removed → the runner is called.
     project = tmp_path / "project"
     (project / ".claude-plugin").mkdir(parents=True)
-    manifest = project / ".claude-plugin" / "plugin.json"
-    manifest.write_text(json.dumps({"name": "somebody-elses-plugin"}), encoding="utf-8")
     runner = Recorder()
     with pytest.raises(Refusal) as refused:
         init_instance(project, "octo", runner=runner)
     assert "overlay init" in str(refused.value)
-    assert json.loads(manifest.read_text())["name"] == "somebody-elses-plugin"
     assert runner.calls == []
-
-
-def test_init_is_idempotent(tmp_path: Path) -> None:
-    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
-    first = init_instance(created.root, "octo", runner=Recorder())
-    second = init_instance(created.root, "octo", runner=Recorder())
-    assert first.renamed != () and second.renamed == ()
 
 
 def test_the_cli_never_picks_the_github_source_for_you() -> None:
@@ -261,8 +235,6 @@ def test_a_mixed_case_owner_gets_one_answer_from_both_commands(tmp_path: Path) -
     local.mkdir()
     created = create("OctoCat", "stayfixed-private", source="local", root=local, runner=Recorder())
     init_instance(created.root, "OctoCat", runner=Recorder())
-    plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin["name"] == "stayfixed-overlay-octocat"
 
 
 def test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_more_calls(
@@ -551,7 +523,7 @@ def test_a_git_that_cannot_init_is_a_note_and_the_tree_is_kept(tmp_path: Path) -
     # refusing would only hide a directory that exists. The note says what to run.
     runner = Recorder(answers={"git": Completed(127, "", "git could not be run: [Errno 2] git")})
     created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=runner)
-    assert (created.root / ".claude-plugin" / "plugin.json").is_file()
+    assert (created.root / IDENTITY_RECORD).is_file()
     message = " ".join(created.notes)
     assert "git could not be run" in message
     assert "could not be run" in message and "did not run" not in message
@@ -591,101 +563,6 @@ def test_the_scratch_render_publish_template_uses_is_not_a_repository(tmp_path: 
 
     rendered = _render_locally(tmp_path, "scratch")
     assert not (rendered / ".git").exists()
-
-
-# --- the manifests the harness validates -------------------------------------------------------
-
-
-def test_init_names_the_owner_and_the_author_the_harness_asks_for(tmp_path: Path) -> None:
-    # A marketplace with no `owner` fails `claude plugin validate`, and a plugin manifest with no
-    # `author` draws a warning on every install. The template ships a neutral placeholder for
-    # both and `init` is where the account it belongs to goes in. Mutation: drop the owner/author
-    # branch of `naming.renamed` → the placeholder is still there after init and this reddens.
-    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
-    init_instance(created.root, "OctoCat", runner=Recorder())
-    market = json.loads((created.root / ".claude-plugin" / "marketplace.json").read_text())
-    assert market["owner"] == {"name": "octocat"}
-    for relative in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
-        manifest = json.loads((created.root / relative).read_text(encoding="utf-8"))
-        assert manifest["author"] == {"name": "octocat"}, relative
-
-
-def test_init_completes_an_overlay_whose_template_predates_the_owner_and_author(
-    tmp_path: Path,
-) -> None:
-    # The owner's own published template is used first, and one published by an earlier stayfixed
-    # carries neither key. `init` is the one command that runs on every such overlay, so it adds
-    # what is missing rather than leaving a marketplace the harness refuses.
-    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
-    for relative, removed in (
-        (".claude-plugin/marketplace.json", "owner"),
-        (".claude-plugin/plugin.json", "author"),
-        (".codex-plugin/plugin.json", "author"),
-    ):
-        path = created.root / relative
-        document = json.loads(path.read_text(encoding="utf-8"))
-        del document[removed]
-        path.write_text(json.dumps(document), encoding="utf-8")
-    init_instance(created.root, "octo", runner=Recorder())
-    market = json.loads((created.root / ".claude-plugin" / "marketplace.json").read_text())
-    assert market["owner"] == {"name": "octo"}
-    plugin = json.loads((created.root / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin["author"] == {"name": "octo"}
-
-
-def test_init_keeps_an_author_the_owner_wrote_themselves(tmp_path: Path) -> None:
-    # Only the placeholder is replaced: a person who put their own name in `author` before
-    # running `init`, or who runs it a second time, keeps it.
-    #
-    # Mutation: `mutations/`'s "overlay init replaces an author the owner wrote".
-    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
-    path = created.root / ".claude-plugin" / "plugin.json"
-    document = json.loads(path.read_text(encoding="utf-8"))
-    document["author"] = {"name": "Jane Doe", "email": "jane@example.com"}
-    path.write_text(json.dumps(document), encoding="utf-8")
-    init_instance(created.root, "octo", runner=Recorder())
-    assert json.loads(path.read_text(encoding="utf-8"))["author"] == {
-        "name": "Jane Doe",
-        "email": "jane@example.com",
-    }
-
-
-def test_init_names_the_codex_manifest_after_the_owner_too(tmp_path: Path) -> None:
-    # `init_instance`'s own docstring gives the rationale — a harness
-    # installs a plugin by the name in its manifest, so two owners' overlays under one
-    # configuration directory are one plugin fighting itself — and the project ships a Codex
-    # half of everything else, but `.codex-plugin/plugin.json` was left unsuffixed, so the
-    # collision the suffix exists to prevent still happened on Codex.
-    #
-    # Mutation (`mutations/`'s "overlay init leaves the Codex manifest unsuffixed"):
-    # the Codex row is dropped from `naming.NAMED` → this reddens on the third name.
-    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
-    init_instance(created.root, "OctoCat", runner=Recorder())
-    names = {
-        relative: json.loads((created.root / relative).read_text(encoding="utf-8"))["name"]
-        for relative in (
-            ".claude-plugin/plugin.json",
-            ".claude-plugin/marketplace.json",
-            ".codex-plugin/plugin.json",
-        )
-    }
-    assert names == {
-        ".claude-plugin/plugin.json": "stayfixed-overlay-octocat",
-        ".claude-plugin/marketplace.json": "stayfixed-overlay-marketplace-octocat",
-        ".codex-plugin/plugin.json": "stayfixed-overlay-octocat",
-    }
-
-
-def test_a_manifest_this_overlay_does_not_carry_is_a_note_not_a_failure(tmp_path: Path) -> None:
-    # An overlay generated before the Codex half shipped carries two of the three manifests,
-    # and refusing to name the other two over it would make `init` unusable on exactly the
-    # overlays that most need running it. A manifest that *exists* and cannot be read is still
-    # a failure — that is a file saying something this command cannot act on.
-    created = create("octo", "stayfixed-private", source="local", root=tmp_path, runner=Recorder())
-    (created.root / ".codex-plugin" / "plugin.json").unlink()
-    result = init_instance(created.root, "octo", runner=Recorder())
-    assert ".codex-plugin/plugin.json" not in result.renamed
-    assert any(".codex-plugin/plugin.json" in note for note in result.notes)
 
 
 def test_a_local_render_over_an_existing_repository_says_what_it_found(tmp_path: Path) -> None:

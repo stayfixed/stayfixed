@@ -60,12 +60,12 @@ adds:
 - **An enforcement state machine** in which each gate runs advisory until the repository has
   earned it. `stayfixed assess` says what stands in the way, and `stayfixed adopt promote`
   enforces a gate once it passes.
-- **A personal overlay that is itself a versioned plugin** with its own upgrade manifest,
-  rather than a dotfiles sync. `stayfixed overlay create` renders one and `stayfixed attach`
+- **A personal overlay that is a versioned repository of its own**, named by its identity record
+  and with its own upgrade manifest, rather than a dotfiles sync. `stayfixed overlay create` renders one and `stayfixed attach`
   binds a repository to it: the hooks, skills, agents and allow rules you keep there reach that
   repository's sessions, and so do your rules — `common/claude/rules/*.md` and
   `projects/<name>/claude/rules/*.md`, a standing rule at every session's start and one with
-  `paths:` frontmatter the first time a session reads or edits a file its globs match. It also *declares* the stayfixed it needs, in its plugin manifest;
+  `paths:` frontmatter the first time a session reads or edits a file its globs match. It also *declares* the stayfixed it needs, in its identity record;
   `stayfixed doctor` reads it and reports it when the stayfixed running is too old — red when
   this project keeps its notes in that overlay, a warning when it does not — and a session in a
   bound repository says so once at its start.

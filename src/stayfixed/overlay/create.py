@@ -7,11 +7,10 @@ the scaffold engine, makes a git repository of it, and touches no network. A tem
 fork: a fork's visibility is bound to the upstream network and cannot be made private, and an
 overlay that is not private is the one outcome this whole area exists to prevent.
 
-`init_instance` is what makes a generated repository *this owner's*: the plugin and marketplace
-names carry their account, so two overlays installed into one harness never collide, and the
-commit-time secret scan is installed. Neither step is destructive and both are idempotent —
-`gh` may give up on the clone with the repository already created, so a second run is the
-ordinary case rather than the exception.
+`init_instance` is what every created overlay runs next: it removes the files an earlier
+release's template shipped and this one does not, and installs the commit-time secret scan.
+Neither step is destructive and both are idempotent — `gh` may give up on the clone with the
+repository already created, so a second run is the ordinary case rather than the exception.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -27,16 +26,12 @@ from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import json_object
-from stayfixed.overlay import naming
 from stayfixed.overlay.identity import require_overlay, segment
-from stayfixed.overlay.layout import (
-    OVERLAY_FILES,
-    SUCCESSORS,
-)
+from stayfixed.overlay.layout import IDENTITY_RECORD, OVERLAY_FILES, SUCCESSORS
 from stayfixed.overlay.template import retired, templates
 from stayfixed.printed import answered, quoted
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
-from stayfixed.scaffold import Manifest, Verb, apply, digest, plan, unlinks
+from stayfixed.scaffold import Manifest, Verb, apply, plan, unlinks
 
 Source = Literal["template", "local"]
 TEMPLATE_REPOSITORY = "stayfixed-overlay-template"
@@ -53,13 +48,11 @@ TEMPLATE_PUBLISHER = "stayfixed"
 # The owner's own `<owner>/…` probe stays host-relative: that repository is on the owner's host.
 TEMPLATE_PUBLISHER_HOST = "github.com"
 PUBLISHED_TEMPLATE = f"{TEMPLATE_PUBLISHER_HOST}/{TEMPLATE_PUBLISHER}/{TEMPLATE_REPOSITORY}"
-# The directory whose presence says a generated repository actually arrived — the exact probe the
-# spike record (`docs/plans/2026-09-05-agent-harness-p0-spikes.md`) used in its *template creation
-# race and renaming* trial, and the one thing a repository created from this template always
-# carries. Deliberately weaker than `identity.overlay_fault`, and `identity`'s own docstring says
-# why: this one answers "did a tree arrive here", which is the question idempotence asks of a clone
-# `gh` gave up on half way through.
-PROBE = ".claude-plugin"
+# The file whose presence says a generated repository actually arrived: the identity record, the
+# one thing a repository created from this template always carries. Deliberately weaker than
+# `identity.overlay_fault`: this one answers "did a tree arrive here", which is the question
+# idempotence asks of a clone `gh` gave up on half way through.
+PROBE = IDENTITY_RECORD
 # How long to wait before the one retry, when `gh` says the repository exists and the clone brought
 # nothing down. The spike record's *template creation race and renaming* trial did not reproduce
 # that race in its one attempt, so this is carried on the strength of reasoning rather than of a
@@ -99,10 +92,9 @@ class Created:
 
 @dataclass(frozen=True)
 class Initialised:
-    renamed: tuple[str, ...]
     notes: tuple[str, ...]
-    # Every overlay file the run rewrote, removed or wrote, the renamed manifests included, so a
-    # caller that reports on an overlay it found can say whether `init` changed it.
+    # Every overlay file the run removed or wrote, so a caller that reports on an overlay it found
+    # can say whether `init` changed it.
     changed: tuple[str, ...] = ()
 
 
@@ -128,18 +120,17 @@ def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
 
 
 def _populated(target: Path) -> bool:
-    return fsops.is_dir(target / PROBE)
+    return fsops.exists(target / PROBE)
 
 
 def _render_locally(root: Path, name: str) -> Path:
     target = root / name
     # **Everything that can refuse runs before anything is created**, and the order is
-    # load-bearing rather than tidy. `mkdirs_within` below creates `<name>/.claude-plugin`,
-    # which is exactly `PROBE` — so a render that failed after it (`templates()` on a stayfixed
-    # installed without the tree, a manifest that will not parse, a refused path) would leave
-    # behind the one directory that makes a later `overlay create --template` answer "already
-    # exists and was left alone" and never create the repository at all. The idempotence rule
-    # would silently swallow the real command. A refusal has to cost nothing on disk.
+    # load-bearing rather than tidy. A render that failed after writing `PROBE` (`templates()` on
+    # a stayfixed installed without the tree, a refused path) would leave behind the one file that
+    # makes a later `overlay create --template` answer "already exists and was left alone" and
+    # never create the repository at all. The idempotence rule would silently swallow the real
+    # command. A refusal has to cost nothing on disk.
     #
     # `plan` reads and decides and writes nothing, and it is happy with a root that does not
     # exist yet: `Manifest.read` finds no file and every artifact reads as absent.
@@ -378,113 +369,33 @@ NO_TEMPLATE_TREE = (
 )
 
 NOT_AN_OVERLAY = (
-    "`stayfixed overlay init --root` must name an overlay. It rewrites the tree's plugin "
-    "manifests and installs a commit hook there, so pointed at anything else -- a project, or "
-    "the stayfixed checkout itself -- it renames somebody else's manifests"
+    "`stayfixed overlay init --root` must name an overlay. It removes files from the tree and "
+    "installs a commit hook there, so pointed at anything else -- a project, or the stayfixed "
+    "checkout itself -- it changes somebody else's tree"
 )
 
 
 def init_instance(root: Path, owner: str, *, runner: Runner) -> Initialised:
-    """Make a generated overlay this owner's: name it after them, and install the secret scan.
-
-    The suffix is there so two overlays never collide — a harness installs a plugin by the name
-    in its manifest, so two owners' overlays under one configuration directory would be one
-    plugin fighting itself. **All three manifests**, because the project ships a Codex half of
-    everything else and `.codex-plugin/plugin.json` left unsuffixed is that collision still
-    happening, one harness over. Each is rewritten through `fsops.write_within`: the overlay
-    root *is* a root, so the contained walk applies and there is no carve-out to take.
-
-    **A rewrite of a file stayfixed wrote is re-stamped into the scaffold ledger.** `create
-    --local` renders these files through the engine, which records each one's digest; a rewrite
-    behind the ledger's back makes the file read as hand-edited for ever after, so `overlay
-    upgrade` reported `skip_modified .claude-plugin/plugin.json (hand-edited)` and never
-    refreshed it again — for the one file carrying `stayfixed.requires`, the
-    version-compatibility declaration the README advertises, and attributing to the owner an
-    edit stayfixed itself made. **Only a file whose bytes before the rewrite were the recorded
-    ones**: a manifest the owner edited is still renamed, but re-stamping it recorded their edit
-    as stayfixed's, and the next `upgrade` refreshed it away. Its record stays, and `upgrade` goes
-    on naming it. A `--template` clone carries no ledger at all, and gets no record written for it.
-
-    **Both halves are needed, and neither puts the owner into the shipped tree.** Re-stamping makes
-    the renamed bytes stayfixed's, so `upgrade` may refresh the file; `naming.named_after` renders
-    what `upgrade` refreshes it with as this function names it, so the refresh matches those bytes
-    instead of putting the template's `stayfixed-overlay` back. The tree `publish-template` copies
-    stays owner-free.
-
-    **A manifest it cannot write is named and passed over**, by the rule `_retire` follows for a
-    retired file: stopping on the bare `OSError` left the manifests before it renamed with their
-    new records only in memory, so every later `upgrade` read them as hand-edited. Its own record
-    stays true of the bytes still there, and the next run names it. When every rewrite fails, no
-    summary line is printed — neither "named" nor "already name" is true — and the failure lines
-    say what happened.
-
-    A manifest that is *absent* is a note rather than a failure. An overlay generated before the
-    Codex half shipped carries two of the three, and refusing to name the other two over it
-    would make this command unusable on exactly the overlays that most need it; one that exists
-    and cannot be read is still a failure, because that is a file saying something this command
-    cannot act on.
+    """Finish a created overlay: remove what an earlier release's template shipped, and install
+    the secret scan. `owner` is held to one path segment, as `create` holds it.
 
     **Asked whether `root` is an overlay before anything is touched**, the way `upgrade` asks
     and `setup` asks twice. `--root` defaults to `.`, and run inside the stayfixed checkout this
-    renamed all three of its plugin manifests and installed a hook into it.
+    installed a hook into it.
+
+    The retirement is `_retire`'s, whose docstring says why nothing in it stops `init`; the
+    ledger is written once, after it, and only when it changed.
     """
     require_overlay(root, because=NOT_AN_OVERLAY)
-    suffix = segment("owner", owner.strip().lower())
+    segment("owner", owner.strip().lower())
     ledger = Manifest.read(root)
-    ledgered = bool(ledger.records)
-    # Every manifest is read and decided before any is written, so one that cannot be read stops
-    # the run with nothing rewritten, rather than after the ones before it were rewritten and
-    # before their records were re-stamped.
-    rewrites: list[tuple[str, str, str]] = []
-    absent: list[str] = []
-    notes: list[str] = []
-    for relative in naming.MANIFESTS:
-        if not fsops.is_file(root / relative):
-            absent.append(relative)
-            continue
-        before = _read_manifest(root, relative)
-        body = naming.renamed(before, relative, suffix)
-        if body is not None:
-            rewrites.append((relative, before, body))
-    restamped = False
-    renamed: list[str] = []
-    unwritable: list[str] = []
-    for relative, before, body in rewrites:
-        try:
-            fsops.write_within(root, relative, body)
-        except OSError as exc:  # named and passed over; see the docstring
-            unwritable.append(
-                f"{relative} cannot be written ({fsops.said(exc)}); "
-                "`stayfixed overlay init` names it once it can be"
-            )
-            continue
-        renamed.append(relative)
-        record = ledger.get(relative)
-        # Only a file that held what stayfixed wrote there is vouched for again. One the owner
-        # edited is still renamed, and its record is left as it was, so `upgrade` goes on naming
-        # it as hand-edited rather than refreshing their edit away.
-        if record is not None and digest(before) == record.sha256:
-            ledger = ledger.with_record(replace(record, sha256=digest(body)))
-            restamped = True
-    # One write, once every step has run: no step below stops `init` (a write, a removal or a
-    # template tree that fails is named and passed over), so the records of the renames cannot be
-    # lost to one. They were written ahead of the retirement while a failure there still raised.
-    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)
-    if changed or restamped:
+    ledger, retirement, retired_paths, changed = _retire(
+        root, ledger, ledgered=bool(ledger.records)
+    )
+    if changed:
         ledger.write(root)
-    if renamed:
-        notes.append(f"named this overlay after {suffix}: {', '.join(renamed)}")
-    elif not rewrites:
-        notes.append(f"the manifests already name {suffix}; nothing was renamed")
-    notes += unwritable
-    if absent:
-        notes.append(
-            f"this overlay carries no {', '.join(absent)}, so there was nothing to name there; "
-            f"`stayfixed overlay upgrade` adds what a newer template ships"
-        )
-    notes += retirement
-    notes.append(_install_secret_scan(root, runner))
-    return Initialised(tuple(renamed), tuple(notes), (*renamed, *retired_paths))
+    notes = [*retirement, _install_secret_scan(root, runner)]
+    return Initialised(tuple(notes), tuple(retired_paths))
 
 
 def _retire(
@@ -597,13 +508,6 @@ def _retire(
         if SUCCESSORS.get(target) not in unwritten:
             fsops.rmdir_parents_within(root, target)
     return ledger, notes, [*removed, *written], changed
-
-
-def _read_manifest(root: Path, relative: str) -> str:
-    """A manifest's text, read by `naming.manifest_text`; a failure that says why in words and
-    names the file as the overlay does, never by the path it was opened by."""
-    with fsops.reading(relative, Failure):
-        return naming.manifest_text(root, relative)
 
 
 def _install_secret_scan(root: Path, runner: Runner) -> str:

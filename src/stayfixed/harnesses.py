@@ -54,11 +54,11 @@ package that names a harness is pardoned there, each pardon by one of these item
 - `init` renders `CLAUDE.md`, Claude Code's pointer to `AGENTS.md`, whatever `[stayfixed] agents`
   lists (`project.templates`, from the template `claude.md`): a project that lists Codex alone
   gets it too.
-- The overlay spells each harness's half by name: its plugin manifests and `common/claude` and
-  `common/codex` (`overlay.layout`, re-exported by `overlay.api`, and the manifest directory
-  `overlay.create` probes for), and the per-project `claude` and `codex` directories,
-  `.codex/rules` and the directories it creates in a project, which `attach` reads and writes
-  (`attach.permissions`, `attach.write`). They are the overlay's layout as much as a harness's.
+- The overlay spells each harness's half by name: `common/claude` and `common/codex`
+  (`overlay.layout`, re-exported by `overlay.api`), and the per-project `claude` and `codex`
+  directories, `.codex/rules` and the directories it creates in a project, which `attach` reads
+  and writes (`attach.permissions`, `attach.write`). They are the overlay's layout as much as a
+  harness's.
 - `memory session-context` writes a bundle to a `SessionStart` entry's stdout as it is, never
   through a `render`, so a harness that reads that event's output in another shape is an edit
   there.

@@ -49,7 +49,7 @@ def run_overlay_init(args: argparse.Namespace) -> Result:
     from stayfixed.runner import subprocess_runner
 
     result = init_instance(Path(args.root).resolve(), args.owner, runner=subprocess_runner())
-    data = {"renamed": list(result.renamed), "notes": list(result.notes)}
+    data = {"changed": list(result.changed), "notes": list(result.notes)}
     return Result("; ".join(result.notes), data)
 
 

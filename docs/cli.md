@@ -471,8 +471,8 @@ count but the one that names two remotes, joined by newlines in this order: **no
 **could not be asked** about, which is a machine configuration file that will not parse; this
 repository **not attached** to that overlay, or, for a bound one, its **`origin` moved** from
 the remote its binding was recorded with — the one line that names repository bytes, both remotes,
-each escaped where it is not a plain path; the overlay's
-`stayfixed.requires` in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
+each escaped where it is not a plain path; the `requires` of the overlay's identity record
+(`stayfixed-overlay.toml`) in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
 does not meet**, a pre-release of the floor's version included; and — only when none of those fired — the overlay's branch having **no
 upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound,
 up-to-date repository on a satisfied stayfixed hears nothing. But for the moved-`origin` line, not
@@ -2146,8 +2146,8 @@ it is a repository of its own and why it is private.
 
 `--owner` is the account it belongs to and `--name` the repository name (default
 `stayfixed-private`). Both are held to one path segment matching `[a-z0-9][a-z0-9._-]*`, because
-each becomes a directory name, half a remote path and later a marketplace selector; a value
-shaped like an option is refused rather than quoted. `--root` is the directory the instance is
+each becomes a directory name and half a remote path; a value shaped like an option is refused
+rather than quoted. `--root` is the directory the instance is
 created *in*, not a project root, and defaults to the current directory.
 
 **Neither source is a default.** `--template` asks GitHub to generate a private repository from
@@ -2175,7 +2175,8 @@ A template and not a fork: a fork's visibility is bound to the upstream network 
 made private, which is the one outcome this command exists to prevent.
 
 The `--template` path is idempotent, because `gh` can give up on the clone with the repository
-already created: a directory that already carries `.claude-plugin/` is left alone and reported,
+already created: a directory that already carries `stayfixed-overlay.toml` is left alone and
+reported,
 before `gh` is asked anything. When the template question or `gh repo create` itself fails, the
 command stops there and reports **its** exit code and **its** stderr: a `gh` that is not installed,
 or one that hung, costs one launch rather than three, and the failure names the binary rather than
@@ -2210,7 +2211,8 @@ when there is none yet. On
 `<template>` is `<owner>/stayfixed-overlay-template` or
 `github.com/stayfixed/stayfixed-overlay-template` as above, a new private repository on GitHub under
 `<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
-from the retried `git clone`; a directory that already carries `.claude-plugin/` gets nothing.
+from the retried `git clone`; a directory that already carries `stayfixed-overlay.toml` gets
+nothing.
 A template published at an earlier release also brings the files that release shipped and this
 one does not — `common/memory/README.md` from 0.1.x, `skills/attach/SKILL.md` and
 `common/rules/README.md` from any — which `overlay init` removes (below). Exits `0` on success, `1`
@@ -2220,55 +2222,22 @@ when no tree arrived, `2` on a refused name or a missing `--root`.
 
 ## `stayfixed overlay init --owner OWNER [--root PATH]`
 
-Makes a created overlay yours. It rewrites all three manifests — `.claude-plugin/plugin.json`,
-`.claude-plugin/marketplace.json` and `.codex-plugin/plugin.json` — so their names carry your
-account (`stayfixed-overlay-octocat`, `stayfixed-overlay-marketplace-octocat`), because a harness
-installs a plugin by the name in its manifest, and two owners' overlays under one configuration
-directory would otherwise be one plugin fighting itself; the Codex half is included for the same
-reason as the other two. The marketplace's own plugin entries are suffixed with it, so the
-listing still names a manifest that answers. A manifest this overlay does not carry is reported
-and skipped, not a failure.
-
-It also puts your account where the harness asks for one: the marketplace's `owner` (without it
-`claude plugin validate` refuses the marketplace) and each plugin manifest's `author`, as
-`{"name": "<account>"}`. Only where nobody has put a name: the template's placeholder is replaced
-and an absent key is added, so an overlay generated from an older template becomes valid, but a
-name you wrote yourself, and anything else beside it, stays.
-
-**Installing the overlay as a plugin is two commands**, with the names this command produced
-(`<owner>` is your account and `<name>` the overlay repository's name), and nothing runs them for
-you:
-
-```bash
-claude plugin marketplace add git@github.com:<owner>/<name>.git
-claude plugin install stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>
-```
-
-A rewrite of a manifest that still held what stayfixed wrote there is re-stamped into
-`.stayfixed/manifest.json`, so `overlay upgrade` still sees the file as stayfixed's own: without
-that, the file carrying `stayfixed.requires` read as hand-edited from the moment you ran `init` and
-no release could ever refresh it again. A manifest you edited is renamed all the same, but its
-record is left as it was, so `overlay upgrade` goes on listing it as hand-edited and never
-refreshes your edit away. Every manifest is read before any is rewritten, so one that cannot be
-read stops `init` with none of them changed. One it reads and then cannot write is named with a
-`<path> cannot be written (<reason>)` line and left as it was, record included; the others are
-renamed and recorded all the same, and the next run names the one left.
+Finishes a created overlay. `--owner` is held to one path segment, as `overlay create` holds it.
+`--root` must name an overlay, a tree carrying its identity record (below, under
+[`overlay upgrade`](#stayfixed-overlay-upgrade---root-path---dry-run)), and anything else is refused
+(`2`) with nothing touched.
 
 It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
 template ships; the other is the workflow that runs on every push, so `--no-verify` is not the
 last word. `pre-commit` is optional: a missing or failing one is a reported note and never a
 traceback.
 
-Both halves are idempotent. A manifest that already carries the suffix and names an account is
-not rewritten, so running `init` again reports nothing renamed. An overlay named at 0.1.x carries
-the suffix but no `owner` or `author`, so the first `init` of this release rewrites its manifests
-once more, to add them.
+Both halves are idempotent: a second run removes nothing the first removed.
 
-**Writes** each of the three manifests that does not already carry the suffix or has no account
-under its `owner` or `author` and, where the overlay carries one that records a manifest it
-rewrote or a file below, `.stayfixed/manifest.json` — through the same contained walk every other
-write in this project goes through; and, through the `pre-commit install` it runs in the overlay,
-the overlay's `pre-commit` git hook. It also **removes** the files an earlier release shipped and
+**Writes**, where the overlay carries one that records a file below, `.stayfixed/manifest.json` —
+through the same contained walk every other write in this project goes through; and, through the
+`pre-commit install` it runs in the overlay, the overlay's `pre-commit` git hook. It also
+**removes** the files an earlier release shipped and
 this one does not, by the rule and from the list
 [`overlay upgrade`](#stayfixed-overlay-upgrade---root-path---dry-run) gives below, and each directory
 above one of them that this leaves empty: `init` is the step every generated overlay runs, and a
@@ -2291,11 +2260,10 @@ for `common/memory/README.md`, `_README.md` is then written in its place as afte
 A path these lines name that the manifest supplied and that holds anything but a plain path is
 escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
 terminal.
-A tree that arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists
-and cannot be read or is not JSON, with nothing written; `2` on an owner that is not one path
-segment or on a scaffold manifest that cannot be trusted. A manifest it cannot write is not a
-failure either: once every manifest has been read, nothing stops the run, and
-`.stayfixed/manifest.json` is written once, at the end, with the records of what it did.
+A tree that arrived without a manifest is not given one. Exits `0`; `2` on a tree that is not an
+overlay, an owner that is not one path segment or a scaffold manifest that cannot be trusted.
+Nothing past the overlay check stops the run, and `.stayfixed/manifest.json` is written once, at
+the end, with the records of what it did.
 
 ---
 
@@ -2303,24 +2271,19 @@ failure either: once every manifest has been read, nothing stops the run, and
 
 **`--root` must name an overlay, and that is checked before anything is planned.** It defaults
 to `.`, and pointed at a directory that is not one this command used to create the overlay's
-files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
-`.github/workflows/scan.yml` among them — report them as work done and exit `0`. An overlay is a
-tree whose two `.claude-plugin/` manifests name it `stayfixed-overlay[-<owner>]` and
-`stayfixed-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
-init` renames; anything else is refused (`2`) with nothing written.
+files there — `.gitignore` and `.github/workflows/scan.yml` among them — report them as work done
+and exit `0`. An overlay is a tree whose identity record, `stayfixed-overlay.toml` at its root,
+parses as TOML and holds `layout = 1`; the record also holds `owner`, `name` and `requires`, the
+floor `stayfixed doctor` and a session's first lines read. Anything else is refused (`2`) with
+nothing written, and the refusal names the file and its four keys: an overlay made before the
+record shipped carries plugin manifests instead, and no code migrates it, so its owner adds the
+record by hand.
 
 Brings an overlay up to date with the template a newer stayfixed ships. It is the project rule
 and not a second copy of it: a skeleton file you have not touched is refreshed, one you have
 edited is skipped and named, and the oracle is the digest `.stayfixed/manifest.json` recorded when
 the file was written. An overlay is where your own rules live, so a silent overwrite here would
 destroy the only copy of something.
-
-**The three manifests keep the names `overlay init` gave them.** What a refresh writes there is
-the template named after the account the manifests already carry, exactly as `init` names it, so
-running `upgrade` right after `init` changes none of them, and a release that moves a manifest
-refreshes it under your name rather than back to `stayfixed-overlay` — the name two owners'
-overlays would collide on. A manifest the overlay lacks is written under that name too. An overlay
-`init` has not named gets the template as it ships.
 
 **Two files are always listed, however their hashes compare.**
 `common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries
@@ -2887,9 +2850,9 @@ command performs — and refuses (`2`) without it. Recording an *existing* path 
 model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`, so the
 flag would be theatre there); instead the path itself is validated **before the first write** —
 before the machine file, the settings merge and the plugin installs, and for `create:` before `gh
-repo create` runs on anybody's account. It must exist; its two `.claude-plugin/` manifests must name
-it `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`, which is what
-`overlay create` renders and `overlay init` renames, rather than merely being present; and it must
+repo create` runs on anybody's account. It must exist; it must carry the identity record
+`stayfixed-overlay.toml`, parsing as TOML and holding `layout = 1`, which is what `overlay create`
+renders (the refusal of a tree without it names the file and its keys); and it must
 lie outside the repository `--root` is in — not inside it, not above it, and not in another checkout
 of it, since a worktree is not a different repository and a clone ships its tree into all of them —
 and outside every checkout of any other repository, a checkout of its own nested in one included,
@@ -3150,7 +3113,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `memory` | the memory a session gets: the active `memory.mode` and the layer that set it (or that none does, and memory is the coding agent's own), the store, which settings file sets the harness's `autoMemoryDirectory` — the checkout's `.claude/settings.local.json`, the main checkout's, the committed `.claude/settings.json` or `~/.claude/settings.json`, the first that holds it, named as information and never with its value, since a committed file may point the harness elsewhere — and the store's unreviewed notes as a count; a warning only for files in the note store that are not notes, counted (at most 500,000 entries) | the resolution `preferences` reads, the note store, the machine's trust record, those settings files |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
-| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
+| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `stayfixed-overlay.toml`, `stayfixed.toml` |
 
 **How `attached` reads the delivery.** With no ledger, a repository whose `memory.mode` is not
 `overlay` is simply not attached, and the row is green. Once this machine's binding confirms the

@@ -15,20 +15,6 @@ reddens = [
   "tests/overlay/test_template.py::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended",
 ]
 
-# In the block led by `mutations/`'s "overlay init leaves the template's owner and author
-# placeholders": the overlay's marketplace validates only with an owner in it.
-[[mutation]]
-name = "the overlay template ships a marketplace with no owner"
-file = "src/stayfixed/templates/overlay/.claude-plugin/marketplace.json"
-before = """  "owner": {
-    "name": "your-account"
-  },
-"""
-after = ""
-reddens = [
-  "tests/overlay/test_template.py::test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates",
-]
-
 # --- the shipped data files: guards the external review proved shipped green (PR 12) ---
 #
 # Each mutates a file no type checker reads and no import reaches: a YAML workflow, a
@@ -270,22 +256,10 @@ reddens = [
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/stayfixed/templates/overlay/README.md"
-before = "`stayfixed overlay create` renders fifteen files here:"
-after = "`stayfixed overlay create` renders sixteen files here:"
+before = "`stayfixed overlay create` renders twelve files here:"
+after = "`stayfixed overlay create` renders thirteen files here:"
 reddens = [
   "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
-]
-
-# The other half of that document: the right count over the wrong files. `hooks/hooks.json`
-# is the row that matters most, because it is indistinguishable from `common/claude/hooks.json`
-# by content — both are `{"hooks": {}}` — and the README is the only thing that tells them apart.
-[[mutation]]
-name = "the overlay README stops naming the hooks file"
-file = "src/stayfixed/templates/overlay/README.md"
-before = "| `hooks/hooks.json` | **this repository's own** hook entries as a plugin"
-after = "| `hooks/hooksfile.json` | **this repository's own** hook entries as a plugin"
-reddens = [
-  "tests/overlay/test_template.py::test_the_overlay_readme_accounts_for_every_file_a_create_leaves",
 ]
 
 # The template's pins are full-length shas and a sha rots in silence; the Dependabot file is the

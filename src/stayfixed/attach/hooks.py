@@ -110,7 +110,7 @@ NOT_ATTACHED = (
 # here that names repository-authored bytes, each through `printed.quoted`.
 PREFIX = "stayfixed: "
 REQUIRES_UNREADABLE = (
-    "stayfixed: the overlay's stayfixed.requires is not a form this stayfixed reads; "
+    "stayfixed: the overlay's `requires` is not a form this stayfixed reads; "
     "`stayfixed doctor` says which"
 )
 REQUIRES = (

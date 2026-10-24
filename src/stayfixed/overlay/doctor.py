@@ -145,7 +145,7 @@ def _overlay_requires(context: Context) -> Row:
     from stayfixed import REPOSITORY_URL, fsops
     from stayfixed.config.schema import OVERLAY_MODE
     from stayfixed.doctor.api import OK, RED, SKIP, WARN, Row
-    from stayfixed.overlay.layout import PLUGIN_MANIFEST
+    from stayfixed.overlay.layout import IDENTITY_RECORD
     from stayfixed.overlay.requires import requires_of, satisfies
 
     overlay = context.overlay_root
@@ -159,8 +159,8 @@ def _overlay_requires(context: Context) -> Row:
     if verdict is None:
         return Row(
             WARN,
-            "the overlay's stayfixed.requires is not a >=X.Y.Z form this stayfixed reads",
-            f"write stayfixed.requires in the overlay's {PLUGIN_MANIFEST} as >=X.Y.Z",
+            "the overlay's `requires` is not a >=X.Y.Z form this stayfixed reads",
+            f"write `requires` in the overlay's {IDENTITY_RECORD} as >=X.Y.Z",
         )
     if not verdict:
         # **Red only when this project consults the overlay**, which is the reason this

@@ -1,46 +1,57 @@
 """Is this directory an overlay? One answer, for every command that has to ask.
 
-The question was spelled two and a half ways before this module existed, and none of the three
-excluded much. `setup._validate_overlay_root` asked whether two manifest *files* existed — which
-the stayfixed checkout itself satisfies, and which any Claude Code plugin repository satisfies,
-so the "carries the overlay's own layout" half of the machine's trust anchor was worth almost
-nothing. `overlay upgrade` asked nothing at all, and wrote every shipped file — a plugin manifest, a
-hooks file and a GitHub Actions workflow among them — into whatever `--root` named, which
-defaults to `.`. And `create._populated` asks whether `.claude-plugin/` is a directory, which is
-a third question again.
+**What an overlay is, for the purpose of recording one.** A tree whose identity record,
+`stayfixed-overlay.toml` at its root (`layout.IDENTITY_RECORD`), parses and names layout 1: the
+file the shipped template writes and the one thing every overlay carries. It replaced the plugin
+manifests an overlay carried while it was a plugin of its own; an overlay made before the record
+shipped is refused with the record to add named in full, since no code migrates one.
 
-**What an overlay is, for the purpose of trusting one.** Both manifests must parse, and both
-must name this tree as a stayfixed overlay: `stayfixed-overlay` and `stayfixed-overlay-marketplace`
-as the shipped template writes them, or either with `-<owner>` appended as `overlay init` writes
-them. That is the same pair `init_instance` renames and the harnesses install the overlay by, so
-it is the tree's own claim about what it is rather than a coincidence of directory names.
+It is a *structural* probe and not a security boundary: a repository that wants to look like an
+overlay can commit the record. What it buys is that the ordinary accidents stop — a mistyped
+path, a project directory, the stayfixed checkout, somebody else's repository — before `setup`
+records the tree or `overlay upgrade` writes the template into it.
 
-It is a *structural* probe and not a security boundary, and nothing here pretends otherwise: a
-repository that wants to look like an overlay can commit two manifests with those names. What it
-buys is that the ordinary accidents stop — a mistyped `--root`, a project directory, the
-stayfixed checkout, somebody else's plugin repository — and that the one control that does bound a
-hostile clone (`setup`'s "not inside, over, or in any checkout of the project an agent works in")
-is no longer standing alone.
-
-**`create._populated` deliberately stays the weaker probe.** It answers "did a tree already
-arrive here", which is what the create step's idempotence rule needs: a `gh` that gave up
-mid-clone leaves a partial tree, and asking *this* question of it would answer "not an overlay"
-and create the repository a second time. Two questions, two probes, and this docstring is why.
-
-**Nothing a repository authored is quoted back.** A manifest's `name` is bytes from a directory this
-process was pointed at, and a repository is untrusted input (principle 5), so the refusal says which
-file failed and what it had to say, never what it actually said.
+**Nothing a repository authored is quoted back.** The record's bytes come from a directory this
+process was pointed at, and a repository is untrusted input (principle 5), so the refusal says
+which file failed and what it had to hold, never what it held.
 """
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops
+from stayfixed.config.reading import UNPARSEABLE
+from stayfixed.config.schema import PROJECT_NAME
 from stayfixed.errors import Refusal
-from stayfixed.overlay.naming import NAMED, SEGMENT, NotAnObject, claims, manifest
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from stayfixed.printed import quoted
+
+# One path segment: `config.schema.PROJECT_NAME`, the one name grammar. An owner name and an
+# overlay's name become a directory and half a remote path, so each is checked once rather than at
+# each of those; the leading class is what keeps a value shaped like an option (`-flag`) out of an
+# option's position in an argv.
+SEGMENT = PROJECT_NAME
+# The one layout this stayfixed reads. A record naming another was written for a stayfixed that
+# reads a layout this one does not.
+LAYOUT = 1
+# What the record holds, said in every refusal of a tree without a readable one, so the owner of an
+# overlay made before it shipped can add it in one step.
+_KEYS = (
+    f'`owner = "<account>"`, `name = "<repository>"`, `requires = ">=X.Y.Z"` (the stayfixed it '
+    f"needs) and `layout = {LAYOUT}`"
+)
+# `{root}` is the directory judged, through `printed.quoted`.
+NO_RECORD = (
+    f"{{root}} carries no {IDENTITY_RECORD}, the record that names a tree a stayfixed overlay; "
+    f"add it at the overlay's root, holding {_KEYS}"
+)
+NOT_A_RECORD = (
+    f"{{root}} carries a {IDENTITY_RECORD} that is not a layout-{LAYOUT} record this stayfixed "
+    f"reads; it has to parse as TOML and hold {_KEYS}"
+)
 
 
 def segment(label: str, value: str) -> str:
@@ -48,47 +59,41 @@ def segment(label: str, value: str) -> str:
     if not SEGMENT.match(value):
         raise Refusal(
             f"{label} {value!r} is not one path segment matching {SEGMENT.pattern}; it becomes a "
-            "directory name, half a remote path and a marketplace selector, so it is refused "
-            "rather than quoted"
+            "directory name and half a remote path, so it is refused rather than quoted"
         )
     return value
+
+
+def identity_record(root: Path) -> dict[str, Any] | None:
+    """The identity record at `root` as a TOML table, or `None` for one that cannot be read.
+
+    Read through `fsops.read_regular_text`, a regular file only and to the read cap, so a FIFO
+    there cannot block `requires_of` on the SessionStart hook path; and parsed with every error a
+    valid document can still raise (`config.reading.UNPARSEABLE`) answered as unreadable.
+    """
+    try:
+        return tomllib.loads(fsops.read_regular_text(root / IDENTITY_RECORD))
+    except (OSError, UnicodeDecodeError, *UNPARSEABLE):
+        return None
 
 
 def overlay_fault(root: Path) -> str | None:
     """Why `root` is not an overlay root, or `None` when it is one.
 
-    Every string this returns is this function's own or a path the caller typed, printed through
+    Every string this returns is this module's own around a path the caller typed, printed through
     `printed.quoted`: typed, it can still be resolved through a link a repository commits, which
-    spells it in the repository's bytes. A manifest's own bytes never reach it. The manifests
-    asked are `naming.NAMED`'s probed rows.
+    spells it in the repository's bytes. The record's own bytes never reach it.
     """
     shown = quoted(str(root))
     if not fsops.is_dir(root):
         return f"{shown} is not a directory"
-    for row in NAMED:
-        if not row.probed:
-            continue
-        path = root / row.path
-        if not fsops.is_file(path):
-            return f"{shown} does not carry the overlay layout ({row.path} is missing)"
-        # Through `naming.manifest`, the one reader of an overlay's manifests, whose parser-limit
-        # arms are the point: a manifest nested past the parser or holding an integer longer than
-        # it converts is valid JSON that `json.loads` meets with no `JSONDecodeError`, and it ended
-        # `setup --overlay` in an internal error. A manifest that parses and is not an object keeps
-        # this probe's own sentence, which says what it fails to name. Never printed: the sentence
-        # says which file, in this probe's words.
-        document: dict[str, Any] | None
-        try:
-            document = manifest(root, row.path)
-        except NotAnObject:
-            document = None
-        except (OSError, ValueError):
-            return f"{shown} carries a {row.path} that cannot be read as JSON"
-        if document is None or not claims(document.get("name"), row.name):
-            return (
-                f"{shown} carries a {row.path} that does not name a stayfixed overlay; its `name` "
-                f"has to be {row.name}, or {row.name}-<owner> after `stayfixed overlay init`"
-            )
+    if not fsops.is_file(root / IDENTITY_RECORD):
+        return NO_RECORD.format(root=shown)
+    record = identity_record(root)
+    layout = None if record is None else record.get("layout")
+    # `type` and not `isinstance`: `True` is an `int` equal to 1, and names no layout.
+    if type(layout) is not int or layout != LAYOUT:
+        return NOT_A_RECORD.format(root=shown)
     return None
 
 

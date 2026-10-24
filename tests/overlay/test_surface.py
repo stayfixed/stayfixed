@@ -36,10 +36,6 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "COMMON_CLAUDE",
         "COMMON_CODEX",
         "COMMON_MEMORY",  # the third of the three; two thirds of a layout invites a hand-spelling
-        # the three manifests `init_instance` rewrites, the Codex one included
-        "PLUGIN_MANIFEST",
-        "MARKETPLACE_MANIFEST",
-        "CODEX_PLUGIN_MANIFEST",
         # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
         # outside `src/`, which a walk of `src/` alone does not see
         "OVERLAY_FILES",

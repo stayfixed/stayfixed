@@ -11,16 +11,10 @@ and `common/codex` inside the layout (`COMMON_CLAUDE`, `COMMON_CODEX`). The runn
 (`stayfixed.runner`), not this area's: every area that launches a program imports it from there, and
 none reaches it through this surface.
 
-Two names are here with no importer in `src/`, on purpose:
-
-- `COMMON_MEMORY`, the third of the three `common/` directories beside `COMMON_CLAUDE` and
-  `COMMON_CODEX`. The layout is what a consumer reads; publishing two thirds of it invites the
-  third to be spelled again by hand, which is the drift these constants exist to stop.
-- `CODEX_PLUGIN_MANIFEST`, beside `PLUGIN_MANIFEST` and `MARKETPLACE_MANIFEST`. `init_instance`
-  rewrites all three and its docstring says why in as many words — "the project ships a Codex
-  half of everything else and `.codex-plugin/plugin.json` left unsuffixed is that collision
-  still happening, one harness over". A consumer that checks the Claude manifests and cannot
-  name the Codex one reproduces exactly that bug.
+One name is here with no importer in `src/`, on purpose: `COMMON_MEMORY`, the third of the three
+`common/` directories beside `COMMON_CLAUDE` and `COMMON_CODEX`. The layout is what a consumer
+reads; publishing two thirds of it invites the third to be spelled again by hand, which is the
+drift these constants exist to stop.
 
 `OVERLAY_FILES` is here for `scripts/check_artifacts.py`, which asks whether a built wheel
 carries every template file and can only answer that against this list. It is the one consumer
@@ -55,13 +49,10 @@ import them from there.
 from stayfixed.overlay.create import Created, Initialised, create, init_instance, target_root
 from stayfixed.overlay.identity import overlay_fault, require_overlay
 from stayfixed.overlay.layout import (
-    CODEX_PLUGIN_MANIFEST,
     COMMON_CLAUDE,
     COMMON_CODEX,
     COMMON_MEMORY,
-    MARKETPLACE_MANIFEST,
     OVERLAY_FILES,
-    PLUGIN_MANIFEST,
     PRE_COMMIT_CONFIG,
     PRE_COMMIT_HOOK,
 )
@@ -69,13 +60,10 @@ from stayfixed.overlay.requires import requires_of, satisfies
 from stayfixed.overlay.sync import Sync, overlay_sync
 
 __all__ = [
-    "CODEX_PLUGIN_MANIFEST",
     "COMMON_CLAUDE",
     "COMMON_CODEX",
     "COMMON_MEMORY",
-    "MARKETPLACE_MANIFEST",
     "OVERLAY_FILES",
-    "PLUGIN_MANIFEST",
     "PRE_COMMIT_CONFIG",
     "PRE_COMMIT_HOOK",
     "Created",

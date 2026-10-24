@@ -5,6 +5,7 @@ import contextlib
 import errno
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,7 +20,7 @@ from stayfixed.attach.api import read_binding
 from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import LONG_NUMBER, NESTED
-from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from stayfixed.presets import load_preset
 from stayfixed.printed import quoted
 from stayfixed.runner import Completed
@@ -80,22 +81,16 @@ def _populate_overlay(argv: list[str], cwd: Path) -> None:
     """Stand in for a successful template generation, the same probe `overlay.create` reads."""
     if argv[:3] != ["gh", "repo", "create"]:
         return
-    target = cwd / argv[3].split("/")[-1] / ".claude-plugin"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / "plugin.json").write_text(json.dumps({"name": "stayfixed-overlay"}), encoding="utf-8")
-    (target / "marketplace.json").write_text(
-        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), encoding="utf-8"
-    )
+    _seed_overlay(cwd / argv[3].split("/")[-1])
 
 
 def _seed_overlay(path: Path) -> None:
-    """Give `path` the two manifests `overlay.identity.overlay_fault` checks, named the way the
-    shipped template names them, without rendering the whole template — enough for a fixture to
-    read as a real overlay's root."""
-    (path / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-    (path / PLUGIN_MANIFEST).write_text(json.dumps({"name": "stayfixed-overlay"}), encoding="utf-8")
-    (path / MARKETPLACE_MANIFEST).write_text(
-        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), encoding="utf-8"
+    """Give `path` the identity record `overlay.identity.overlay_fault` checks, as the shipped
+    template writes it, without rendering the whole template — enough for a fixture to read as a
+    real overlay's root."""
+    path.mkdir(parents=True, exist_ok=True)
+    (path / IDENTITY_RECORD).write_text(
+        'owner = "your-account"\nname = "stayfixed-private"\nlayout = 1\n', encoding="utf-8"
     )
 
 
@@ -518,16 +513,14 @@ def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
 
 def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
     # The overlay root is the machine's trust anchor, so an arbitrary directory that merely happens
-    # to exist must not become one. `existing` here is empty — no `.claude-plugin/plugin.json`, no
-    # `marketplace.json` — which is exactly the shape a careless `--overlay /tmp/whatever` would
-    # have.
+    # to exist must not become one. `existing` here is empty — no identity record — which is
+    # exactly the shape a careless `--overlay /tmp/whatever` would have.
     #
-    # Mutation (`mutations/`'s "the overlay probe stops looking for the manifests at all"):
-    # `overlay.identity.overlay_fault` stops iterating the manifests → an empty directory is
-    # accepted as an overlay root and this reddens.
+    # Mutation (`mutations/`'s "the overlay probe stops asking for the identity record"): an
+    # empty directory is accepted as an overlay root and this reddens.
     empty = tmp_path / "not-an-overlay"
     empty.mkdir()
-    with pytest.raises(Refusal, match="does not carry the overlay layout"):
+    with pytest.raises(Refusal, match=re.escape(f"carries no {IDENTITY_RECORD}")):
         setup(
             "recommended",
             home=tmp_path / "home",
@@ -692,15 +685,19 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
 def test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found(
     tmp_path: Path,
 ) -> None:
-    # The re-run runs `overlay init` on the overlay it found, and `init` may rename its manifests
-    # (an overlay named at 0.1.x has no account in them yet) or remove the old memory README. The
-    # report said "found the overlay ... and left it alone" all the same. It names what `init`
-    # changed now, and says nothing was changed only when nothing was.
+    # The re-run runs `overlay init` on the overlay it found, and `init` may remove the old memory
+    # README. The report said "found the overlay ... and left it alone" all the same. It names what
+    # `init` changed now, and says nothing was changed only when nothing was.
     #
     # Mutation: `mutations/`'s "setup says it left alone an overlay init changed".
+    from tests.overlay.test_upgrade import MEMORY_README, SHIPPED_MEMORY_README
+
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     _seed_overlay(home / "stayfixed-private")
+    retired = home / "stayfixed-private" / MEMORY_README
+    retired.parent.mkdir(parents=True)
+    retired.write_text(SHIPPED_MEMORY_README, encoding="utf-8")
 
     def overlay_note() -> str:
         runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
@@ -717,9 +714,9 @@ def test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found
 
     first = overlay_note()
     assert "left it alone" not in first
-    assert PLUGIN_MANIFEST in first and MARKETPLACE_MANIFEST in first
+    assert MEMORY_README in first
     second = overlay_note()
-    assert PLUGIN_MANIFEST not in second
+    assert MEMORY_README not in second
     assert "changed none of the overlay's tracked files" in second
 
 
@@ -1113,8 +1110,6 @@ def test_a_created_overlays_destination_already_there_and_not_recorded_is_compar
             project_root=root,
         )
     assert runner.calls == [] and not machine.exists()
-    manifest = json.loads((destination / PLUGIN_MANIFEST).read_text(encoding="utf-8"))
-    assert manifest["name"] == "stayfixed-overlay", "overlay init ran in the planted tree"
 
 
 def test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init(
@@ -1149,8 +1144,7 @@ def test_a_created_overlays_destination_that_appears_after_the_phase_is_compared
             project_root=home,
         )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
-    manifest = json.loads((destination / PLUGIN_MANIFEST).read_text(encoding="utf-8"))
-    assert manifest["name"] == "stayfixed-overlay", "overlay init ran in the planted tree"
+    assert ["pre-commit", "install"] not in runner.calls, "overlay init ran in the planted tree"
 
 
 @needs_git
@@ -1271,8 +1265,7 @@ def test_a_created_overlays_destination_swapped_after_the_phase_is_compared(
             project_root=home,
         )
     assert swapped
-    manifest = json.loads((evil / PLUGIN_MANIFEST).read_text(encoding="utf-8"))
-    assert manifest["name"] == "stayfixed-overlay", "overlay init ran in the swapped tree"
+    assert ["pre-commit", "install"] not in runner.calls, "overlay init ran in the swapped tree"
 
 
 @needs_git
@@ -1531,46 +1524,17 @@ def test_an_overlay_that_is_a_checkout_of_its_own_is_recorded(tmp_path: Path) ->
     assert overlay_root(machine) == candidate
 
 
-@pytest.mark.parametrize("document", ["[]", '"stayfixed-overlay"', "null"])
-def test_a_manifest_that_parses_and_is_not_an_object_names_no_overlay(
-    tmp_path: Path, document: str
-) -> None:
-    # The probe reads its manifests through `jsonobject`, which calls a document that parses and
-    # is not an object "not a JSON object". This probe's own sentence for one is that it does not
-    # name a stayfixed overlay, which says what to write there; "cannot be read as JSON" would be
-    # false about `[]`. Mutation: `identity`'s `shape=_NotAnObject` dropped from the `json_object`
-    # call -> the sentence is the unreadable one and this reddens.
-    from stayfixed.overlay.api import overlay_fault
-
-    _seed_overlay(tmp_path)
-    (tmp_path / PLUGIN_MANIFEST).write_text(document, encoding="utf-8")
-    fault = overlay_fault(tmp_path)
-    assert fault == (
-        f"{quoted(str(tmp_path))} carries a {PLUGIN_MANIFEST} that does not name a stayfixed "
-        f"overlay; its "
-        f"`name` has to be stayfixed-overlay, or stayfixed-overlay-<owner> after `stayfixed "
-        f"overlay init`"
-    )
-
-
-def test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay(tmp_path: Path) -> None:
-    # The probe was the two manifest *files* existing, which the stayfixed checkout itself satisfies
-    # and any Claude Code plugin repository satisfies — so "carries the overlay's own layout"
-    # excluded almost nothing. The manifests are now read, and have to name the tree
-    # `stayfixed-overlay[-<owner>]`.
+def test_a_directory_whose_record_names_another_layout_is_not_an_overlay(tmp_path: Path) -> None:
+    # The probe was once two manifest *files* existing, which the stayfixed checkout itself
+    # satisfied, and any Claude Code plugin repository with them. The identity record is read now,
+    # and has to name layout 1.
     #
-    # Mutation (`mutations/`'s "the overlay probe stops reading what the manifests name"):
-    # `identity`'s `_claims` arm is dropped → this directory is accepted and the refusal never
-    # fires.
+    # Mutation (`mutations/`'s "the overlay probe takes any record for an overlay"): the layout is
+    # not compared → this directory is accepted and the refusal never fires.
     impostor = tmp_path / "some-plugin"
-    (impostor / ".claude-plugin").mkdir(parents=True)
-    (impostor / PLUGIN_MANIFEST).write_text(
-        json.dumps({"name": "somebody-elses-plugin"}), encoding="utf-8"
-    )
-    (impostor / MARKETPLACE_MANIFEST).write_text(
-        json.dumps({"name": "somebody-elses-marketplace", "plugins": []}), encoding="utf-8"
-    )
-    with pytest.raises(Refusal, match="does not name a stayfixed overlay"):
+    impostor.mkdir()
+    (impostor / IDENTITY_RECORD).write_text("layout = 2\n", encoding="utf-8")
+    with pytest.raises(Refusal, match="is not a layout-1 record"):
         setup(
             "recommended",
             home=tmp_path / "home",
@@ -2893,13 +2857,9 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
     def _wrong_tree(argv: list[str], cwd: Path) -> None:
         if argv[:3] != ["gh", "repo", "create"]:
             return
-        target = cwd / argv[3].split("/")[-1] / ".claude-plugin"
+        target = cwd / argv[3].split("/")[-1]
         target.mkdir(parents=True, exist_ok=True)
-        for name, body in (
-            ("plugin.json", {"name": "not-an-overlay"}),
-            ("marketplace.json", {"name": "not-a-marketplace", "plugins": []}),
-        ):
-            (target / name).write_text(json.dumps(body), encoding="utf-8")
+        (target / IDENTITY_RECORD).write_text("layout = 2\n", encoding="utf-8")
 
     home = tmp_path / "home"
     home.mkdir()
@@ -2914,7 +2874,7 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
             project_root=tmp_path / "project",
         )
     message = str(refused.value)
-    assert "does not name a stayfixed overlay" in message
+    assert "is not a layout-1 record" in message
     assert "octo/stayfixed-private was created and cloned" in message
     assert "nothing was recorded in the machine configuration" in message
     assert overlay_root(tmp_path / "config.toml") is None

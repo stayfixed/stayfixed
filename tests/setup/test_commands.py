@@ -8,18 +8,18 @@ invocation exits 0.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
+from stayfixed.overlay.identity import NOT_A_RECORD
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
 from stayfixed.setup.machine import SETUP_SANDBOXED
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER
 from tests.runners import Recorder
 from tests.sandboxed import refuse_writes_under
 
@@ -176,40 +176,32 @@ def test_setup_help_names_no_path_from_the_machine_the_parser_was_built_on(
     assert "~/.config/stayfixed/config.toml" in printed
 
 
-# Two manifests that are valid JSON past this interpreter's parser: nested deeper than it follows,
-# and holding an integer longer than it converts (4,300 digits by default).
+# An identity record `tomllib` meets with neither a `TOMLDecodeError` nor an answer: nested past
+# what it follows, and holding an integer longer than it converts (4,300 digits by default).
 PAST_THE_PARSER = {
-    "nested": NESTED,
-    "long-number": '{"name": ' + LONG_NUMBER + "}",
+    "nested": "layout = " + "[" * 20_000 + "]" * 20_000,
+    "long-number": "layout = " + LONG_NUMBER,
 }
 
 
-@pytest.mark.parametrize("manifest", [PLUGIN_MANIFEST, MARKETPLACE_MANIFEST])
 @pytest.mark.parametrize("case", sorted(PAST_THE_PARSER))
-def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli(
+def test_an_overlay_record_past_the_parser_is_refused_as_unreadable_through_the_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     case: str,
-    manifest: str,
 ) -> None:
-    # `overlay_fault` caught only `JSONDecodeError`, and `json.loads` meets neither document with
-    # one: nesting past what it follows raises `RecursionError`, and the long integer a plain
-    # `ValueError`. So `stayfixed setup --overlay` ended in an internal error instead of refusing
-    # a tree whose manifests it cannot read. Each manifest in turn, the other one well-formed, so
-    # the refusal is about the one asked. Nothing is recorded, and the runner is never reached:
-    # the probe runs above every write.
+    # `tomllib` meets neither document with a `TOMLDecodeError`: nesting past what it follows
+    # raises `RecursionError`, and the long integer a plain `ValueError`. A reader catching only
+    # the first would end `stayfixed setup --overlay` in an internal error instead of refusing a
+    # tree whose record it cannot read. Nothing is recorded, and the runner is never reached: the
+    # probe runs above every write.
     #
-    # Mutation (oracle): `mutations/`'s "an overlay manifest is read with a bare json.loads" -> the
-    # internal error comes back and the nested cases redden; a long integer is a `ValueError` the
-    # probe reads as unreadable either way.
+    # Mutation (oracle): `mutations/`'s "the identity record reader lets a document past the
+    # parser raise" -> the internal error comes back and both cases redden.
     overlay = tmp_path / "overlay"
-    (overlay / ".claude-plugin").mkdir(parents=True)
-    (overlay / PLUGIN_MANIFEST).write_text(json.dumps({"name": "stayfixed-overlay"}), "utf-8")
-    (overlay / MARKETPLACE_MANIFEST).write_text(
-        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), "utf-8"
-    )
-    (overlay / manifest).write_text(PAST_THE_PARSER[case], encoding="utf-8")
+    overlay.mkdir()
+    (overlay / IDENTITY_RECORD).write_text(PAST_THE_PARSER[case], encoding="utf-8")
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     machine = tmp_path / "config.toml"
@@ -217,8 +209,8 @@ def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_th
     code = invoke([*argv, "--machine", str(machine), "--root", str(tmp_path / "project")])
     err = capsys.readouterr().err
     assert "internal error" not in err
-    shown = quoted(str(overlay))
-    assert f"stayfixed: refused: {shown} carries a {manifest} that cannot be read as JSON" in err
+    refused = NOT_A_RECORD.format(root=quoted(str(overlay)))
+    assert f"stayfixed: refused: {refused}" in err
     assert code == 2
     assert not machine.exists()
     assert stub.calls == []

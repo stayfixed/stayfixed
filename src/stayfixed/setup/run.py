@@ -52,13 +52,9 @@ is written by a model, so it is not added there. What bounds the exposure instea
 machine file, the settings merge and the plugin installs, and for `create:` above
 `gh repo create` itself. Two controls:
 
-* **it must be an overlay**, which is `overlay.api.require_overlay` and not a pair of `is_file`
-  calls. The old probe was the two manifests *existing*, which the stayfixed checkout satisfies
-  and any Claude Code plugin repository satisfies; the probe now reads them and requires them to
-  name the tree `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`, the
-  names `overlay init` writes and a harness installs an overlay by. `identity`'s own docstring
-  is honest that a repository can still *claim* those names: it stops the accidents, and it
-  stops this half from standing for nothing.
+* **it must be an overlay**, which is `overlay.api.require_overlay`: a tree whose identity record
+  names layout 1. `identity`'s own docstring is honest that a repository can still commit such a
+  record: it stops the accidents, and it stops this half from standing for nothing.
 * **it must lie outside the repository the agent works in**, which now means outside *every*
   checkout of it. The old check refused `candidate == project` or `project in candidate.parents`
   and nothing else, so a parent directory and a sibling worktree both passed — and working
@@ -142,9 +138,9 @@ _PLUGIN_INSTALL = {
 # overlay probe raises. One sentence each, so the two commands that ask "is this an overlay"
 # differ in what they were doing and not in what the answer means.
 _RECORDING = (
-    "--overlay must name a real overlay's root — the tree `stayfixed overlay create` renders "
-    "and `stayfixed overlay init` names after you — because this path becomes the machine's "
-    "trust anchor: every `stayfixed attach` on this machine reads rules and notes out of it"
+    "--overlay must name a real overlay's root — the tree `stayfixed overlay create` renders — "
+    "because this path becomes the machine's trust anchor: every `stayfixed attach` on this "
+    "machine reads rules and notes out of it"
 )
 _CREATED = (
     "the repository was created and cloned, and nothing was recorded in the machine "

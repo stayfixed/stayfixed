@@ -6,22 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed import jsonobject
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.errors import Failure, Refusal
+from stayfixed.errors import Refusal
 from stayfixed.overlay.api import create, init_instance
-from stayfixed.overlay.naming import owner_of
 from stayfixed.overlay.template import retired
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
-from tests.parserlimits import LONG_NUMBER, NESTED, overflowing
 from tests.runners import Recorder
-
-MANIFESTS = (
-    ".claude-plugin/plugin.json",
-    ".claude-plugin/marketplace.json",
-    ".codex-plugin/plugin.json",
-)
 
 
 def _an_overlay(tmp_path: Path) -> Path:
@@ -119,255 +110,6 @@ def test_the_cli_exits_two_rather_than_zero_on_a_directory_that_is_not_an_overla
     parser = build_parser(discover_registrars())
     assert run(["overlay", "upgrade", "--root", str(tmp_path)], parser=parser) == 2
     assert [p.name for p in tmp_path.iterdir()] == ["README.md"]
-
-
-def test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release(tmp_path: Path) -> None:
-    # `overlay init` rewrote both manifests behind the scaffold ledger, so
-    # every later `upgrade` reported `skip_modified .claude-plugin/plugin.json (hand-edited)` —
-    # for the one file carrying `stayfixed.requires`, the version-compatibility declaration the
-    # README advertises, and attributing to the owner an edit stayfixed itself made. `init` now
-    # re-stamps each record with the bytes it wrote.
-    #
-    # Mutation (`mutations/`'s "overlay init writes the manifests behind the scaffold
-    # ledger"): the `with_record(replace(...))` line stops updating the digest → both manifests
-    # read as hand-edited and this reddens.
-    #
-    # And what a refresh writes is the template named after the owner, as `init` names it: the
-    # template's own bytes put `stayfixed-overlay` back, so an `upgrade` run right after `init`
-    # undid the rename and brought back the collision the suffix exists to prevent.
-    # Mutation: `mutations/`'s "overlay upgrade refreshes a manifest init named back to the
-    # template's name".
-    root = _an_overlay(tmp_path)
-    init_instance(root, "OctoCat", runner=Recorder())
-    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
-    for manifest in MANIFESTS:
-        assert manifest not in verbs, (manifest, verbs.get(manifest))
-    # What the record now vouches for is the file `init` left: the owner's name and account, not
-    # the template's. A re-stamp of anything else would make those bytes read as hand-edited.
-    plugin = root / ".claude-plugin" / "plugin.json"
-    document = json.loads(plugin.read_text(encoding="utf-8"))
-    assert document["name"] == "stayfixed-overlay-octocat"
-    assert document["author"] == {"name": "octocat"}
-    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
-    assert recorded[".claude-plugin/plugin.json"]["sha256"] == digest(
-        plugin.read_text(encoding="utf-8")
-    )
-    # And the refresh really is live: a release that moves the template updates the file rather
-    # than leaving the owner on a manifest nothing can reach.
-    # Still a manifest that names this overlay — a release moving the file is what is being
-    # modelled, not an owner breaking it — but with the older body a release has left behind.
-    (root / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "stayfixed-overlay-octocat", "version": "0.0.0"}) + "\n",
-        encoding="utf-8",
-    )
-    _restamp(root, ".claude-plugin/plugin.json")
-    moved = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
-    assert moved[".claude-plugin/plugin.json"] is Verb.UPDATE
-    upgrade(root, dry_run=False)
-    for manifest in MANIFESTS:
-        refreshed = json.loads((root / manifest).read_text(encoding="utf-8"))
-        assert refreshed["name"].endswith("-octocat"), (manifest, refreshed["name"])
-        assert refreshed.get("author", refreshed.get("owner")) == {"name": "octocat"}
-    # The template's body arrived, not just the old file's name kept.
-    assert "requires" in json.loads(plugin.read_text(encoding="utf-8"))["stayfixed"]
-    # Settled: the refreshed bytes are recorded, so the next run has nothing to do.
-    assert not upgrade(root, dry_run=True).plan.actions
-
-
-def test_upgrade_writes_a_manifest_the_overlay_lacks_under_the_owner_s_name(
-    tmp_path: Path,
-) -> None:
-    # An overlay named before the Codex half shipped carries two manifests, and `upgrade` is what
-    # adds the third. Written as the template has it, it was `stayfixed-overlay` beside two
-    # manifests named after the owner: the collision the suffix prevents, on Codex.
-    # Mutation: `mutations/`'s "overlay upgrade refreshes a manifest init named back to the
-    # template's name".
-    root = _an_overlay(tmp_path)
-    init_instance(root, "acme", runner=Recorder())
-    (root / ".codex-plugin" / "plugin.json").unlink()
-    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=False).plan.actions}
-    assert verbs[".codex-plugin/plugin.json"] is Verb.CREATE
-    codex = json.loads((root / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    assert codex["name"] == "stayfixed-overlay-acme"
-    assert codex["author"] == {"name": "acme"}
-
-
-def test_upgrade_leaves_the_named_manifests_of_an_overlay_with_no_ledger_unlisted(
-    tmp_path: Path,
-) -> None:
-    # A `--template` clone carries no ledger. Planned from the template as it ships, its named
-    # manifests were listed `skip_modified` on every `upgrade`, though `init` wrote exactly them;
-    # planned as `init` names them they equal the render and are not listed. Nothing is adopted
-    # silently: no record is written for them, so a later template change makes them
-    # `skip_modified` again.
-    # Mutation: `mutations/`'s "overlay upgrade refreshes a manifest init named back to the
-    # template's name".
-    root = _an_overlay(tmp_path)
-    (root / MANIFEST_PATH).unlink()
-    init_instance(root, "acme", runner=Recorder())
-    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=False).plan.actions}
-    for manifest in MANIFESTS:
-        assert manifest not in verbs, (manifest, verbs.get(manifest))
-    ledger = root / MANIFEST_PATH
-    recorded = (
-        json.loads(ledger.read_text(encoding="utf-8"))["artifacts"] if ledger.exists() else {}
-    )
-    assert not set(MANIFESTS) & set(recorded)
-
-
-def test_upgrade_refreshes_an_overlay_nobody_named_with_the_template_as_it_ships(
-    tmp_path: Path,
-) -> None:
-    # The other side of the owner's name: an overlay `init` never ran on names nobody, and a
-    # refresh gives it the template's bytes, not a suffix read from nowhere.
-    root = _an_overlay(tmp_path)
-    plugin = root / ".claude-plugin" / "plugin.json"
-    shipped = plugin.read_text(encoding="utf-8")
-    plugin.write_text(json.dumps({"name": "stayfixed-overlay"}) + "\n", encoding="utf-8")
-    _restamp(root, ".claude-plugin/plugin.json")
-    upgrade(root, dry_run=False)
-    assert plugin.read_text(encoding="utf-8") == shipped
-
-
-def test_init_does_not_vouch_for_a_manifest_the_owner_edited(tmp_path: Path) -> None:
-    # `init` re-stamped the ledger with whatever it wrote, without asking whether the file it
-    # rewrote was stayfixed's to begin with. An owner who had edited `plugin.json` (a description
-    # of their own) and then ran `init` had their edit recorded as stayfixed's bytes, and the next
-    # `overlay upgrade` refreshed the file: the description, the suffix and the account were gone.
-    # `init` rewrites the name and account either way; the record moves only when the bytes it
-    # replaced were the ones recorded, so `upgrade` goes on naming the file as hand-edited.
-    #
-    # Mutation: `mutations/`'s "overlay init vouches for a manifest the owner edited".
-    root = _an_overlay(tmp_path)
-    plugin = root / ".claude-plugin" / "plugin.json"
-    document = json.loads(plugin.read_text(encoding="utf-8"))
-    document["description"] = "My own overlay."
-    plugin.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    before = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
-    assert before[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
-    init_instance(root, "acme", runner=Recorder())
-    after = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
-    assert after[".claude-plugin/plugin.json"] is Verb.SKIP_MODIFIED
-    upgrade(root, dry_run=False)
-    kept = json.loads(plugin.read_text(encoding="utf-8"))
-    assert kept["description"] == "My own overlay."
-    assert kept["name"] == "stayfixed-overlay-acme"
-    assert kept["author"] == {"name": "acme"}
-
-
-def test_a_manifest_init_cannot_write_is_named_and_the_others_stay_recorded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `init` stopped at the first manifest it could not write, on a bare `PermissionError` the
-    # frame reported as an internal error: the manifests before it were renamed and their new
-    # records only in memory, so every later `upgrade` read them as hand-edited. A manifest it
-    # cannot write is named and left, as a retired file it cannot remove is, and the ledger it
-    # writes vouches for the manifests it did rename and only those.
-    # Mutation: `mutations/`'s "overlay init stops at a manifest it cannot write".
-    from stayfixed import fsops
-
-    write = fsops.write_within
-
-    def refused(root: Path, relative: str, body: str) -> None:
-        if relative == ".codex-plugin/plugin.json":
-            raise PermissionError(13, "Permission denied")
-        write(root, relative, body)
-
-    root = _an_overlay(tmp_path)
-    monkeypatch.setattr(fsops, "write_within", refused)
-    done = init_instance(root, "acme", runner=Recorder())
-    monkeypatch.undo()
-    assert (
-        ".codex-plugin/plugin.json cannot be written (Permission denied); "
-        "`stayfixed overlay init` names it once it can be"
-    ) in done.notes, done.notes
-    assert done.renamed == (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
-    assert ".codex-plugin/plugin.json" not in done.changed
-    assert any("pre-commit" in note for note in done.notes), done.notes
-    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
-    for manifest in (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"):
-        assert manifest not in verbs, (manifest, verbs.get(manifest))
-        assert json.loads((root / manifest).read_text(encoding="utf-8"))["name"].endswith("-acme")
-    # The next run names the one it could not.
-    again = init_instance(root, "acme", runner=Recorder())
-    assert again.renamed == (".codex-plugin/plugin.json",)
-
-
-def test_init_reads_every_manifest_before_it_rewrites_any(tmp_path: Path) -> None:
-    # A manifest that cannot be read stops `init`, and it used to stop it after the ones before it
-    # were rewritten and before their records were re-stamped: those files then read as
-    # hand-edited to every later `upgrade`. Every manifest is read and decided first now, so the
-    # failure leaves the tree as it was.
-    #
-    # Mutation: `mutations/`'s "overlay init rewrites a manifest before reading the next".
-    root = _an_overlay(tmp_path)
-    (root / ".codex-plugin" / "plugin.json").write_text("{not json", encoding="utf-8")
-    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
-    with pytest.raises(Failure, match="not valid JSON"):
-        init_instance(root, "acme", runner=Recorder())
-    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
-
-
-@pytest.mark.parametrize(
-    ("body", "said"),
-    [
-        pytest.param(NESTED, "is nested deeper than this reader follows", id="nested"),
-        pytest.param(f'{{"n": {LONG_NUMBER}}}', "holds a number longer", id="long-number"),
-    ],
-)
-def test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read(
-    tmp_path: Path, body: str, said: str
-) -> None:
-    # Valid JSON that `json.loads` answers with `RecursionError` or a plain `ValueError`, neither
-    # of them the `JSONDecodeError` `renamed` caught: `overlay init` ended in an internal error.
-    # It stops as it stops on a manifest that is not JSON, with the tree as it was. Mutation
-    # (declared): `renamed` parsing with a bare `json.loads` again.
-    root = _an_overlay(tmp_path)
-    (root / ".codex-plugin" / "plugin.json").write_text(body, encoding="utf-8")
-    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
-    with pytest.raises(Failure, match=said):
-        init_instance(root, "acme", runner=Recorder())
-    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
-
-
-def test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `overlay init` reads each manifest it renames through `naming.manifest_text`, the one reader
-    # of the overlay's manifests, so one past the read cap stops it with the tree as it was, named
-    # as the overlay names it and said in words, never by the path it was opened by. The cap is
-    # lowered so the file is small. Mutations (oracle): `mutations/`'s "overlay init reads a
-    # manifest with no bound" -> the run renames it; "overlay init's manifest refusal prints the
-    # path it opened" -> the message carries the temporary directory.
-    from stayfixed import fsops
-
-    root = _an_overlay(tmp_path)
-    # Above every other file `init` reads, the scaffold ledger among them, and under the padded one.
-    limit = max(p.stat().st_size for p in root.rglob("*") if p.is_file())
-    manifest = root / ".codex-plugin" / "plugin.json"
-    manifest.write_text(manifest.read_text(encoding="utf-8") + " " * limit, encoding="utf-8")
-    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
-    monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", limit)
-    with pytest.raises(Failure) as failed:
-        init_instance(root, "acme", runner=Recorder())
-    assert (
-        str(failed.value)
-        == ".codex-plugin/plugin.json cannot be read (larger than this reader reads)"
-    )
-    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
-
-
-@pytest.mark.parametrize("body", [NESTED, f'{{"n": {LONG_NUMBER}}}'], ids=["nested", "long"])
-def test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach(
-    tmp_path: Path, body: str
-) -> None:
-    # `owner_of` passes over a manifest it cannot read and asks the next, and it caught only
-    # `JSONDecodeError`, so one past the parser ended `overlay upgrade` in an internal error.
-    # Mutation (declared): its catch narrowed to the decoder's own errors again.
-    root = _an_overlay(tmp_path)
-    init_instance(root, "acme", runner=Recorder())
-    (root / ".claude-plugin" / "plugin.json").write_text(body, encoding="utf-8")
-    assert owner_of(root) == "acme"
 
 
 # --- a file an earlier release shipped and this one does not --------------------------------
@@ -539,11 +281,11 @@ def test_init_leaves_the_memory_directory_its_readme_under_the_new_name(
 def test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_record_dropped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `init` renamed the manifests, removed the old README, then stopped on an install whose
-    # template tree it could not read for the README's successor: the README was gone and its
-    # record stayed in the ledger for good, since a later run finds the file absent and reads it
-    # as unchanged. A tree it cannot read is a successor it cannot write, named and passed over
-    # like one, and the ledger drops the record of the file that is gone and keeps the renames.
+    # `init` removed the old README, then stopped on an install whose template tree it could not
+    # read for the README's successor: the README was gone and its record stayed in the ledger for
+    # good, since a later run finds the file absent and reads it as unchanged. A tree it cannot
+    # read is a successor it cannot write, named and passed over like one, and the ledger drops
+    # the record of the file that is gone.
     #
     # The line is `init`'s own: the `Failure` the tree raises is about `--local` and carries the
     # install's absolute path, and `overlay upgrade`, which a successor's line otherwise points
@@ -571,10 +313,6 @@ def test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_recor
     assert MEMORY_README not in recorded
     # The directory its successor goes in is not pruned on the way, as with a write that fails.
     assert (root / "common" / "memory").is_dir()
-    verbs = {a.artifact_id: a.verb for a in upgrade(root, dry_run=True).plan.actions}
-    for manifest in MANIFESTS:
-        assert verbs.get(manifest) is not Verb.SKIP_MODIFIED, manifest
-        assert json.loads((root / manifest).read_text(encoding="utf-8"))["name"].endswith("-acme")
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
@@ -1129,39 +867,3 @@ def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> N
     assert gone.isdisjoint(again.unchanged), again.unchanged
     done = init_instance(root, "octo", runner=Recorder())
     assert not [note for note in done.notes if note.startswith(("removed ", "left "))], done.notes
-
-
-def test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Python 3.12's indenting encoder stops near 994 levels, under what its parser reads, so a
-    # deep manifest was read and then ended `overlay init` in `RecursionError` while it was
-    # renamed. Forced on every interpreter: it stops as it stops on a manifest it cannot read,
-    # with the tree as it was. Mutation (declared): `renamed` encodes with a bare `json.dumps`.
-    from stayfixed import jsonobject
-
-    root = _an_overlay(tmp_path)
-    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
-    monkeypatch.setattr(jsonobject, "_encode", overflowing)
-    with pytest.raises(Failure, match="is nested deeper than this reader follows"):
-        init_instance(root, "acme", runner=Recorder())
-    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
-
-
-def test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Each manifest goes through the one JSON object reader and its depth bound; one past it is
-    # one the owner is not read from, and the next is asked. Mutation (declared): `mutations/`'s "an
-    # overlay manifest is read with a bare json.loads".
-    root = _an_overlay(tmp_path)
-    init_instance(root, "acme", runner=Recorder())
-    path = root / ".claude-plugin" / "plugin.json"
-    document = json.loads(path.read_text(encoding="utf-8"))
-    document["deep"] = [[[[]]]]
-    path.write_text(json.dumps(document), encoding="utf-8")
-    monkeypatch.setattr(jsonobject, "DEPTH_CAP", 4)
-    assert owner_of(root) == "acme"
-    (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps(document), "utf-8")
-    (root / ".codex-plugin" / "plugin.json").write_text(json.dumps(document), "utf-8")
-    assert owner_of(root) is None

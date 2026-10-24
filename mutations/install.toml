@@ -157,80 +157,56 @@ reddens = ["tests/setup/test_setup.py::test_creating_an_overlay_without_yes_is_r
 
 # The overlay root is the machine's trust anchor: every later `attach` derives `permitted_roots`
 # from it. Without this guard, `--overlay /tmp/whatever` — any directory that merely exists —
-# would be recorded and trusted exactly as a real overlay is. The probe moved into
-# `overlay.identity`, which is the one module that answers "is this an overlay" for `setup` and
-# for `overlay upgrade` alike, so the entry follows it there.
+# would be recorded and trusted exactly as a real overlay is. The probe lives in
+# `overlay.identity`, the one module that answers "is this an overlay" for `setup` and for
+# `overlay upgrade` alike, and it asks for the identity record first, naming it in full for an
+# overlay made before the record shipped.
 [[mutation]]
-name = "the overlay probe stops looking for the manifests at all"
+name = "the overlay probe stops asking for the identity record"
 file = "src/stayfixed/overlay/identity.py"
-before = "    for row in NAMED:"
-after = "    for row in ():"
+before = "    if not fsops.is_file(root / IDENTITY_RECORD):"
+after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_refused",
-  "tests/overlay/test_upgrade.py::test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written",
+  "tests/overlay/test_template.py::test_a_tree_without_the_identity_record_is_no_overlay_and_is_told_what_to_add",
 ]
 
-# The half that used to be worth nothing: the probe was the two manifests *existing*, which the
-# stayfixed checkout itself satisfies and which any Claude Code plugin repository satisfies. What
-# makes a tree an overlay is what its manifests say it is — the names `overlay init` writes and a
-# harness installs it by.
+# The half that used to be worth nothing: the probe was once two manifests *existing*, which the
+# stayfixed checkout itself satisfied. What makes a tree an overlay is what its record says: layout
+# 1, and `true`, which Python compares equal to 1, is no layout.
 [[mutation]]
-name = "the overlay probe stops reading what the manifests name"
+name = "the overlay probe takes any record for an overlay"
 file = "src/stayfixed/overlay/identity.py"
-before = "        if document is None or not claims(document.get(\"name\"), row.name):"
-after = "        if document is None:"
+before = "    if type(layout) is not int or layout != LAYOUT:"
+after = "    if record is None:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
+  "tests/setup/test_setup.py::test_a_directory_whose_record_names_another_layout_is_not_an_overlay",
+  "tests/overlay/test_template.py::test_a_record_that_is_not_a_layout_1_record_is_no_overlay[another-layout]",
 ]
 
-# The overlay's manifests have one reader, `naming.manifest`, for the probe, the owner and the
-# version floor. It answers every way a manifest can fail to parse, because what the probe returns
-# is a refusal and what escapes it is an internal error: a manifest nested past the parser or
-# holding an integer longer than it converts is valid JSON that `json.loads` meets with no
-# `JSONDecodeError`, and either ended `stayfixed setup --overlay` in one, while the owner's reader
-# must ask the next manifest past one it cannot read. The long integer has no case here: it is a
-# `ValueError` out of `json.loads` too, which every caller of the one reader reads as a manifest it
-# cannot read, so only the nesting tells this reader from a bare parse.
+# The record has one reader, `identity.identity_record`, for the probe and the version floor. A
+# record nested past the parser or holding an integer longer than it converts is valid TOML that
+# `tomllib` meets with no `TOMLDecodeError`, and either would end `stayfixed setup --overlay` in an
+# internal error instead of a refusal.
 [[mutation]]
-name = "an overlay manifest is read with a bare json.loads"
-file = "src/stayfixed/overlay/naming.py"
-before = "    return json_object(manifest_text(root, relative), relative, error=ValueError, shape=NotAnObject)"
-after = '    return __import__("json").loads(manifest_text(root, relative))'
+name = "the identity record reader lets a document past the parser raise"
+file = "src/stayfixed/overlay/identity.py"
+before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
+after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
 reddens = [
-  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/plugin.json]",
-  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/marketplace.json]",
-  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[nested]",
-  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound",
+  "tests/setup/test_commands.py::test_an_overlay_record_past_the_parser_is_refused_as_unreadable_through_the_cli[nested]",
+  "tests/overlay/test_requires.py::test_a_record_past_the_parsers_reach_is_nothing_declared",
 ]
 
-# `overlay init` renames the manifests as text, read by the same reader: to the read cap, a regular
-# file only, and a refusal said in words that names the file as the overlay does.
+# And it reads a regular file only: a FIFO at the record would block the SessionStart hook
+# (`requires_of`) for good.
 [[mutation]]
-name = "overlay init reads a manifest with no bound"
-file = "src/stayfixed/overlay/create.py"
-before = "        return naming.manifest_text(root, relative)"
-after = '        return (root / relative).read_text(encoding="utf-8")'
+name = "the identity record is read without asking what it is"
+file = "src/stayfixed/overlay/identity.py"
+before = "        return tomllib.loads(fsops.read_regular_text(root / IDENTITY_RECORD))"
+after = '        return tomllib.loads((root / IDENTITY_RECORD).read_text(encoding="utf-8"))'
 reddens = [
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read",
-]
-
-[[mutation]]
-name = "overlay init's manifest refusal prints the path it opened"
-file = "src/stayfixed/overlay/create.py"
-before = "    with fsops.reading(relative, Failure):"
-after = "    with fsops.reading(root / relative, Failure):"
-reddens = ["tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read"]
-
-# And it reads a regular file only: two of its three callers read the plugin manifest with a bare
-# `read_text`, so a FIFO there blocked the SessionStart hook (`requires_of`) and `overlay upgrade`
-# (`owner_of`) for good.
-[[mutation]]
-name = "an overlay manifest is read without asking what it is"
-file = "src/stayfixed/overlay/naming.py"
-before = "    return read_regular_text(root / relative)"
-after = '    return (root / relative).read_text(encoding="utf-8")'
-reddens = [
-  "tests/overlay/test_requires.py::test_a_fifo_at_the_plugin_manifest_is_unreadable_to_its_readers_without_waiting",
+  "tests/overlay/test_requires.py::test_a_fifo_at_the_identity_record_is_unreadable_to_its_readers_without_waiting",
 ]
 
 # The actual control over a named overlay path: a path outside the repository that already
@@ -728,42 +704,6 @@ reddens = [
   "tests/overlay/test_create.py::test_a_local_overlay_carries_a_real_repository_on_main",
 ]
 
-# The overlay's marketplace and manifests validate: `claude plugin validate` refuses a marketplace
-# with no `owner`, and `init` is what puts the account in.
-[[mutation]]
-name = "overlay init leaves the template's owner and author placeholders"
-file = "src/stayfixed/overlay/naming.py"
-before = "    if _named_for(document, _ROW[relative].account_key, suffix):"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_create.py::test_init_names_the_owner_and_the_author_the_harness_asks_for",
-  "tests/overlay/test_create.py::test_init_completes_an_overlay_whose_template_predates_the_owner_and_author",
-]
-
-# `init_instance`'s own rationale — a harness installs a plugin by the name in its manifest, so
-# two owners' overlays under one configuration directory are one plugin fighting itself — applies
-# to Codex exactly as it does to Claude Code, and the project ships a Codex half of everything
-# else.
-[[mutation]]
-name = "overlay init leaves the Codex manifest unsuffixed"
-file = "src/stayfixed/overlay/naming.py"
-before = '    Named(CODEX_PLUGIN_MANIFEST, OVERLAY_PLUGIN, "author", probed=False),'
-after = ""
-reddens = ["tests/overlay/test_create.py::test_init_names_the_codex_manifest_after_the_owner_too"]
-
-# A write behind the scaffold ledger makes the file read as hand-edited for ever after. The file
-# in question carries `stayfixed.requires`, the version-compatibility declaration the README
-# advertises, so a release that changes it would never reach an initialised overlay — and the
-# report would attribute to the owner an edit stayfixed itself made.
-[[mutation]]
-name = "overlay init writes the manifests behind the scaffold ledger"
-file = "src/stayfixed/overlay/create.py"
-before = "            ledger = ledger.with_record(replace(record, sha256=digest(body)))"
-after = "            ledger = ledger.with_record(record)"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
-]
-
 # `README.md` lists the machine file under "Written by: **you**, or `stayfixed setup`", so a table
 # this writer does not recognise is the ordinary case. Dropping it destroys the only copy of
 # something a person wrote, in a file they were invited to write in.
@@ -805,7 +745,7 @@ reddens = [
 ]
 
 # `overlay init --root` defaults to `.` and asked nothing of it: inside the stayfixed checkout it
-# renamed all three plugin manifests and installed a commit hook. `upgrade` had the guard.
+# rewrote files and installed a commit hook. `upgrade` had the guard.
 [[mutation]]
 name = "overlay init writes into a directory that is not an overlay"
 file = "src/stayfixed/overlay/create.py"
@@ -1159,66 +1099,15 @@ reddens = [
 [[mutation]]
 name = "overlay init leaves the memory README a release shipped"
 file = "src/stayfixed/overlay/create.py"
-before = "    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)"
+before = """    ledger, retirement, retired_paths, changed = _retire(
+        root, ledger, ledgered=bool(ledger.records)
+    )"""
 after = "    retirement, retired_paths, changed = [], [], False"
 reddens = [
   "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[recorded]",
   "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[no-ledger]",
   "tests/overlay/test_upgrade.py::test_init_keeps_an_edited_memory_readme_and_says_what_to_do",
   "tests/test_install_path.py::test_an_overlay_from_a_template_an_earlier_release_published_passes_the_index_check",
-]
-
-# `init` re-stamped every manifest it rewrote, whatever the file held before, so an owner's own
-# edit made before `init` was recorded as stayfixed's bytes and the next `overlay upgrade`
-# refreshed it away: description, suffix and account.
-[[mutation]]
-name = "overlay init vouches for a manifest the owner edited"
-file = "src/stayfixed/overlay/create.py"
-before = "        if record is not None and digest(before) == record.sha256:"
-after = "        if record is not None:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_does_not_vouch_for_a_manifest_the_owner_edited",
-]
-
-# A manifest that cannot be read stopped `init` after the ones before it were rewritten and before
-# their records were re-stamped, so those files read as hand-edited to every later `upgrade`.
-[[mutation]]
-name = "overlay init rewrites a manifest before reading the next"
-file = "src/stayfixed/overlay/create.py"
-before = "            rewrites.append((relative, before, body))"
-after = """            fsops.write_within(root, relative, body)
-            rewrites.append((relative, before, body))"""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_reads_every_manifest_before_it_rewrites_any",
-]
-
-# A manifest `init` could not write stopped it on a bare `PermissionError`, with the manifests
-# before it renamed and their new records only in memory, so every later `upgrade` read them as
-# hand-edited.
-[[mutation]]
-name = "overlay init stops at a manifest it cannot write"
-file = "src/stayfixed/overlay/create.py"
-before = """                "`stayfixed overlay init` names it once it can be"
-            )
-            continue"""
-after = """                "`stayfixed overlay init` names it once it can be"
-            )
-            raise"""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_manifest_init_cannot_write_is_named_and_the_others_stay_recorded",
-]
-
-# `init` re-stamps the manifests it renames, so a refresh from the template as it ships read them as
-# untouched and put `stayfixed-overlay` back: the collision the owner suffix prevents.
-[[mutation]]
-name = "overlay upgrade refreshes a manifest init named back to the template's name"
-file = "src/stayfixed/overlay/upgrade.py"
-before = "    shipped = [*named_after(templates(), owner_of(root)), *retired()]"
-after = "    shipped = [*templates(), *retired()]"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
-  "tests/overlay/test_upgrade.py::test_upgrade_writes_a_manifest_the_overlay_lacks_under_the_owner_s_name",
-  "tests/overlay/test_upgrade.py::test_upgrade_leaves_the_named_manifests_of_an_overlay_with_no_ledger_unlisted",
 ]
 
 # An install whose template tree cannot be read stopped `init` after the old README was removed,
@@ -1392,8 +1281,7 @@ reddens = [
 ]
 
 # Re-running `setup --overlay create:` runs `overlay init` on the overlay it finds, and `init` may
-# rename its manifests or remove the old memory README; the report said the overlay was left alone
-# all the same.
+# remove the old memory README; the report said the overlay was left alone all the same.
 [[mutation]]
 name = "setup says it left alone an overlay init changed"
 file = "src/stayfixed/setup/run.py"
@@ -1401,16 +1289,6 @@ before = "        changed = initialised.changed"
 after = "        changed = ()"
 reddens = [
   "tests/setup/test_setup.py::test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found",
-]
-
-# `overlay init` fills in the template's placeholder author and keeps an author the owner wrote.
-[[mutation]]
-name = "overlay init replaces an author the owner wrote"
-file = "src/stayfixed/overlay/naming.py"
-before = '        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_ACCOUNT'
-after = "        and True"
-reddens = [
-  "tests/overlay/test_create.py::test_init_keeps_an_author_the_owner_wrote_themselves",
 ]
 
 # `git init -b` arrived in git 2.28; an older `git` refused it and the `--local` overlay was left
@@ -1490,20 +1368,9 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[init-directory-gone]",
 ]
 
-# The overlay's manifests are the owner's files, read by `overlay init` and `overlay upgrade`, and
 # `gh`'s answers are read by `overlay create` and `publish-template`. Each reader caught the
 # decoder's `JSONDecodeError` alone, so valid JSON past the parser — nesting it cannot follow, or
 # an integer longer than the interpreter converts — ended the command as an internal error.
-[[mutation]]
-name = "overlay init renames a manifest past the parser as an internal error"
-file = "src/stayfixed/overlay/naming.py"
-before = "    document = json_object(text, relative, error=Failure)"
-after = "    document = json.loads(text)"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[nested]",
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[long-number]",
-]
-
 [[mutation]]
 name = "the template probe parses with a bare json.loads"
 file = "src/stayfixed/overlay/create.py"
@@ -1533,9 +1400,8 @@ reddens = [
 ]
 
 # In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
-# recursion escape": `setup` writes the owner's settings back, and `overlay init` a renamed
-# manifest, through `json_text`, so a document read and then too deep for the encoder is the
-# reader's failure.
+# recursion escape": `setup` writes the owner's settings back through `json_text`, so a document
+# read and then too deep for the encoder is the reader's failure.
 [[mutation]]
 name = "setup encodes the owner's merged settings with a bare json.dumps"
 file = "src/stayfixed/setup/run.py"
@@ -1543,15 +1409,6 @@ before = '    new_text = mark + json_text(document, str(path), error=Failure, in
 after = '    new_text = mark + __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
 reddens = [
   "tests/setup/test_setup.py::test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it",
-]
-
-[[mutation]]
-name = "overlay init encodes a renamed manifest with a bare json.dumps"
-file = "src/stayfixed/overlay/naming.py"
-before = '    return json_text(document, relative, error=Failure, indent=2) + "\n"'
-after = '    return json.dumps(document, indent=2) + "\n"'
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read",
 ]
 
 # With no home there is no default machine file, and `setup` writes none.
