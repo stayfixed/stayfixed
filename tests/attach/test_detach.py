@@ -36,7 +36,7 @@ from tests.pathfaults import (
     symlink_loop_at,
     unsearchable,
 )
-from tests.runners import LsRemote, git_that_cannot_run
+from tests.runners import LsRemote, Recorder, git_that_cannot_run
 from tests.snapshot import (
     assert_snapshot_changed,
     assert_snapshot_unchanged,
@@ -64,8 +64,8 @@ def _grant(overlay: Path, *, allow: tuple[str, ...] = (), hooks: bool = False) -
     (overlay / "common" / "codex" / "common.rules").write_text("# rule\n", encoding="utf-8")
 
 
-def _detach(root: Path, machine: Path, home: Path) -> Detached:
-    return detach(root, machine=machine, home=home)
+def _detach(root: Path, machine: Path, home: Path, runner: Recorder | None = None) -> Detached:
+    return detach(root, machine=machine, runner=runner or Recorder(), home=home)
 
 
 def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
@@ -80,6 +80,98 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     assert_snapshot_changed(root, before)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
+
+
+def _render_of(root: Path) -> tuple[str, Path]:
+    """The binding id of `root`'s repository and the render directory it names."""
+    from stayfixed import binding
+    from stayfixed.attach.render import delivery_directory
+
+    id = binding.read_id(root)
+    assert id is not None
+    return id, delivery_directory(id)
+
+
+def test_detach_withdraws_the_rendered_plugin_and_keeps_the_binding(tmp_path: Path) -> None:
+    # The plugin runs from its render directory in place, so the directory goes and Claude Code is
+    # told to forget the plugin and its marketplace, each once, from the main checkout whose
+    # settings file holds the plugin's entry. The id, this machine's record of it and the
+    # overlay's record stay: a later attach binds the same checkout again.
+    from stayfixed import binding
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    id, delivery = _render_of(root)
+    assert (delivery / ".claude-plugin" / "marketplace.json").is_file()
+    record = store.parent / "project.toml"
+    kept = record.read_bytes()
+    runner = Recorder()
+    _detach(root, machine, home, runner)
+    assert not delivery.exists()
+    assert list(zip(runner.calls, runner.cwds, strict=True)) == [
+        (
+            [
+                "claude",
+                "plugin",
+                "uninstall",
+                f"overlay-{id}@stayfixed-delivery-{id}",
+                "--scope",
+                "local",
+            ],
+            root.resolve(),
+        ),
+        (["claude", "plugin", "marketplace", "remove", f"stayfixed-delivery-{id}"], root.resolve()),
+    ]
+    assert binding.read_id(root) == id
+    found = binding.bound_project(root)
+    assert found is not None and found.project == "p"
+    assert record.read_bytes() == kept
+
+
+def test_a_ledger_naming_another_directory_deletes_nothing_outside_the_delivery_directory(
+    tmp_path: Path,
+) -> None:
+    # The render directory is derived from the id, never read from the ledger, which a clone can
+    # commit: a ledger whose `store` and `render` name a directory elsewhere leaves it standing.
+    # Mutation: `mutations/`'s "detach deletes the directory the ledger names".
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    _, delivery = _render_of(root)
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("mine\n", encoding="utf-8")
+    raw = json.loads((root / LEDGER).read_text(encoding="utf-8"))
+    raw["store"] = str(outside)
+    raw["render"] = {"digest": "0" * 64, "parts": ["keep.txt"]}
+    (root / LEDGER).write_text(json.dumps(raw), encoding="utf-8")
+    _detach(root, machine, home)
+    assert (outside / "keep.txt").read_text(encoding="utf-8") == "mine\n"
+    assert not delivery.exists()
+
+
+def test_detach_keeps_the_allow_rule_claude_code_added_to_a_rewritten_settings_file(
+    tmp_path: Path,
+) -> None:
+    # Claude Code rewrites `settings.local.json` whole, its keys in another order, and adds the
+    # allow rule a "don't ask again" answer grants. `detach` takes out the rule its ledger names
+    # and leaves Claude Code's.
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2], allow=(RULE,))
+    home = tmp_path / "home"
+    _attach(root, store, machine, home)
+    rewritten = {
+        "enabledPlugins": {"overlay-x@stayfixed-delivery-x": True},
+        "permissions": {"allow": ["Bash(git tag *)", RULE]},
+    }
+    (root / SETTINGS).write_text(json.dumps(rewritten, indent=4), encoding="utf-8")
+    removed = _detach(root, machine, home)
+    assert removed.allow_removed == (RULE,)
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert document["permissions"]["allow"] == ["Bash(git tag *)"]
 
 
 def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) -> None:

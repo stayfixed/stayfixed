@@ -2749,7 +2749,9 @@ repository and the overlay as they were. What is left can only happen once writi
 
 ## `stayfixed detach [--root PATH] [--machine PATH]`
 
-Removes exactly what `attach` added, and leaves the binding alone.
+Removes exactly what `attach` added, and leaves the binding alone: the binding id, this machine's
+record of it and the overlay's `projects/<name>/project.toml` stay, so a later `attach` binds the
+same checkout again.
 
 It reads `.stayfixed/local/attach.json` and acts on that and on nothing else *that it is willing
 to believe*. A repository with no ledger fails (`1`) naming the missing file rather than guessing
@@ -2789,7 +2791,20 @@ alone (a group that mixes one of those with your own entry is split, never repla
 the file unwritten when none of those is in it, removes the `.codex/rules/` files it wrote, withdraws the link tree from
 this checkout and every worktree together with each one's harness memory link — while another checkout is
 attached, only this checkout's link, and its tree unless it is the main checkout, as above —
-removes the `stayfixed:attach` block in the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`. A file left holding nothing is
+withdraws the overlay's rendered plugin — `claude plugin uninstall overlay-<id>@stayfixed-delivery-<id>
+--scope local` and `claude plugin marketplace remove stayfixed-delivery-<id>`, run from the main
+checkout, then the render directory `$HOME/.local/share/stayfixed/delivery/<id>/` removed whole, a
+link there unlinked — where that directory is there and no other checkout of the repository is
+attached, removes the `stayfixed:attach` block in the repository's exclude file, and deletes the ledger, `.stayfixed/local/attach.json`.
+The render directory is derived from the binding id and never read from the ledger, so a ledger a
+clone committed naming another directory removes nothing outside it. The plugin goes before the
+exclude block, so Claude Code takes the plugin's entry, which names the id, out of
+`.claude/settings.local.json` while that file is still hidden. A `claude plugin` call that does not
+succeed is a note naming its exit code and never what it printed, and the render directory goes
+all the same, since a plugin whose directory is gone does not load; a render directory that cannot
+be removed fails (`1`) with the ledger kept, so `detach` can be run again. An allow rule Claude Code
+added to `.claude/settings.local.json` — the one a "don't ask again" answer writes — is not on the
+ledger and stays, whatever order Claude Code rewrote the file's keys in. A file left holding nothing is
 removed rather than left empty — for the exclude file, only when `attach` created it, which the block records, so
 an exclude file you had, empty or not, stays, and the `info/` directory it sat in goes with it only
 when `attach` created that too and it is empty; the line ending `attach` added to your exclude

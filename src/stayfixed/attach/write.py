@@ -72,6 +72,8 @@ from stayfixed.attach.render import (
     PLUGIN_DIRECTORY,
     PLUGIN_INSTALL_LOCAL,
     PLUGIN_MARKETPLACE_ADD_LOCAL,
+    PLUGIN_MARKETPLACE_REMOVE,
+    PLUGIN_UNINSTALL_LOCAL,
     Part,
     Rendered,
     delivery_directory,
@@ -81,7 +83,7 @@ from stayfixed.attach.render import (
     read_parts,
 )
 from stayfixed.attach.render import write as write_render
-from stayfixed.binding import ensure_id, record, short
+from stayfixed.binding import ensure_id, read_id, record, short
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import load
 from stayfixed.config.owner import Owner
@@ -1593,6 +1595,65 @@ def _install(id: str, main: Path, runner: Runner) -> str | None:
     return None
 
 
+# Said where a `claude plugin` call of `detach` did not succeed: its code and nothing it printed,
+# for `NOT_INSTALLED`'s reason. The render directory is removed all the same, and a plugin whose
+# directory is gone does not load.
+NOT_UNINSTALLED = (
+    "`claude plugin {verb}` did not succeed (exit {code}), so Claude Code may still list the "
+    "overlay's plugin; its render directory was removed, so it no longer loads"
+)
+# Said where the render directory could not be removed once Claude Code was told to forget it.
+RENDER_STAYED = (
+    "the overlay's rendered plugin under this machine's data directory could not be removed "
+    "({fault}); the ledger was kept, so `stayfixed detach` can be run again"
+)
+
+
+def _uninstall(id: str, main: Path, runner: Runner) -> tuple[str, ...]:
+    """Tell Claude Code to forget the plugin and its marketplace, from the main checkout it was
+    installed from; a note for each call that did not succeed."""
+    notes: list[str] = []
+    done = runner.launch(
+        filled(PLUGIN_UNINSTALL_LOCAL, f"{plugin_name(id)}@{marketplace_name(id)}"), main
+    )
+    if done.code != 0:
+        notes.append(NOT_UNINSTALLED.format(verb="uninstall", code=done.code))
+    removed = runner.launch(filled(PLUGIN_MARKETPLACE_REMOVE, marketplace_name(id)), main)
+    if removed.code != 0:
+        notes.append(NOT_UNINSTALLED.format(verb="marketplace remove", code=removed.code))
+    return tuple(notes)
+
+
+def _remove_render(directory: Path) -> None:
+    """Remove the render directory whole, a link in its place by unlinking it.
+
+    The one removal of `detach` driven by a listing, and allowed for the reason the hook sink's is
+    (CONTRIBUTING.md#enumerated-writes): the directory is `delivery_directory(id)`, derived from the
+    id and never read from the ledger a clone can commit, and only `attach` writes inside it. Each
+    entry goes through the contained walk, which follows no link: a link inside is unlinked."""
+
+    def refuse(error: OSError) -> None:
+        raise error
+
+    try:
+        if fsops.is_symlink(directory):
+            fsops.remove_within(directory.parent, directory.name)
+            return
+        for current, names, files in os.walk(directory, topdown=False, onerror=refuse):
+            here = Path(current).relative_to(directory)
+            for name in files:
+                fsops.remove_within(directory, (here / name).as_posix())
+            for name in names:
+                relative = (here / name).as_posix()
+                if fsops.is_symlink(directory / relative):
+                    fsops.remove_within(directory, relative)
+                else:
+                    fsops.rmdir_within(directory, relative)
+        fsops.rmdir_within(directory.parent, directory.name)
+    except OSError as exc:
+        raise Failure(RENDER_STAYED.format(fault=fsops.said(exc))) from exc
+
+
 @dataclass(frozen=True)
 class Detached:
     """What one `detach` withdrew. The binding record is not on this list, on purpose."""
@@ -1610,6 +1671,11 @@ class Detached:
     # This checkout's link tree was left in place because it owns the store and another checkout
     # of this repository still holds a ledger: that checkout's harness memory link points at it.
     link_tree_kept: bool = False
+    # The rendered plugin was withdrawn: Claude Code told to forget it and its marketplace, and
+    # its render directory removed.
+    delivery_removed: bool = False
+    # What a `claude plugin` call that did not succeed left, by its code and nothing it printed.
+    notes: tuple[str, ...] = ()
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1914,9 +1980,21 @@ def _reach(root: Path, checkouts: list[Path], *, kept: bool) -> tuple[list[Path]
 
 
 def detach(
-    root: Path, *, machine: Path | None, home: Path | None, owner: Owner | None = None
+    root: Path,
+    *,
+    machine: Path | None,
+    runner: Runner,
+    home: Path | None,
+    owner: Owner | None = None,
 ) -> Detached:
-    """Remove exactly what `attach` added, reading the ledger for what that was.
+    """Remove exactly what `attach` added, reading the ledger for what that was, and withdraw the
+    rendered plugin, whose directory is derived from the binding id and never read from the ledger.
+
+    The plugin is installed in the main checkout, which every worktree shares, so it is withdrawn
+    only where no other checkout is still attached: `claude plugin uninstall` and `marketplace
+    remove` through `runner`, after this run's own withdrawal from the settings file and before
+    the exclude block goes, then the render directory. The id and this machine's record of it are
+    kept, as the overlay's record is.
 
     It does **not** touch `projects/<name>/project.toml`. That record is the owner's consent,
     not a piece of local state: deleting it would turn every later re-attach into a first
@@ -1957,11 +2035,25 @@ def detach(
     config = load(root, machine=machine, owner=owner)
     held = owned_ids(local_document(root))
     entries = tuple(sorted(id for id, event in recorded.entries.items() if held.get(id) == event))
-    # Asked before the first withdrawal, because it is the one thing here that needs `git` and a
+    # Asked before the first withdrawal, because these are the things here that need `git` and a
     # `git` that cannot run is knowable at the start. Asked between the settings withdrawal and
     # the link trees, a machine whose `git` is gone would get exit 1 with the settings file and the
     # `.codex/rules/` copies already removed and every link still in place. The home the harness
     # links are under is asked in the same breath: a mistyped `--home` withdrew nothing, exit 0.
+    # The rendered plugin, named by the id and installed in the main checkout, which every
+    # worktree shares: withdrawn where its render directory is there and no other checkout is
+    # still attached (`kept`, below). The directory is derived from the id and never read from the
+    # ledger, whose `store` and `render` a clone can commit; asked here, before the first
+    # withdrawal, since the id is read through `git`.
+    id = read_id(root)
+    try:
+        delivery = delivery_directory(id) if id is not None else None
+    except Failure:
+        # A `HOME` that names no home holds no render; the home the harness links are under is
+        # refused below in its own words.
+        delivery = None
+    if delivery is not None and not (fsops.is_dir(delivery) or fsops.is_symlink(delivery)):
+        delivery = None
     checkouts = _checkouts(root)
     for tree in checkouts:
         harness_anchor(tree, home)
@@ -2006,6 +2098,15 @@ def detach(
             targets=targets[tree],
             keep_tree=tree not in trees,
         ).revoked
+    # Before the exclude block goes: Claude Code takes the plugin's entry, which names the id, out
+    # of the settings file the block hides, and it does so after this run's own withdrawal from
+    # that file, which would otherwise write the entry back.
+    notes: tuple[str, ...] = ()
+    if kept:
+        delivery = None
+    if id is not None and delivery is not None:
+        notes = _uninstall(id, checkouts[0], runner)
+        _remove_render(delivery)
     if hidden is not None:
         exclude.write(hidden)
     memory = _withdraw_memory_directories(root, trees, config, recorded)
@@ -2022,4 +2123,6 @@ def detach(
         hidden is not None,
         kept,
         root.resolve() not in trees,
+        delivery is not None,
+        notes,
     )

@@ -151,10 +151,15 @@ def _screen(attached: Attached) -> list[str]:
 
 def run_detach(args: argparse.Namespace) -> Result:
     from stayfixed.attach.write import detach
+    from stayfixed.runner import subprocess_runner
 
     machine = _machine_argument(args.machine)
     removed = detach(
-        Path(args.root).resolve(), machine=machine, home=None, owner=command_owner(machine)
+        Path(args.root).resolve(),
+        machine=machine,
+        runner=subprocess_runner(),
+        home=None,
+        owner=command_owner(machine),
     )
     data = {
         # Counts and not the strings, which is the same ruling `attach.check` makes about
@@ -181,6 +186,10 @@ def run_detach(args: argparse.Namespace) -> Result:
         "exclude_block_kept": removed.exclude_block_kept,
         # A boolean this command computed, so it prints.
         "link_tree_kept": removed.link_tree_kept,
+        # A boolean this command computed, so it prints.
+        "delivery_removed": removed.delivery_removed,
+        # Each a sentence of this command's, naming a `claude plugin` call's exit code alone.
+        "notes": list(removed.notes),
     }
     # The link tree is kept only while another checkout is attached, which keeps the block too.
     what = (
@@ -193,13 +202,19 @@ def run_detach(args: argparse.Namespace) -> Result:
         if removed.exclude_block_kept
         else ""
     )
+    withdrawn = "; the overlay's plugin was withdrawn" if removed.delivery_removed else ""
     return Result(
-        f"detached: {len(removed.allow_removed)} allow rule(s), "
-        f"{len(removed.entries_removed)} hook entr(ies), "
-        f"{len(removed.rules_removed)} Codex rule file(s), "
-        f"{len(removed.links.revoked)} link(s), "
-        f"{len(removed.directories_removed)} directory(ies); "
-        f"the binding record was left in place{kept}",
+        "; ".join(
+            (
+                f"detached: {len(removed.allow_removed)} allow rule(s), "
+                f"{len(removed.entries_removed)} hook entr(ies), "
+                f"{len(removed.rules_removed)} Codex rule file(s), "
+                f"{len(removed.links.revoked)} link(s), "
+                f"{len(removed.directories_removed)} directory(ies){withdrawn}; "
+                f"the binding record was left in place{kept}",
+                *removed.notes,
+            )
+        ),
         data,
     )
 

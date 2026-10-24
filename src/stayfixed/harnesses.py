@@ -49,7 +49,8 @@ package that names a harness is pardoned there, each pardon by one of these item
   harness is another entry in each.
 - `attach` renders the overlay's hooks, skills and agents as a Claude Code plugin and installs it
   with Claude Code's verbs, `PLUGIN_MARKETPLACE_ADD_LOCAL` and `PLUGIN_INSTALL_LOCAL` in
-  `attach.render`, so another harness is another render and another pair of verbs.
+  `attach.render`, and `detach` withdraws it with `PLUGIN_UNINSTALL_LOCAL` and
+  `PLUGIN_MARKETPLACE_REMOVE` beside them, so another harness is another render and other verbs.
 - `init` renders `CLAUDE.md`, Claude Code's pointer to `AGENTS.md`, whatever `[stayfixed] agents`
   lists (`project.templates`, from the template `claude.md`): a project that lists Codex alone
   gets it too.

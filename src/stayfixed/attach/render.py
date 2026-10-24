@@ -65,6 +65,11 @@ _DESCRIPTION = "The hooks, skills and agents of your stayfixed overlay, rendered
 SLOT = "<slot>"
 PLUGIN_MARKETPLACE_ADD_LOCAL = ("claude", "plugin", "marketplace", "add", SLOT, "--scope", "local")
 PLUGIN_INSTALL_LOCAL = ("claude", "plugin", "install", SLOT, "--scope", "local")
+# The two that `detach` takes it back with, from the same checkout: `SLOT` is filled with
+# `overlay-<id>@stayfixed-delivery-<id>` and with `stayfixed-delivery-<id>`. The marketplace is
+# removed from every scope, since Claude Code records it machine-wide and no other scope names it.
+PLUGIN_UNINSTALL_LOCAL = ("claude", "plugin", "uninstall", SLOT, "--scope", "local")
+PLUGIN_MARKETPLACE_REMOVE = ("claude", "plugin", "marketplace", "remove", SLOT)
 
 
 class Part(NamedTuple):

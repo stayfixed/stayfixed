@@ -759,17 +759,27 @@ def test_the_plugin_installs_reach_the_rows_their_entries_name() -> None:
 
 
 def test_the_rendered_plugins_install_reaches_the_rows_its_entries_name() -> None:
-    # `PASS_THROUGH` names `attach`'s install rows by hand, because each argv is a table whose slot
-    # is filled at the call. This fills them. Mutation: `PLUGIN_INSTALL_LOCAL` spelled as
-    # `codex plugin add` -> it reaches another row, and this reddens.
-    from stayfixed.attach.render import PLUGIN_INSTALL_LOCAL, PLUGIN_MARKETPLACE_ADD_LOCAL, filled
+    # `PASS_THROUGH` names `attach`'s install rows and `detach`'s withdrawal rows by hand, because
+    # each argv is a table whose slot is filled at the call. This fills them. Mutation:
+    # `PLUGIN_INSTALL_LOCAL` or `PLUGIN_UNINSTALL_LOCAL` spelled as `codex plugin …` -> it reaches
+    # another row, and this reddens.
+    from stayfixed.attach.render import (
+        PLUGIN_INSTALL_LOCAL,
+        PLUGIN_MARKETPLACE_ADD_LOCAL,
+        PLUGIN_MARKETPLACE_REMOVE,
+        PLUGIN_UNINSTALL_LOCAL,
+        filled,
+    )
 
-    reached = {
-        _row(tuple(filled(table, "x")))
-        for table in (PLUGIN_MARKETPLACE_ADD_LOCAL, PLUGIN_INSTALL_LOCAL)
-    }
-    declared = [rows for key, rows in PASS_THROUGH.items() if key[1] == "_install"]
-    assert len(declared) == 2 and all(rows == reached == {"claude plugin"} for rows in declared)
+    tables = (
+        PLUGIN_MARKETPLACE_ADD_LOCAL,
+        PLUGIN_INSTALL_LOCAL,
+        PLUGIN_UNINSTALL_LOCAL,
+        PLUGIN_MARKETPLACE_REMOVE,
+    )
+    reached = {_row(tuple(filled(table, "x"))) for table in tables}
+    declared = [rows for key, rows in PASS_THROUGH.items() if key[1] in ("_install", "_uninstall")]
+    assert len(declared) == 4 and all(rows == reached == {"claude plugin"} for rows in declared)
 
 
 def test_the_readme_declares_every_program_that_reaches_a_network() -> None:

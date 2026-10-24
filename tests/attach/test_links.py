@@ -351,7 +351,7 @@ def test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record
 
     root, side, store, machine, home = _approved_only_by_the_owner(tmp_path)
     harness_memory_path(side, home).rmdir()
-    detach(side, machine=machine, home=home)
+    detach(side, machine=machine, runner=Recorder(), home=home)
     # Non-vacuous: the detach took every link tree back, so nothing resolves at plan time.
     assert not (root / "docs" / "memory" / "developer").is_symlink()
     harness_memory_path(side, home).mkdir(parents=True)
@@ -435,7 +435,7 @@ def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
     assert (side / "docs" / "memory" / "developer").is_symlink()
     for checkout in (root, side):
         assert harness_memory_path(checkout, home).exists(), checkout
-    detach(side, machine=machine, home=home)
+    detach(side, machine=machine, runner=Recorder(), home=home)
     assert not (root / "docs" / "memory" / "developer").is_symlink()
     assert not (side / "docs" / "memory" / "developer").is_symlink()
     for checkout in (root, side):
@@ -560,7 +560,7 @@ def test_a_side_worktree_whose_slug_is_a_link_refuses_attach_and_detach_before_a
         slug.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
         with pytest.raises(Refusal, match="none below it"):
             if attached:
-                detach(root, machine=machine, home=home)
+                detach(root, machine=machine, runner=Recorder(), home=home)
             else:
                 _attach(root, store, machine, home)
         assert_snapshot_unchanged(root, before)
