@@ -513,9 +513,10 @@ def test_a_reattach_out_of_overlay_mode_withdraws_the_pointer_and_the_composed_s
     tmp_path: Path,
 ) -> None:
     # Left in place, the harness kept reading the overlay's notes through the composed store, and
-    # its writer kept writing into it, while stayfixed delivered `docs/memory` or nothing; no row
-    # said so. A re-attach in another mode takes the ledgered key and the store back as `detach`
-    # does. Mutation (oracle): `mutations/`'s "a re-attach out of overlay mode keeps the pointer".
+    # its writer kept writing into it, while stayfixed delivered the repository's own notes or
+    # nothing; no row said so. A re-attach in another mode takes the ledgered key and the store
+    # back as `detach` does. Mutation (oracle): `mutations/`'s "a re-attach out of overlay mode
+    # keeps the pointer".
     from stayfixed import binding
     from stayfixed.memory.store import composed_directory as store_directory
 

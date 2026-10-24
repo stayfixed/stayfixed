@@ -127,7 +127,7 @@ def test_an_edit_after_promotion_makes_that_note_unreviewed_and_moves_no_other(
 
 
 IN_REPO = CONFIG.replace('mode = "local-only"', 'mode = "in-repo"') + (
-    '\n[paths]\nmemory = "docs/memory"\n'
+    '\n[paths]\nmemory = "notes"\n'
 )
 
 
@@ -141,7 +141,7 @@ def test_a_note_promoted_in_the_main_checkout_is_reviewed_in_a_linked_worktree(
     from tests.gitfixture import git
 
     root = tmp_path / "project"
-    base = root / "docs" / "memory" / "developer"
+    base = root / "notes" / "developer"
     base.mkdir(parents=True)
     (base / "rule.md").write_text(_note("rule", startup="1", body="RULE-BODY"), "utf-8")
     (root / CONFIG_FILE).write_text(IN_REPO, encoding="utf-8")
@@ -273,13 +273,13 @@ def test_a_symlinked_note_is_neither_delivered_nor_digested_and_is_counted_skipp
     outside.mkdir()
     (outside / "secret.md").write_text(_note("secret", startup="1", body="OUTSIDE-BODY"), "utf-8")
     other = tmp_path / "other"
-    (other / "docs" / "memory" / "developer").mkdir(parents=True)
-    promoted = other / "docs" / "memory" / "developer" / "clientb.md"
+    (other / "notes" / "developer").mkdir(parents=True)
+    promoted = other / "notes" / "developer" / "clientb.md"
     promoted.write_text(_note("clientb", startup="1", body="CLIENT-B-RULE"), "utf-8")
     (other / CONFIG_FILE).write_text(IN_REPO, encoding="utf-8")
     assert cli(other, tmp_path, "memory", "promote", "--changed")[0] == 0
     root = tmp_path / "project"
-    notes = root / "docs" / "memory" / "developer"
+    notes = root / "notes" / "developer"
     notes.mkdir(parents=True)
     (root / CONFIG_FILE).write_text(IN_REPO, encoding="utf-8")
     (notes / "a.md").symlink_to(outside / "secret.md")

@@ -103,9 +103,9 @@ def test_revoke_takes_the_subject_as_list_prints_it_from_the_home(
     # matched only as the absolute path, it refused, listing the very spelling that just failed.
     home = tmp_path.resolve()
     monkeypatch.setenv("HOME", str(home))
-    subject = str(home / "project" / "docs" / "memory" / "developer" / "rule.md")
+    subject = str(home / "project" / "notes" / "developer" / "rule.md")
     approve_all(_machine(tmp_path), "reviewed", {subject: "d"}, now=T0)
-    argv = ["trust", "revoke", "reviewed", "--subject", "~/project/docs/memory/developer/rule.md"]
+    argv = ["trust", "revoke", "reviewed", "--subject", "~/project/notes/developer/rule.md"]
     assert invoke([*argv, "--machine", str(_machine(tmp_path))]) == 0, capsys.readouterr().err
     assert recorded(_machine(tmp_path)) == {}
 
