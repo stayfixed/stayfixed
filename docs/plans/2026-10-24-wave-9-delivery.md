@@ -1295,3 +1295,58 @@ machine-wide, uninstalls its plugins, and leaves `"enabledPlugins": {}` and
 - `<data>/sessions/` is never pruned.
 - `Bound.checkout` has no reader.
 - A crash mid-render can leave a `.<short id>-…` directory under `<data>/delivery/`.
+
+### Task 21 — HS3's final review and pull request, 2026-10-24
+
+**Execution.** Waves J, K, L and M were dispatched one after another, one implementer each, because
+each deletes what the one before it replaced. An automated security review ran on every commit.
+Two of its findings were valid and went back into the work: the composed store must take its
+project from the binding record, and the SessionStart count line must leave promotion to the owner.
+It also raised controls the plan deletes on purpose (`--store`, the legacy links, the precedence of
+`settings.json`); those were ruled against.
+
+**Final review** at `d500b98`, with three read-only seats (correctness; refusals and deletion;
+security), run as in-session agents. The security seat joined because the range moves `attach`'s
+writes to the main checkout and writes the pointer that names the id. The controller's full suite
+and full oracle on that head were green (all 2701 caught). One triaged fix round followed
+(`d500b98..3153738`), then one scoped re-review. The re-review found item 5 only partly addressed
+and one regression (`in-repo` labels landing in a committed `MEMORY.md`). Both were fixed in
+`3153738..a4d43f2`, which the controller read, with no further review round.
+
+**Rulings taken on the owner's behalf** (each costs what is said if wrong):
+- *The reviewed record matches by content.* A note is reviewed when the sha256 of its bytes is a
+  `reviewed` entry in `trust.json`; the path is only a label. This departs from Task 18's "entry for
+  that note's path": the same note was unreviewed in every linked worktree and after the overlay
+  moved. If wrong: identical bytes promoted anywhere on this machine count as reviewed everywhere,
+  which is what the owner reviewed. A revoke removes every entry holding that digest.
+- *A store with no group directory is an empty store.* An unbound overlay checkout's session-context
+  prints nothing and exits 0; `doctor` reports the binding.
+- *The index's rendered region* sits between two marker comments, and only lines outside it are
+  harvested. The first `memory index` after an upgrade reads a marker-less `MEMORY.md` whole and
+  harvests its lines once, into notes that have no `index:` of their own.
+- *The `[unreviewed]` label* goes only into a composed store's own `MEMORY.md` on the machine. Where
+  that file links to the overlay's index, no label is shown there; `volatile-notes` labels
+  unreviewed notes in every mode.
+- *Task 14's "developer → `common/memory/developer`"* follows the tree, which uses `common/memory`
+  itself. Overlay mode resolves the composed store in `memory/store.py`, outside the Files list, and
+  the overlay-mode `--store` override is deleted.
+- *The whole approval-kind framework* (`trust/kinds.py`, `trust/approving.py`) went with the
+  `memory` kind (open question 4). `trust list` lists everything; `trust revoke` needs `--subject`.
+  A 0.3.x flat map is read as holding no approval.
+- *Notes the harness writes at the top of the composed store* stay on the machine, as they did in
+  the checkout's own memory directory before.
+
+**Follow-ups left out of HS3:**
+- A first `attach` where only the overlay's project file sets `overlay` mode can refuse group
+  containment after writing files, and `attach --check` does not preview it.
+- The memory commands' machine-only topic files reach the overlay's shared index.
+- A group added after `attach` stays missing until the next attach.
+- `trust list` keeps `reviewed` entries no note holds.
+- `<data>/unreviewed/` is never pruned.
+- The memory doctor row models settings precedence, and reads neither managed settings nor the
+  desktop app's `--settings`.
+- `detach --machine` and `trust --root` are read by nothing.
+- The count line counts notes whose status changes no delivery.
+
+**Bug ledger** (in the private overlay): BR-004, BR-022, BR-027, BR-037, BR-038 and BR-042 are
+closed by the controller after the merge, against the merge commit.
