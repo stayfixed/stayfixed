@@ -1986,7 +1986,6 @@ before = "            named = ancestor.relative_to(root).as_posix()"
 after = "            named = str(ancestor)"
 reddens = [
   "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
-  "tests/overlay/test_upgrade.py::test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay",
 ]
 
 # `contained` asks each ancestor with `lstat` and gives each fault its answer, rather than
@@ -2152,7 +2151,7 @@ file = "src/stayfixed/printed.py"
 before = '    return clipped(done.stderr.strip() or done.stdout.strip() or f"exit {done.code}")'
 after = '    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"'
 reddens = [
-  "tests/overlay/test_publish.py::test_what_gh_prints_cannot_drive_a_terminal",
+  "tests/scripts/test_publish_template.py::test_what_gh_prints_cannot_drive_a_terminal",
   "tests/attach/test_write.py::test_what_pre_commit_prints_cannot_drive_a_terminal",
   "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[marketplace add]",
   "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[install]",
@@ -2258,8 +2257,8 @@ reddens = [
 [[mutation]]
 name = "a source comment names the overlay command by its old name"
 file = "src/stayfixed/gitenv.py"
-before = "and not through `git_run`, on purpose: `stayfixed overlay publish-template`, a maintainer"
-after = "and not through `git_run`, on purpose: `stayfixed overlay publish`, a maintainer"
+before = "    `stayfixed attach` when the real fault is their `git` — the state a macOS machine is in when"
+after = "    `stayfixed overlay init` when the real fault is their `git` — the state a macOS machine is in when"
 reddens = [
   "tests/test_documents.py::test_every_command_a_tracked_file_names_is_one_the_parser_registers",
 ]

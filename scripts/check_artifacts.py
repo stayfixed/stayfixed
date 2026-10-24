@@ -2,7 +2,7 @@
 """Check the built artifacts carry what an installed stayfixed needs.
 
     uv run python scripts/check_artifacts.py dist            # the one wheel and one sdist
-    uv run python scripts/check_artifacts.py rendered DIR    # what `overlay create --local` left
+    uv run python scripts/check_artifacts.py rendered DIR    # what `setup --overlay DIR` left
 
 The checkout passes every test with the template tree in place; only an artifact can say
 whether `uv_build` shipped it. Exit 0 with no findings, 1 with them.
@@ -19,9 +19,10 @@ Three things this looks at, each of which was an inline CI step or nothing at al
   `tests/skills/test_skills.py` reads those trees directly. And `tar` preserves the mode: a
   wrapper unpacked at 0644 exits 126 for every hook entry, which Claude Code reads as a
   permission error rather than as a broken install.
-* **A rendered overlay.** `overlay create --local` is the one working source for a first
-  overlay, and what it leaves behind has to be the files the package ships plus the scaffold
-  ledger — no more and no less — inside a git repository, which `--local` initialises.
+* **A rendered overlay.** `setup --overlay <path>` at a path that names nothing is the one working
+  source for a first overlay with no network call, and what it leaves behind has to be the files
+  the package ships plus the scaffold ledger — no more and no less — inside a git repository, which
+  the render initialises. CI renders it through the installed wheel under a `HOME` of its own.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ WHEEL_MUST = (
     "stayfixed/presets/recommended.toml",
     *(f"stayfixed/templates/overlay/{relative}" for relative in OVERLAY_FILES),
     # The project footprint's own tree. `init` reads it at runtime through
-    # `stayfixed.templates.tree`, exactly as `overlay create --local` reads the tree above, so a
+    # `stayfixed.templates.tree`, exactly as `setup --overlay <path>` reads the tree above, so a
     # build that dropped it would leave every installed stayfixed unable to initialise anything
     # while the checkout's own suite stayed green.
     *(f"stayfixed/templates/project/{name}" for name in PROJECT_FILES),
@@ -118,7 +119,7 @@ MAIN_HEAD = b"ref: refs/heads/main\n"
 def check_render(root: Path) -> list[str]:
     """The rendered tree minus its repository must be the expected files exactly.
 
-    `overlay create --local` initialises a git repository on `main` in what it renders, so
+    `setup --overlay <path>` initialises a git repository on `main` in what it renders, so
     `.git/` is part of the contract and is asked for, not merely stepped over: only a `.git` that
     is a directory is set aside from the comparison, a tree without one is a finding, and so is
     one whose `HEAD` does not name `refs/heads/main`, which is how a directory that merely has the

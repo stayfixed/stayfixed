@@ -1,7 +1,7 @@
 """Where the shipped overlay tree is, and what `plan()` is handed for it.
 
 `templates/overlay/` lives **under the module root**, beside `presets/`, and for the same
-reason: it is read at *runtime* — `overlay create --local` renders it — so the copy that has to
+reason: it is read at *runtime* — `setup --overlay <path>` renders it — so the copy that has to
 answer is the one an installed stayfixed carries. The conventional plugin layout puts the tree at
 the plugin root, and this repository has already departed from that layout once, for
 `presets/recommended.toml`, which `load_preset` reads out of the package. Two facts settle it
@@ -35,11 +35,11 @@ from stayfixed.templates import tree
 
 OVERLAY = "overlay"
 
-# Every file an earlier release shipped and this one does not, which `overlay upgrade` and
-# `overlay init` remove where it still holds what stayfixed wrote: the sha256 of each copy a
-# release shipped there, and the way out for a copy kept because it holds other bytes. An overlay
-# generated from a template carries no ledger (`publish-template` strips it), so these digests are
-# the only evidence that such an overlay's copy is stayfixed's to remove.
+# Every file an earlier release shipped and this one does not, which `overlay upgrade` removes
+# where it still holds what stayfixed wrote: the sha256 of each copy a release shipped there, and
+# the way out for a copy kept because it holds other bytes. An overlay generated from a template
+# carries no ledger (`scripts/publish_template.py` strips it), so these digests are the only
+# evidence that such an overlay's copy is stayfixed's to remove.
 #
 # The memory README is the same bytes in 0.1.0 and 0.1.1. The template's own `attach` skill, a
 # subset of the plugin's, which also covers detaching and a moved remote, is the same bytes in

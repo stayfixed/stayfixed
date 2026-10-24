@@ -35,7 +35,7 @@ def test_a_launched_command_gets_no_stdin_and_no_credential_prompt(tmp_path: Pat
     # Every call here runs with output captured, so a `git` or `gh` that asks for a credential
     # on an inherited stdin is invisible and blocks for the whole of NETWORK_TIMEOUT_SECONDS.
     # What makes that a finding rather than an annoyance is which callers reach the network
-    # through this seam: `overlay create --template` launches `gh` with the machine owner's own
+    # through this seam: `setup --overlay create:` launches `gh` with the machine owner's own
     # authentication, and `release.pins.released` runs `git ls-remote` for `stayfixed init` and
     # for `doctor`'s `ci-ref` row — a write meant to be non-interactive and a read-only
     # diagnostic. (This used to cite that row's URL as repository-authored; it is
@@ -78,7 +78,7 @@ def test_the_variables_that_make_gh_write_for_a_terminal_are_dropped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Either variable makes a captured `gh` colour its JSON, and every caller that parses it, the
-    # publisher's `gh api` and `overlay create`'s `gh repo view --json isTemplate` among them,
+    # publisher's `gh api` and `create:`'s `gh repo view --json isTemplate` among them,
     # then read no answer. Mutations (declared): `mutations/`'s "the runner hands gh
     # GH_FORCE_TTY" and "the runner hands gh CLICOLOR_FORCE" -> each reaches the child.
     monkeypatch.setenv("GH_FORCE_TTY", "1")

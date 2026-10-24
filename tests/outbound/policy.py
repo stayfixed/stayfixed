@@ -80,7 +80,6 @@ NETWORK: dict[tuple[str, ...], str] = {
     ("gh",): "gh",
     ("git", "clone"): "git clone",
     ("git", "fetch"): "git fetch",
-    ("git", "push"): "git push",
     ("git", "ls-remote"): "git ls-remote",
     ("claude", "plugin"): "claude plugin",
     ("codex", "plugin"): "codex plugin",
@@ -102,11 +101,9 @@ USER_COMMANDS = frozenset({("sh", "-c")})
 LOCAL = frozenset(
     {
         ("git", "--version"),
-        ("git", "add"),
         ("git", "archive"),
         ("git", "cat-file"),
         ("git", "check-ignore"),
-        ("git", "commit"),
         ("git", "config", "--type=path", "--get"),
         ("git", "diff"),
         ("git", "grep"),
@@ -132,7 +129,7 @@ LOCAL_WHOLE = frozenset({("git", "remote")})
 # argument as its value. None of them changes which program git runs or where it reaches, except
 # `-c`, whose value is configuration: it is held to `GIT_CONFIG_KEYS`. Any other option there is a
 # finding, because the subcommand the tables match would then follow something unread.
-GIT_GLOBAL_OPTIONS = {"-C": True, "-c": True, "--literal-pathspecs": False}
+GIT_GLOBAL_OPTIONS = {"-c": True, "--literal-pathspecs": False}
 # The configuration a launch may set with `git -c`: each changes how git prints a name, or which
 # repository it accepts, and never what it runs or where it reaches, as `core.sshCommand`,
 # `core.fsmonitor` or `url.<base>.insteadOf` would.
@@ -261,12 +258,6 @@ VOUCHED_ELEMENTS: dict[tuple[str, str, str], str] = {
     ),
     ("src/stayfixed/assess/probes.py", "_commit_types", "f'-n{context.window}'"): (
         "`-n` and the probe's window, an integer"
-    ),
-    ("src/stayfixed/overlay/publish.py", "publish_template", "str(clone)"): (
-        "the value of `-C`, the directory this run cloned into"
-    ),
-    ("src/stayfixed/overlay/publish.py", "publish_template", "message"): (
-        "the value of `git commit -m`, built from stayfixed's version"
     ),
 }
 

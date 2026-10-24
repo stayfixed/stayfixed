@@ -42,7 +42,6 @@ CHECK_HELP = "report drift instead of writing, and fail if there is any"
 # flag means something other than the shared thing, not a convenience for a sentence someone
 # liked better.
 OVERLAY_ROOT_HELP = "the overlay root (default: current directory)"
-INSTANCE_DIR_HELP = "directory to create it in (default: current directory)"
 SETUP_ROOT_HELP = (
     "the repository --git-hooks installs into, and the project root --overlay must not be "
     "recorded inside of (default: .)"

@@ -552,7 +552,7 @@ after = """        if False:
 reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
-  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[upgrade-directory-there]",
+  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[directory-there]",
   "tests/project/test_upgrade.py::test_switching_ci_off_after_deleting_the_workflow_drops_its_record",
 ]
 

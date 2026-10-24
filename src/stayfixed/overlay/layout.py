@@ -68,6 +68,3 @@ CAPABILITY_FILES = CAPABILITY_NAMES
 # longer ships are listed in `overlay.template`, beside the digests that say a copy of each is
 # stayfixed's; this one is named here as well because it has a successor.
 RETIRED_MEMORY_README = f"{COMMON_MEMORY}/README.md"
-# The shipped file that took each retired one's place, which `overlay init` writes when it removes
-# the old name and the new one is not there (`overlay.create._retire` says why).
-SUCCESSORS = {RETIRED_MEMORY_README: f"{COMMON_MEMORY}/_README.md"}

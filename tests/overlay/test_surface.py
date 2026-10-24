@@ -24,14 +24,19 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # The runner is a leaf now (`stayfixed.runner`); an area's surface does not re-export a
     # leaf, which is why the three names this list used to carry are absent from it.
     required = {
-        # creating an overlay and making it this owner's, for setup
-        "create",
+        # creating an overlay, rendering one and finishing either, for setup
+        "generate",
+        "render",
+        "finish",
         "Created",
-        "init_instance",
-        "Initialised",
         "target_root",
         "require_overlay",
         "overlay_fault",
+        # rendering the template, the repository it is published as and the name grammar, for
+        # `scripts/publish_template.py`
+        "render_template",
+        "TEMPLATE_REPOSITORY",
+        "segment",
         # the layout attach reads inside the overlay
         "COMMON_CLAUDE",
         "COMMON_CODEX",

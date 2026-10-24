@@ -14,24 +14,25 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 3. A language preference the user wants followed is a personal standing rule, a note with
    `metadata.startup` in the overlay; do not guess it.
 4. Offer the private overlay — one repository holding the user's own standing rules,
-   cross-project notes and per-project bindings. `setup` is what records it, through
-   `--overlay`, and there are two ways in:
+   cross-project notes and per-project bindings. `setup` is what makes and records it, through
+   `--overlay`, and there are three ways in:
    - **They already have one**: `stayfixed setup --preset recommended --overlay /path/to/it`.
-     The path is validated against the overlay's own layout, and refused if it is inside,
-     around or equal to the directory `setup` runs in, if it is in another checkout of that
-     directory's repository, or if it is inside a checkout of any other repository.
-   - **They do not**: `stayfixed setup --preset recommended --overlay create:<owner>/stayfixed-private --yes`
-     creates it on their GitHub account and records it in one step. Creating a repository on
-     their account needs their word first, so **ask before running it** — `--yes` is that
+     The path is validated against the overlay's identity record, `stayfixed-overlay.toml`, and
+     refused if it is inside, around or equal to the directory `setup` runs in, if it is in
+     another checkout of that directory's repository, or if it is inside a checkout of any other
+     repository. An overlay made before the record shipped is refused with the file and its keys
+     named: relay that, since the user adds the record by hand.
+   - **They want one on this machine only for now**: `stayfixed setup --preset recommended
+     --overlay /path/that/does/not/exist` renders the shipped template there with no network
+     call, makes it a git repository, installs the secret scan and records it. Relay the note on
+     giving it a remote and filling in `owner` and `name` in its record.
+   - **They want one on GitHub**: `stayfixed setup --preset recommended --overlay create:<owner>/stayfixed-private --yes`
+     creates it on their GitHub account, from their own published template or the publisher's
+     public one, names its record after them and records it in one step. Creating a repository
+     on their account needs their word first, so **ask before running it** — `--yes` is that
      consent and nothing about the overlay happens unless `--overlay` is named at all.
 
-   The lower-level path still exists and is for two cases only — an overlay rendered without
-   recording it, or one somebody else created that needs renaming:
-   `stayfixed overlay create --owner NAME --local` renders one on this machine with no network
-   call, `stayfixed overlay create --owner NAME --name stayfixed-private --template` creates it on
-   GitHub from their own published template, or from the publisher's public one when they have
-   none, and `stayfixed overlay init --owner NAME --root PATH` makes it theirs. Relay what
-   `init` renamed and whether the secret scan installed.
+   Relay whether the secret scan installed.
 5. After a stayfixed release, `stayfixed overlay upgrade --root PATH --dry-run` says what would
    change. Relay the report, and relay the `ASK FIRST` list separately: those two files can
    grant a capability, so the user agrees to them by name before the run without `--dry-run`.

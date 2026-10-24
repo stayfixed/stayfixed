@@ -1,11 +1,16 @@
+#!/usr/bin/env python3
 """Publish the overlay template repository from the owner's checkout.
+
+    uv run python scripts/publish_template.py --owner OWNER [--name NAME] [--yes]
 
 Render `templates/overlay/` into a scratch directory, strip the scaffold ledger (a repository
 generated from a template carries none, and publishing one would make every generated overlay
 read as hand-edited to `overlay upgrade`), make sure the repository exists, is public and is
 marked as a template, clone it, replace its tree with the render, commit, and — only with
 `yes` — push. Everything that leaves this process goes through `Runner`, so a test asserts the
-argv and never reaches GitHub.
+argv and never reaches GitHub. The repository it publishes is the one `stayfixed setup --overlay
+create:<owner>/<name>` generates from when the owner has one. A maintainer's script rather than a
+command stayfixed ships: an owner creates an overlay, and only a publisher publishes the template.
 
 **`yes` gates everything outward-facing**, which is three acts and not one: the repository's
 creation, its template flag, and the push. Without it the command renders, asks `gh` what
@@ -21,26 +26,33 @@ becomes one. `gh` decides the protocol and carries the token; this module only n
 
 from __future__ import annotations
 
+import argparse
 import re
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import stayfixed
-from stayfixed import fsops
-from stayfixed.errors import Failure, Refusal
-from stayfixed.jsonobject import json_object
-from stayfixed.overlay.create import TEMPLATE_REPOSITORY, _render_locally
-from stayfixed.overlay.identity import segment
-from stayfixed.overlay.layout import OVERLAY_FILES
-from stayfixed.printed import answered
-from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
-from stayfixed.scaffold import MANIFEST_PATH
-
-# `TEMPLATE_REPOSITORY` stays defined in `create.py` — `publish` imports `_render_locally` from
-# there, so that is the direction without a cycle — and is named here so a caller of this module
-# has one place to read. `__all__` because mypy's re-export rule wants the intent said out loud.
-__all__ = ["DESCRIPTION", "TEMPLATE_REPOSITORY", "Existing", "Published", "publish_template"]
+# Before the CLI frame exists, so said here: an interpreter without this repository's `stayfixed`
+# would otherwise end in a traceback.
+try:
+    import stayfixed
+    from stayfixed import fsops
+    from stayfixed.cli import JSON_EPILOG, run
+    from stayfixed.errors import Failure, Refusal
+    from stayfixed.jsonobject import json_object
+    from stayfixed.overlay.api import OVERLAY_FILES, TEMPLATE_REPOSITORY, render_template, segment
+    from stayfixed.printed import answered
+    from stayfixed.result import Result
+    from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner, subprocess_runner
+    from stayfixed.scaffold import MANIFEST_PATH
+except ImportError as exc:
+    sys.stderr.write(
+        f"scripts/publish_template.py: refused: {exc}; run it with `uv run python "
+        "scripts/publish_template.py`, which puts this repository's stayfixed on the path; "
+        "nothing was run\n"
+    )
+    sys.exit(2)
 
 DESCRIPTION = "The template a stayfixed private overlay is generated from"
 # The branch a repository this command just created has: `gh repo create` with no push leaves
@@ -256,18 +268,18 @@ def publish_template(
     owner: str, *, name: str = TEMPLATE_REPOSITORY, yes: bool, runner: Runner
 ) -> Published:
     """Render the shipped overlay tree and publish it as `<owner>/<name>`."""
-    # Folded before it is validated, exactly as `create.target_root` folds it and for the same
-    # reason: `SEGMENT` has a lowercase leading class and a mixed-case GitHub login is ordinary.
+    # Folded before it is validated, exactly as `overlay.api.target_root` folds it and for the
+    # same reason: `SEGMENT` has a lowercase leading class and a mixed-case GitHub login is
+    # ordinary.
     account = segment("owner", owner.strip().lower())
     segment("name", name)
     slug = f"{account}/{name}"
     with tempfile.TemporaryDirectory(prefix="stayfixed-publish-") as scratch_name:
         scratch = Path(scratch_name)
-        rendered = _render_locally(scratch, "rendered")
-        # The ledger is the scaffold engine's record of what `create --local` wrote here. A
-        # repository generated from a template carries none (`init_instance`'s docstring), so
-        # publishing one would make every generated overlay read as hand-edited to `overlay
-        # upgrade` and never be refreshed again.
+        rendered = render_template(scratch, "rendered")
+        # The ledger is the scaffold engine's record of what the render wrote here. A repository
+        # generated from a template carries none, so publishing one would make every generated
+        # overlay read as hand-edited to `overlay upgrade` and never be refreshed again.
         #
         # `_replace_tree` writes only the files the render left, so today the ledger could not
         # reach the clone even unstripped — this is the second of two independent mechanisms,
@@ -331,3 +343,47 @@ def publish_template(
             raise Failure(f"`git push` to {slug} exited {pushed.code} ({answered(pushed)})")
         notes.append(f"pushed {len(changed)} changed file(s) to {slug} as {message!r}")
     return Published(slug, changed, True, tuple(notes))
+
+
+def run_publish(args: argparse.Namespace) -> Result:
+    published = publish_template(
+        args.owner, name=args.name, yes=args.yes, runner=subprocess_runner()
+    )
+    data = {
+        "repository": published.repository,
+        "changed": list(published.changed),
+        "pushed": published.pushed,
+        "notes": list(published.notes),
+    }
+    return Result(f"{published.repository}: {'; '.join(published.notes)}", data)
+
+
+def parser() -> argparse.ArgumentParser:
+    top = argparse.ArgumentParser(
+        prog="scripts/publish_template.py",
+        description="Publish the overlay template repository from this checkout.",
+        epilog=JSON_EPILOG,
+    )
+    top.add_argument("--owner", required=True, help="the account to publish the template to")
+    top.add_argument(
+        "--name", default=TEMPLATE_REPOSITORY, help="the repository name (default: %(default)s)"
+    )
+    # The gate, and it is a parameter rather than a step in a procedure: in an agent harness a
+    # flag a model can type is not a control, so the three outward-facing acts — creating the
+    # repository, marking it a template, pushing — all sit behind this one value.
+    top.add_argument(
+        "--yes",
+        action="store_true",
+        help="create, mark and push; without it nothing outward-facing happens — the script "
+        "renders, asks gh what exists, and reports what it would do",
+    )
+    top.set_defaults(func=run_publish)
+    return top
+
+
+def main(argv: list[str] | None = None) -> int:
+    return run(sys.argv[1:] if argv is None else argv, parser=parser())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

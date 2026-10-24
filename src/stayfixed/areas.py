@@ -36,7 +36,7 @@ Registrar = Callable[[SubParsers], None]
 # binds a repository to it and takes back what that wrote, leaving the overlay's record of the
 # binding, and `memory` keeps the note store. Every other module under `src/stayfixed/` is the core.
 # One piece of the private layer sits in the core all the same: `templates/overlay/`, the tree
-# `overlay create --local` renders, is data the `overlay` area alone reads, and the import rules
+# `setup --overlay <path>` renders, is data the `overlay` area alone reads, and the import rules
 # below read code, so they cannot see it.
 # The core may not import a delivery area, through its `api.py` or otherwise, and a delivery area
 # may import the core, so the private layer can be reworked without touching the core.

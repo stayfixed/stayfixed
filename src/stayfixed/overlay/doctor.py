@@ -85,9 +85,9 @@ def _overlay_absent(overlay: Path | MachineUnread | None) -> Row:
 def _pre_commit(context: Context) -> Row:
     """Whether the overlay's own secret scan is armed on **this** machine.
 
-    `overlay init` runs `pre-commit install` on the machine that created the overlay; a second
-    machine clones that overlay and never runs `init` again, so the machine that thinks it is
-    set up is exactly the one whose commit-time scan is not.
+    `setup --overlay` runs `pre-commit install` on the machine that made the overlay; a second
+    machine clones that overlay and records it, so the machine that thinks it is set up is
+    exactly the one whose commit-time scan is not.
     """
     from pathlib import Path
 

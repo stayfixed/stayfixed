@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -136,3 +137,11 @@ def claude_code(main: Path, *, ignoring: tuple[str, ...] = ()) -> Callable[[list
         path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
     return on_call
+
+
+def real_git(argv: list[str], cwd: Path) -> None:
+    """A `Recorder.on_call` that runs each `git` argv for real, for a case about the repository a
+    command leaves behind; every other program stays recorded and answered from the script, so
+    `pre-commit`, `gh` and `claude` are never launched."""
+    if argv[0] == "git":
+        subprocess.run(argv, cwd=cwd, check=True, capture_output=True)

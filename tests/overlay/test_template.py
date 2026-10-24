@@ -203,7 +203,7 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
 
 def test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository() -> None:
     # On `pull_request` the gitleaks action calls `GET /repos/{owner}/{repo}/pulls/{n}/commits`
-    # to find what to scan, and on a private repository -- which an overlay is, `overlay create`
+    # to find what to scan, and on a private repository -- which an overlay is, `create:`
     # passes `--private` -- that endpoint needs the "Pull requests: read" permission. A
     # `permissions:` block naming `contents` alone leaves every other scope at none, so the scan
     # would fail for want of it. The block is asserted by value and in full: exactly these two
@@ -366,7 +366,7 @@ _STATED_COUNT = re.compile(r"renders (\w+) files here")
 
 
 def _rendered_paths() -> tuple[str, ...]:
-    """Every file `overlay create` leaves in a fresh instance, as the README has to describe it.
+    """Every file a render leaves in a fresh instance, as the README has to describe it.
 
     `OVERLAY_FILES` plus the scaffold manifest, which is the one path the template tree does not
     hold: `scaffold.apply` writes `.stayfixed/manifest.json` as the record `overlay upgrade` keys
@@ -418,7 +418,7 @@ def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
 def _is_placeholder(relative: str) -> bool:
     """Whether this path is a directory's own documentation rather than a file in its own right.
 
-    `overlay create` drops a README into each directory the owner fills — `common/memory/`'s
+    A render drops a README into each directory the owner fills — `common/memory/`'s
     `_README.md` and `projects/`'s `README.md`. The template README describes those as
     *directories* on purpose, and naming the placeholders inside them would be noise. Derived
     from the basename rather than listed, so a third such directory needs no edit here. The root
@@ -470,9 +470,9 @@ def test_the_overlay_tree_is_the_shared_resolvers_answer() -> None:
 
 
 def _render_into(tmp_path: Path) -> Path:
-    from stayfixed.overlay.create import _render_locally
+    from stayfixed.overlay.api import render_template
 
-    return _render_locally(tmp_path, "rendered")
+    return render_template(tmp_path, "rendered")
 
 
 def test_nothing_in_a_fresh_common_memory_fails_the_note_reader(tmp_path: Path) -> None:

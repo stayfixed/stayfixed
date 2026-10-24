@@ -256,8 +256,8 @@ reddens = [
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/stayfixed/templates/overlay/README.md"
-before = "`stayfixed overlay create` renders twelve files here:"
-after = "`stayfixed overlay create` renders thirteen files here:"
+before = "`stayfixed setup --overlay <path>` renders twelve files here:"
+after = "`stayfixed setup --overlay <path>` renders thirteen files here:"
 reddens = [
   "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
 ]

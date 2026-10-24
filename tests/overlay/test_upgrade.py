@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.errors import Refusal
-from stayfixed.overlay.api import create, init_instance
+from stayfixed.overlay.api import render
 from stayfixed.overlay.template import retired
 from stayfixed.overlay.upgrade import upgrade
 from stayfixed.scaffold import MANIFEST_PATH, Verb, digest
@@ -16,7 +15,7 @@ from tests.runners import Recorder
 
 
 def _an_overlay(tmp_path: Path) -> Path:
-    return create("octo", "ov", source="local", root=tmp_path, runner=Recorder()).root
+    return render(tmp_path / "ov", runner=Recorder()).root
 
 
 def _restamp(root: Path, artifact_id: str) -> None:
@@ -141,7 +140,7 @@ def _with_a_retired_file(
 ) -> Path:
     """An overlay carrying a retired file that holds `text`, with the ledger an earlier `--local`
     render leaves, recording the bytes release `version` `shipped` there, or with none, as an
-    overlay generated from a template has (`publish-template` strips it)."""
+    overlay generated from a template has (`scripts/publish_template.py` strips it)."""
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -227,185 +226,12 @@ def test_the_digest_held_for_the_retired_readme_is_the_shipped_files() -> None:
     assert held == frozenset({digest(SHIPPED_MEMORY_README)})
 
 
-@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
-def test_init_removes_the_memory_readme_a_release_shipped(tmp_path: Path, ledger: bool) -> None:
-    # An overlay generated from a template published at an earlier release arrives with the old
-    # README and no ledger, and nobody is told to run `overlay upgrade` on an overlay just made.
-    # `init`, which every such overlay runs, removes it, and drops a record the ledger holds.
-    #
-    # Mutation: `mutations/`'s "overlay init leaves the memory README a release shipped".
-    root = _an_overlay(tmp_path)
-    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
-    done = init_instance(root, "octo", runner=Recorder())
-    assert not path.exists()
-    assert any(MEMORY_README in note for note in done.notes)
-    if ledger:
-        recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
-        assert MEMORY_README not in recorded
-    else:
-        # A tree that arrived without a ledger is not given one.
-        assert not (root / MANIFEST_PATH).exists()
-
-
-@pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
-def test_init_leaves_the_memory_directory_its_readme_under_the_new_name(
-    tmp_path: Path, ledger: bool
-) -> None:
-    # An overlay from a 0.1.x template has `common/memory/README.md` and no `_README.md`. Removing
-    # the one left the directory empty, git keeps no empty directory, and a clone of the overlay
-    # elsewhere had no `common/memory/` at all, so the `developer` link attach makes there
-    # dangled. `init` writes the shipped `_README.md` in its place, and records it where the tree
-    # has a ledger.
-    #
-    # Mutation: `mutations/`'s "overlay init leaves the memory directory empty".
-    root = _an_overlay(tmp_path)
-    successor = root / "common" / "memory" / "_README.md"
-    shipped = successor.read_text(encoding="utf-8")
-    successor.unlink()
-    manifest = root / MANIFEST_PATH
-    document = json.loads(manifest.read_text(encoding="utf-8"))
-    del document["artifacts"]["common/memory/_README.md"]
-    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    path = _with_the_shipped_memory_readme(root, ledger=ledger, text=SHIPPED_MEMORY_README)
-    done = init_instance(root, "octo", runner=Recorder())
-    assert not path.exists()
-    assert successor.read_text(encoding="utf-8") == shipped
-    assert any("common/memory/_README.md" in note for note in done.notes)
-    if ledger:
-        recorded = json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
-        assert recorded["common/memory/_README.md"]["sha256"] == digest(shipped)
-    else:
-        assert not manifest.exists()
-
-
-def test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_record_dropped(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `init` removed the old README, then stopped on an install whose template tree it could not
-    # read for the README's successor: the README was gone and its record stayed in the ledger for
-    # good, since a later run finds the file absent and reads it as unchanged. A tree it cannot
-    # read is a successor it cannot write, named and passed over like one, and the ledger drops
-    # the record of the file that is gone.
-    #
-    # The line is `init`'s own: the `Failure` the tree raises is about `--local` and carries the
-    # install's absolute path, and `overlay upgrade`, which a successor's line otherwise points
-    # at, reads the same tree and fails the same way. So the tree is made unreadable for real,
-    # and the line must point at a reinstall and name no path of this machine.
-    #
-    # Mutation: `mutations/`'s "overlay init stops at a template tree it cannot read".
-    from stayfixed.overlay import template
-
-    root = _an_overlay(tmp_path)
-    (root / "common" / "memory" / "_README.md").unlink()
-    path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
-    missing = tmp_path / "an-install-without-the-tree"
-    monkeypatch.setattr(template, "template_root", lambda: missing)
-    done = init_instance(root, "acme", runner=Recorder())
-    monkeypatch.undo()
-    assert not path.exists()
-    assert (
-        "common/memory/_README.md cannot be written: this stayfixed install carries no overlay "
-        "template tree; reinstall stayfixed, then run `stayfixed overlay upgrade`"
-    ) in done.notes, done.notes
-    assert str(missing) not in "\n".join(done.notes)
-    assert any("pre-commit" in note for note in done.notes), done.notes
-    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
-    assert MEMORY_README not in recorded
-    # The directory its successor goes in is not pruned on the way, as with a write that fails.
-    assert (root / "common" / "memory").is_dir()
-
-
-@pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
-def test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on(tmp_path: Path) -> None:
-    # `init` stopped at the first retired file it could not remove: the ones it had already
-    # removed were gone, their `removed` lines never printed, and their records never dropped
-    # from the ledger, so every later run read the absent file as unchanged and kept the record
-    # for good. A file `init` cannot remove is named and left, as one it cannot read is, and the
-    # ledger it writes drops the records of the files it did remove and only those.
-    #
-    # Mutation: `mutations/`'s "overlay init stops at a retired file it cannot remove".
-    root = _an_overlay(tmp_path)
-    for relative, text in (
-        (ATTACH_SKILL, SHIPPED_ATTACH_SKILL),
-        (RULES_README, SHIPPED_RULES_README_0_2),
-    ):
-        _with_a_retired_file(root, relative, ledger=True, text=text, shipped=text, version="0.2.0")
-    rules = root / "common" / "rules"
-    rules.chmod(0o555)
-    try:
-        done = init_instance(root, "acme", runner=Recorder())
-    finally:
-        rules.chmod(0o755)
-    assert f"removed {ATTACH_SKILL}, which this release no longer ships" in done.notes
-    left = [note for note in done.notes if note.startswith(f"left {RULES_README}: ")]
-    assert left == [f"left {RULES_README}: cannot be removed (Permission denied)"], done.notes
-    # `init` went on to its last step, the secret scan.
-    assert any("pre-commit" in note for note in done.notes), done.notes
-    assert not (root / ATTACH_SKILL).exists()
-    assert (root / RULES_README).is_file()
-    assert ATTACH_SKILL in done.changed and RULES_README not in done.changed
-    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
-    assert ATTACH_SKILL not in recorded
-    assert RULES_README in recorded
-    # And the next run finishes the job.
-    again = init_instance(root, "acme", runner=Recorder())
-    assert f"removed {RULES_README}, which this release no longer ships" in again.notes
-    assert (
-        RULES_README
-        not in json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
-    )
-
-
-def test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The same stop one step later: the old README was removed, `_README.md` could not be written
-    # in its place, and `init` refused with the README's record still in the ledger and its
-    # `removed` line never printed. The write that fails is named with the command that writes
-    # the file, and the ledger drops the record of the file that is gone.
-    #
-    # Mutation: `mutations/`'s "overlay init stops at a successor it cannot write".
-    from stayfixed import fsops
-
-    write = fsops.write_within
-
-    def refused(root: Path, relative: str, body: str) -> None:
-        if relative == "common/memory/_README.md":
-            raise PermissionError(13, "Permission denied")
-        write(root, relative, body)
-
-    root = _an_overlay(tmp_path)
-    (root / "common" / "memory" / "_README.md").unlink()
-    path = _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README)
-    monkeypatch.setattr(fsops, "write_within", refused)
-    done = init_instance(root, "acme", runner=Recorder())
-    monkeypatch.undo()
-    assert f"removed {MEMORY_README}, which this release no longer ships" in done.notes
-    assert (
-        "common/memory/_README.md cannot be written (Permission denied); "
-        "`stayfixed overlay upgrade` writes it"
-    ) in done.notes
-    assert any("pre-commit" in note for note in done.notes), done.notes
-    assert not path.exists()
-    recorded = json.loads((root / MANIFEST_PATH).read_text(encoding="utf-8"))["artifacts"]
-    assert MEMORY_README not in recorded
-    # The README was the directory's only file, and the directory went with it: pruning ran
-    # over the successor whose write had failed, though a directory one is written into is
-    # never to be emptied on the way. It stays for the `upgrade` the note names.
-    # Mutation: `mutations/`'s "overlay init prunes the directory of a successor it could not
-    # write".
-    assert (root / "common" / "memory").is_dir()
-
-
 @pytest.mark.parametrize("directory", [True, False], ids=["directory-there", "directory-gone"])
-@pytest.mark.parametrize("command", ["init", "upgrade"])
 def test_the_record_of_a_memory_readme_already_gone_is_dropped(
-    tmp_path: Path, command: str, directory: bool
+    tmp_path: Path, directory: bool
 ) -> None:
-    # The old memory README recorded in the ledger and already deleted: neither command planned
-    # anything for it, so its record stayed for good, and `init` never wrote `_README.md` in its
-    # place. Both drop the record now, and `init` writes the successor as it does after a
-    # removal of its own.
+    # The old memory README recorded in the ledger and already deleted: `upgrade` planned nothing
+    # for it, so its record stayed for good. It drops the record now, and writes `_README.md`.
     # Mutation: `mutations/`'s "a retired record whose file is gone is kept for good".
     root = _an_overlay(tmp_path)
     successor = root / "common" / "memory" / "_README.md"
@@ -417,29 +243,9 @@ def test_the_record_of_a_memory_readme_already_gone_is_dropped(
     _with_the_shipped_memory_readme(root, ledger=True, text=SHIPPED_MEMORY_README).unlink()
     if not directory:
         (root / "common" / "memory").rmdir()
-    if command == "init":
-        done = init_instance(root, "octo", runner=Recorder())
-        assert f"dropped the record of {MEMORY_README}, which was already gone" in done.notes
-        assert not any(note.startswith(f"removed {MEMORY_README}") for note in done.notes)
-        assert MEMORY_README not in done.changed
-    else:
-        upgrade(root, dry_run=False)
+    upgrade(root, dry_run=False)
     assert MEMORY_README not in json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
     assert successor.is_file()
-
-
-def test_init_keeps_an_edited_memory_readme_and_says_what_to_do(tmp_path: Path) -> None:
-    # Bytes that are not the shipped ones may be the owner's own words, so `init` leaves the file
-    # and its note carries the way out. Mutations: `mutations/`'s "overlay init leaves the
-    # memory README a release shipped" -> the note is dropped with the removal; "a retired overlay
-    # file with no ledger is removed whatever it holds" -> the engine's verdict itself, proven
-    # through `upgrade`.
-    root = _an_overlay(tmp_path)
-    edited = SHIPPED_MEMORY_README + "\nMy own line.\n"
-    path = _with_the_shipped_memory_readme(root, ledger=False, text=edited)
-    done = init_instance(root, "octo", runner=Recorder())
-    assert path.read_text(encoding="utf-8") == edited
-    assert any(MEMORY_README in note and "_README.md" in note for note in done.notes)
 
 
 # --- the template's own `attach` skill, and the README of a directory nothing read --------------
@@ -537,16 +343,14 @@ RELEASED_COPIES = [
 
 @pytest.mark.parametrize("ledger", [True, False], ids=["recorded", "no-ledger"])
 @pytest.mark.parametrize(("relative", "shipped", "version"), RELEASED_COPIES)
-@pytest.mark.parametrize("command", ["upgrade", "init"])
 def test_each_released_copy_of_a_retired_file_is_removed(
-    tmp_path: Path, command: str, relative: str, shipped: str, version: str, ledger: bool
+    tmp_path: Path, relative: str, shipped: str, version: str, ledger: bool
 ) -> None:
     # The template shipped its own copy of the `attach` skill, a subset of the plugin's, which
     # also covers detaching and a moved remote; and a README for `common/rules/`, a directory
     # nothing read. Every overlay up to 0.2.0 carries both: recorded in the ledger where `--local`
     # rendered it, unrecorded where a template generated it, and there the bytes a release
-    # shipped are the only evidence that a copy is stayfixed's. `overlay upgrade` removes them,
-    # and so does `overlay init`, the step a generated overlay runs.
+    # shipped are the only evidence that a copy is stayfixed's. `overlay upgrade` removes them.
     #
     # Mutation: `mutations/`'s "the rules README 0.2.0 shipped is kept where no ledger records
     # it", "the rules README 0.1.x shipped is kept where no ledger records it" and "the attach
@@ -556,15 +360,11 @@ def test_each_released_copy_of_a_retired_file_is_removed(
     path = _with_a_retired_file(
         root, relative, ledger=ledger, text=shipped, shipped=shipped, version=version
     )
-    if command == "upgrade":
-        planned = upgrade(root, dry_run=True).plan
-        assert [a.target for a in planned.actions if a.verb is Verb.REMOVE] == [relative]
-        # Non-vacuous: the dry run left it, and the real run takes it.
-        assert path.is_file()
-        upgrade(root, dry_run=False)
-    else:
-        done = init_instance(root, "octo", runner=Recorder())
-        assert f"removed {relative}, which this release no longer ships" in done.notes
+    planned = upgrade(root, dry_run=True).plan
+    assert [a.target for a in planned.actions if a.verb is Verb.REMOVE] == [relative]
+    # Non-vacuous: the dry run left it, and the real run takes it.
+    assert path.is_file()
+    upgrade(root, dry_run=False)
     assert not path.exists()
     manifest = root / MANIFEST_PATH
     if ledger:
@@ -596,7 +396,7 @@ def test_an_edited_retired_file_is_kept_and_named(
 ) -> None:
     # An owner may have written a skill of their own over the template's, or rules into the
     # README, and nothing else holds those words: a copy that is not the bytes stayfixed wrote is
-    # left, by `upgrade` and by `init`, and both name it with the way out. The verdict and the
+    # left by `upgrade`, which names it with the way out. The verdict and the
     # way out are the scaffold engine's, held by `mutations/`'s "a retired overlay file with no
     # ledger is removed whatever it holds" and "a kept retired overlay file is named without its
     # way out"; this holds that the two files reach them with a way out of their own, and
@@ -611,163 +411,22 @@ def test_an_edited_retired_file_is_kept_and_named(
     assert remedy in kept.reason
     upgrade(root, dry_run=False)
     assert path.read_text(encoding="utf-8") == edited
-    done = init_instance(root, "octo", runner=Recorder())
-    assert any(note.startswith(f"left {relative}") and remedy in note for note in done.notes)
-    assert path.read_text(encoding="utf-8") == edited
 
 
-def test_init_prints_a_retired_file_s_recorded_path_escaped(tmp_path: Path) -> None:
-    # The ledger is committed with the overlay, so the path a record names is repository-chosen:
-    # one this release's retired file cannot produce is left where it is and named, and `init`
-    # printed it as it stood, where a line break and an escape sequence reach the terminal and a
-    # CI runner verbatim. It prints through `printed.quoted`, as a refusal names such a path.
-    # Mutation (declared): the left line prints the target unescaped -> the escaped spelling is
-    # missing, and the raw bytes reach the line.
-    root = _an_overlay(tmp_path)
-    hostile = "x\x1b[31mRED\n::error::IGNORE\x07.md"
-    _with_a_retired_file(
-        root,
-        ATTACH_SKILL,
-        ledger=True,
-        text=SHIPPED_ATTACH_SKILL,
-        shipped=SHIPPED_ATTACH_SKILL,
-        version="0.2.0",
-    )
-    manifest = root / MANIFEST_PATH
-    document = json.loads(manifest.read_text(encoding="utf-8"))
-    document["artifacts"][ATTACH_SKILL]["target"] = hostile
-    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    done = init_instance(root, "octo", runner=Recorder())
-    left = [note for note in done.notes if note.startswith(f"left {hostile!r} (")]
-    assert len(left) == 1, done.notes
-    for note in done.notes:
-        assert not any(c in note for c in "\x1b\x07\n"), note
-
-
-@pytest.mark.skipif(os.geteuid() == 0, reason="root removes from a directory it cannot write")
-@pytest.mark.parametrize("removable", [True, False], ids=["removed", "cannot-remove"])
-def test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped(
-    tmp_path: Path, removable: bool
-) -> None:
-    # A record whose target case-folds to a place this release's retired file can be is acted on
-    # at the target the record names, so the path `init` prints on its `removed` line, and on the
-    # line naming a file it could not remove, is the ledger's own spelling. Case folding admits
-    # letters outside the path grammar (`\u017f` folds to `s`), and such a path prints through
-    # `printed.quoted` like any other the ledger chose.
-    # Mutation (declared): each line prints the target unescaped -> its escaped spelling is
-    # missing.
-    root = _an_overlay(tmp_path)
-    variant = ".stayfixed/local/artifacts/\u017fkills/attach/SKILL.md"
-    _with_a_retired_file(
-        root,
-        ATTACH_SKILL,
-        ledger=True,
-        text=SHIPPED_ATTACH_SKILL,
-        shipped=SHIPPED_ATTACH_SKILL,
-        version="0.2.0",
-    )
-    (root / ATTACH_SKILL).unlink()
-    copy = root / variant
-    copy.parent.mkdir(parents=True)
-    copy.write_text(SHIPPED_ATTACH_SKILL, encoding="utf-8")
-    manifest = root / MANIFEST_PATH
-    document = json.loads(manifest.read_text(encoding="utf-8"))
-    document["artifacts"][ATTACH_SKILL]["target"] = variant
-    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    if not removable:
-        copy.parent.chmod(0o555)
-    try:
-        done = init_instance(root, "octo", runner=Recorder())
-    finally:
-        if not removable:
-            copy.parent.chmod(0o755)
-    if removable:
-        assert f"removed {variant!r}, which this release no longer ships" in done.notes
-        assert not copy.exists()
-    else:
-        assert f"left {variant!r}: cannot be removed (Permission denied)" in done.notes
-        assert copy.is_file()
-
-
-@pytest.mark.parametrize("directory", [True, False], ids=["directory-there", "directory-gone"])
-def test_init_does_not_say_it_removed_a_relocated_file_that_was_already_gone(
-    tmp_path: Path, directory: bool
-) -> None:
-    # A record whose target is the retired file's place under the local artifacts is a
-    # relocation, and with nothing at that target the engine plans a removal that unlinks
-    # nothing. `init` printed `removed <path>` for it all the same, since `remove_within` passes
-    # over a missing file, and counted it among the files it changed; with the directory gone
-    # too the walk failed and the line said the file `cannot be removed`. The record still goes,
-    # and the line says that is all that happened.
-    # Mutation: `mutations/`'s "overlay init says it removed a file that was already gone".
-    root = _an_overlay(tmp_path)
-    variant = f".stayfixed/local/artifacts/{ATTACH_SKILL}"
-    _with_a_retired_file(
-        root,
-        ATTACH_SKILL,
-        ledger=True,
-        text=SHIPPED_ATTACH_SKILL,
-        shipped=SHIPPED_ATTACH_SKILL,
-        version="0.2.0",
-    )
-    (root / ATTACH_SKILL).unlink()
-    manifest = root / MANIFEST_PATH
-    document = json.loads(manifest.read_text(encoding="utf-8"))
-    document["artifacts"][ATTACH_SKILL]["target"] = variant
-    manifest.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    if directory:
-        (root / variant).parent.mkdir(parents=True)
-    done = init_instance(root, "octo", runner=Recorder())
-    assert not any(note.startswith(("removed ", "left ")) for note in done.notes), done.notes
-    assert f"dropped the record of {variant}, which was already gone" in done.notes, done.notes
-    assert variant not in done.changed
-    assert ATTACH_SKILL not in json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
-
-
-def test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay(
-    tmp_path: Path,
-) -> None:
-    # A retired file whose directory is a symlink is refused by `contained()`, and `init` relays
-    # the refusal on its `left` line. The refusal named the symlink by its absolute path on this
-    # machine (`/private/var/…/skills`), which says nothing a reader of the overlay can use and
-    # puts the machine's layout into the output. It names the symlink's place in the overlay.
-    # Mutation: `mutations/`'s "contained names the symlinked ancestor by its absolute path".
-    root = _an_overlay(tmp_path)
-    real = root / "elsewhere"
-    (real / "attach").mkdir(parents=True)
-    (real / "attach" / "SKILL.md").write_text(SHIPPED_ATTACH_SKILL, encoding="utf-8")
-    (root / "skills").symlink_to(real, target_is_directory=True)
-    done = init_instance(root, "octo", runner=Recorder())
-    left = [note for note in done.notes if note.startswith(f"left {ATTACH_SKILL}")]
-    expected = f"left {ATTACH_SKILL}: {ATTACH_SKILL!r} passes through a symlink at 'skills'"
-    assert left == [expected], done.notes
-    assert str(tmp_path) not in "\n".join(done.notes)
-
-
-def _retire_by(command: str, root: Path) -> None:
-    if command == "upgrade":
-        upgrade(root, dry_run=False)
-    else:
-        init_instance(root, "octo", runner=Recorder())
-
-
-@pytest.mark.parametrize("command", ["upgrade", "init"])
-def test_retiring_a_file_removes_the_directories_it_leaves_empty(
-    tmp_path: Path, command: str
-) -> None:
+def test_retiring_a_file_removes_the_directories_it_leaves_empty(tmp_path: Path) -> None:
     # Removing the template's `attach` skill and the rules README left `skills/attach/`,
     # `skills/` and `common/rules/` behind, empty: git keeps no empty directory, so a clone never
     # saw them, but a plugin added from the overlay's own path did. Each directory above a file the
     # run removed goes once it is empty, up to the first that is not, which here is `common/`.
     # Mutation (declared): `mutations/`'s "overlay upgrade leaves the directories a retirement
-    # empties" and "overlay init leaves the directories a retirement empties".
+    # empties".
     root = _an_overlay(tmp_path)
     for relative, text in (
         (ATTACH_SKILL, SHIPPED_ATTACH_SKILL),
         (RULES_README, SHIPPED_RULES_README_0_2),
     ):
         _with_a_retired_file(root, relative, ledger=True, text=text, shipped=text, version="0.2.0")
-    _retire_by(command, root)
+    upgrade(root, dry_run=False)
     assert not (root / ATTACH_SKILL).exists() and not (root / RULES_README).exists()
     assert not (root / "skills").exists()
     assert not (root / "common" / "rules").exists()
@@ -775,8 +434,7 @@ def test_retiring_a_file_removes_the_directories_it_leaves_empty(
     assert root.is_dir()
 
 
-@pytest.mark.parametrize("command", ["upgrade", "init"])
-def test_a_directory_holding_the_owner_s_own_file_is_left(tmp_path: Path, command: str) -> None:
+def test_a_directory_holding_the_owner_s_own_file_is_left(tmp_path: Path) -> None:
     # `rmdir` refuses a directory with anything in it, which is the whole safety of the walk: a
     # file of the owner's beside the retired one keeps its directory and every one above it.
     # No mutation: what holds this is the kernel's refusal, not a line of the walk.
@@ -791,18 +449,17 @@ def test_a_directory_holding_the_owner_s_own_file_is_left(tmp_path: Path, comman
     )
     mine = root / "skills" / "attach" / "notes.md"
     mine.write_text("mine\n", encoding="utf-8")
-    _retire_by(command, root)
+    upgrade(root, dry_run=False)
     assert not (root / ATTACH_SKILL).exists()
     assert mine.read_text(encoding="utf-8") == "mine\n"
 
 
-@pytest.mark.parametrize("command", ["upgrade", "init"])
-def test_an_empty_directory_no_file_was_removed_from_is_left(tmp_path: Path, command: str) -> None:
+def test_an_empty_directory_no_file_was_removed_from_is_left(tmp_path: Path) -> None:
     # A record whose file is already gone is still a removal the engine plans, one that unlinks
     # nothing. The directories above it held no file of stayfixed's when the run began, so
     # emptying them is not this run's doing: a person may have made them, and they stay.
-    # Mutation (declared): `mutations/`'s "overlay upgrade prunes above a file that was not there"
-    # and "overlay init prunes above a file that was not there".
+    # Mutation (declared): `mutations/`'s "overlay upgrade prunes above a file that was not
+    # there".
     root = _an_overlay(tmp_path)
     old = ".stayfixed/local/artifacts/skills/attach/SKILL.md"
     _with_a_retired_file(
@@ -822,16 +479,16 @@ def test_an_empty_directory_no_file_was_removed_from_is_left(tmp_path: Path, com
     made.mkdir(parents=True)
     planned = upgrade(root, dry_run=True).plan
     assert [a.target for a in planned.actions if a.verb is Verb.REMOVE] == [old]
-    _retire_by(command, root)
+    upgrade(root, dry_run=False)
     assert made.is_dir()
 
 
 def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> None:
     # A fresh overlay carries neither file, and an overlay an upgrade has cleared of them has
-    # nothing left to remove: run again, `overlay upgrade` plans no action and `overlay init`
-    # names no file it removed or left. Mutation (declared): `mutations/`'s "a retired overlay
-    # file that is absent is planned for removal" -> the first plan's assertion reddens. The
-    # engine's removal and record-dropping paths are the set's other retirement entries.
+    # nothing left to remove: run again, `overlay upgrade` plans no action. Mutation (declared):
+    # `mutations/`'s "a retired overlay file that is absent is planned for removal" -> the first
+    # plan's assertion reddens. The engine's removal and record-dropping paths are the set's
+    # other retirement entries.
     #
     # Nor does it list a retired file that is gone and unrecorded among the unchanged: every
     # run after the one that removed them told the owner that the files the release notes say
@@ -865,5 +522,3 @@ def test_an_overlay_without_the_retired_files_plans_nothing(tmp_path: Path) -> N
     again = upgrade(root, dry_run=True).plan
     assert again.actions == ()
     assert gone.isdisjoint(again.unchanged), again.unchanged
-    done = init_instance(root, "octo", runner=Recorder())
-    assert not [note for note in done.notes if note.startswith(("removed ", "left "))], done.notes

@@ -992,8 +992,8 @@ reddens = [
 [[mutation]]
 name = "Shared flags forgets that `hook` takes neither project flag"
 file = "docs/cli.md"
-before = "Neither flag is taken by `stayfixed commit strip`, `stayfixed hook`,"
-after = "Neither flag is taken by `stayfixed commit strip`,"
+before = "Neither flag is taken by `stayfixed commit strip`, `stayfixed hook` and `stayfixed prove`,"
+after = "Neither flag is taken by `stayfixed commit strip` and `stayfixed prove`,"
 reddens = [
   "tests/test_documents.py::test_shared_flags_names_every_command_that_takes_neither_root_nor_machine",
 ]
@@ -1002,8 +1002,8 @@ reddens = [
 [[mutation]]
 name = "Shared flags forgets that `prove` takes neither project flag"
 file = "docs/cli.md"
-before = "`stayfixed overlay publish-template` and `stayfixed prove`, because none of them reads a project's"
-after = "`stayfixed overlay publish-template`, because none of them reads a project's"
+before = "Neither flag is taken by `stayfixed commit strip`, `stayfixed hook` and `stayfixed prove`,"
+after = "Neither flag is taken by `stayfixed commit strip` and `stayfixed hook`,"
 reddens = [
   "tests/test_documents.py::test_shared_flags_names_every_command_that_takes_neither_root_nor_machine",
 ]
@@ -1861,8 +1861,8 @@ reddens = ["tests/test_outbound.py::test_every_launch_is_classified"]
 [[mutation]]
 name = "a dead row comes back to the outbound walk's network table"
 file = "tests/outbound/policy.py"
-before = '    ("git", "push"): "git push",'
-after = '''    ("git", "push"): "git push",
+before = '    ("git", "ls-remote"): "git ls-remote",'
+after = '''    ("git", "ls-remote"): "git ls-remote",
     ("git", "pull"): "git pull",'''
 reddens = ["tests/test_outbound.py::test_every_table_entry_names_a_live_launch"]
 

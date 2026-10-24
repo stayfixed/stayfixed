@@ -122,19 +122,22 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     # A REAL overlay and a REAL machine file, so the `attach` rows below reach the containment
     # check instead of refusing for want of any machine configuration at all — a refusal for
     # the wrong reason is the vacuous shape this repository names.
+    # Rendered by `setup --overlay <path>`, the one entry for an overlay, at a path that names
+    # nothing yet. `PATH` is the system's own, where `git` is and no harness CLI or `pre-commit`
+    # is, so the plugin installs and the secret scan `setup` would run are notes and launch nothing.
     overlay = scratch / "overlay"
-    env = {**os.environ, "HOME": str(home)}
+    env = {**os.environ, "HOME": str(home), "PATH": "/usr/bin:/bin"}
     created = _run(
         [
             sys.executable,
             str(plugin_root / "scripts" / "stayfixed"),
-            "overlay",
-            "create",
-            "--owner",
-            "smoke-owner",
-            "--name",
-            "overlay",
-            "--local",
+            "setup",
+            "--overlay",
+            str(overlay),
+            "--home",
+            str(home),
+            "--machine",
+            str(home / ".config" / "stayfixed" / "config.toml"),
             "--root",
             str(scratch),
         ],

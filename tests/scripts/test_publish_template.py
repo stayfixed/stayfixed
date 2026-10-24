@@ -1,4 +1,4 @@
-"""`overlay publish-template`: render, strip the ledger, push one commit from the owner's
+"""`scripts/publish_template.py`: render, strip the ledger, push one commit from the owner's
 checkout, and never without `--yes`."""
 
 from __future__ import annotations
@@ -10,11 +10,13 @@ import pytest
 
 from stayfixed import jsonobject
 from stayfixed.errors import Failure, Refusal
-from stayfixed.overlay.layout import OVERLAY_FILES
-from stayfixed.overlay.publish import TEMPLATE_REPOSITORY, publish_template
+from stayfixed.overlay.api import OVERLAY_FILES, TEMPLATE_REPOSITORY
 from stayfixed.runner import NOT_FOUND, Completed
 from stayfixed.scaffold import MANIFEST_PATH
 from tests.parserlimits import DEEPER_THAN_FOUR, LONG_NUMBER, NESTED
+from tests.scriptload import publish_template as script
+
+publish_template = script().publish_template
 
 
 @dataclass

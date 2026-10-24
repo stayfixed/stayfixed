@@ -4,9 +4,12 @@ The list is chosen from what consumers outside this area actually reach for. An 
 something absent from it grows it deliberately, in a commit that says which area and why — it
 does not import a private module of this area.
 
-`setup` builds an overlay and so needs `create`, `init_instance`, `target_root`, `require_overlay`
-and `overlay_fault`; `Created` and `Initialised` come with the first two, because a return type
-absent from this list is a value `setup` can hold and cannot declare. `attach` reads `common/claude`
+`setup` builds an overlay and so needs `generate`, `render`, `finish`, `target_root`,
+`require_overlay` and `overlay_fault`; `Created` comes with the first two, because a return type
+absent from this list is a value `setup` can hold and cannot declare. `scripts/publish_template.py`
+renders the template it publishes and holds its names to one path segment, and so needs
+`render_template`, `segment` and `TEMPLATE_REPOSITORY`, the one spelling of the repository `setup`'s
+`create:` looks for. `attach` reads `common/claude`
 and `common/codex` inside the layout (`COMMON_CLAUDE`, `COMMON_CODEX`). The runner is a leaf module
 (`stayfixed.runner`), not this area's: every area that launches a program imports it from there, and
 none reaches it through this surface.
@@ -46,8 +49,16 @@ overlay's question, asked where the overlay is owned.
 import them from there.
 """
 
-from stayfixed.overlay.create import Created, Initialised, create, init_instance, target_root
-from stayfixed.overlay.identity import overlay_fault, require_overlay
+from stayfixed.overlay.create import (
+    TEMPLATE_REPOSITORY,
+    Created,
+    finish,
+    generate,
+    render,
+    render_template,
+    target_root,
+)
+from stayfixed.overlay.identity import overlay_fault, require_overlay, segment
 from stayfixed.overlay.layout import (
     COMMON_CLAUDE,
     COMMON_CODEX,
@@ -66,15 +77,18 @@ __all__ = [
     "OVERLAY_FILES",
     "PRE_COMMIT_CONFIG",
     "PRE_COMMIT_HOOK",
+    "TEMPLATE_REPOSITORY",
     "Created",
-    "Initialised",
     "Sync",
-    "create",
-    "init_instance",
+    "finish",
+    "generate",
     "overlay_fault",
     "overlay_sync",
+    "render",
+    "render_template",
     "require_overlay",
     "requires_of",
     "satisfies",
+    "segment",
     "target_root",
 ]

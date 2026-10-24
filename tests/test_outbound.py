@@ -525,8 +525,7 @@ def test_what_only_names_a_launcher_is_not_a_launch() -> None:
 def test_every_launch_is_classified() -> None:
     # The entries in `mutations/` that name this test are its declared mutations. By hand:
     # `VOUCHED_ELEMENTS` loses `gitenv`'s `base` -> `merge-base` hands an unread element before
-    # its options end; `-C` leaves `GIT_GLOBAL_OPTIONS` -> `overlay publish-template`'s
-    # `git -C <clone> push` matches no table.
+    # its options end.
     launches = WALK.launches(SRC)
     # A walk-based assertion states its walk is non-empty: a launcher the walk stopped
     # recognising would take its launches out of every check here and leave them all green.

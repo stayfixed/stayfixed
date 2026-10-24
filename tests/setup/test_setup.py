@@ -37,7 +37,7 @@ from tests.pathfaults import (
     unsearchable,
     write_only,
 )
-from tests.runners import Recorder
+from tests.runners import Recorder, real_git
 
 # The minimal `stayfixed.toml` `attach.read_binding` needs (a project name and nothing else),
 # the same shape `tests/setup/test_machine.py::_initialised_project` uses for `load()`.
@@ -65,7 +65,7 @@ def _initialised_project(tmp_path: Path) -> Path:
 
 # What `gh repo view <slug> --json isTemplate` answers (measured against gh 2.101.0): a template
 # exits 0 with `{"isTemplate":true}`, and a repository that does not exist exits 1 with GraphQL's
-# "Could not resolve to a Repository". `overlay create` asks it once to choose whose template to
+# "Could not resolve to a Repository". `create:` asks it once to choose whose template to
 # generate from, so a `create:` run has to have the probe answered.
 _OCTOS_PROBE = "gh repo view octo/stayfixed-overlay-template"
 _A_TEMPLATE = Completed(0, '{"isTemplate":true}\n', "")
@@ -434,7 +434,7 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
 
 
 def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) -> None:
-    # `overlay create` runs `gh repo create` only after explicit confirmation. A default that
+    # `create:` runs `gh repo create` only after explicit confirmation. A default that
     # creates a GitHub repository is the one default this command may not have — and `--yes`, which
     # confirms creating one, must not stand in for naming one.
     #
@@ -612,8 +612,8 @@ def test_overlay_create_generates_from_the_template_overlay_create_would_choose(
     tmp_path: Path, probe: Completed, template: str
 ) -> None:
     # `--overlay create:` calls `overlay.create`, so a user with no template of their own reaches
-    # the publisher's the same way `overlay create --template` does. One resolution, two commands:
-    # a second copy of it here would be the place they drift. Mutation: the `setup` call passes a
+    # the publisher's through the one resolution there: a second copy of it here would be the
+    # place two answers drift. Mutation: the `setup` call passes a
     # template of its own → one of the two cases reddens.
     home = tmp_path / "home"
     runner = Recorder(answers={_OCTOS_PROBE: probe}, on_call=_populate_overlay)
@@ -680,44 +680,6 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
     assert "None" not in text
     assert "already" in " ".join(report.notes)
     assert overlay_root(machine) == destination
-
-
-def test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found(
-    tmp_path: Path,
-) -> None:
-    # The re-run runs `overlay init` on the overlay it found, and `init` may remove the old memory
-    # README. The report said "found the overlay ... and left it alone" all the same. It names what
-    # `init` changed now, and says nothing was changed only when nothing was.
-    #
-    # Mutation: `mutations/`'s "setup says it left alone an overlay init changed".
-    from tests.overlay.test_upgrade import MEMORY_README, SHIPPED_MEMORY_README
-
-    home = tmp_path / "home"
-    machine = tmp_path / "config.toml"
-    _seed_overlay(home / "stayfixed-private")
-    retired = home / "stayfixed-private" / MEMORY_README
-    retired.parent.mkdir(parents=True)
-    retired.write_text(SHIPPED_MEMORY_README, encoding="utf-8")
-
-    def overlay_note() -> str:
-        runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-        report = setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=runner,
-            yes=True,
-            overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
-        )
-        return next(note for note in report.notes if "found the overlay" in note)
-
-    first = overlay_note()
-    assert "left it alone" not in first
-    assert MEMORY_README in first
-    second = overlay_note()
-    assert MEMORY_README not in second
-    assert "changed none of the overlay's tracked files" in second
 
 
 def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
@@ -918,14 +880,16 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     runner = Recorder()
-    with pytest.raises(Refusal, match="is not a directory"):
+    # Under a directory that is not there: a path that names nothing is rendered at, and one whose
+    # parent is missing has nowhere to be rendered.
+    with pytest.raises(Refusal, match="is not there, so --overlay would render an overlay at it"):
         setup(
             "recommended",
             home=home,
             machine=machine,
             runner=runner,
             yes=True,
-            overlay=str(tmp_path / "typo"),
+            overlay=str(tmp_path / "no-such-directory" / "typo"),
             project_root=tmp_path / "project",
         )
     assert _wrote_anything(home, machine) == []
@@ -2995,3 +2959,35 @@ def test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_
         )
     assert str(caught.value) == f"{home / USER_SETTINGS} {NESTED}"
     assert (home / USER_SETTINGS).read_text(encoding="utf-8") == '{"theme": "dark"}'
+
+
+# --- an overlay rendered here ------------------------------------------------------------------
+
+
+@needs_git
+def test_setup_renders_an_overlay_at_an_absent_path_and_records_it(tmp_path: Path) -> None:
+    # One entry for an overlay: `--overlay <path>` naming nothing renders the shipped template
+    # there, makes it a git repository on `main`, installs the commit-time secret scan and records
+    # it, as two commands of an earlier release did between them.
+    from stayfixed.overlay.api import overlay_fault
+
+    destination = tmp_path / "overlays" / "mine"
+    destination.parent.mkdir()
+    machine = tmp_path / "config.toml"
+    runner = Recorder(on_call=real_git)
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=machine,
+        runner=runner,
+        yes=False,
+        overlay=str(destination),
+        project_root=tmp_path / "project",
+    )
+    assert overlay_fault(destination) is None
+    head = (destination / ".git" / "HEAD").read_text(encoding="utf-8")
+    assert head == "ref: refs/heads/main\n"
+    assert ["pre-commit", "install"] in runner.calls
+    assert not [argv for argv in runner.calls if argv[0] == "gh"], runner.calls
+    assert overlay_root(machine) == destination
+    assert report.overlay == destination

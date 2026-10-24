@@ -1,6 +1,6 @@
 """Nothing used to inspect a built artifact. `resources.files` resolves to the checkout under
 `uv run`, so a `uv_build` change that dropped the template tree from the wheel would break
-`overlay create --local` for every installed user while every test stayed green."""
+`setup --overlay <path>` for every installed user while every test stayed green."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ import pytest
 from stayfixed.overlay.api import OVERLAY_FILES
 from stayfixed.project.api import PROJECT_FILES
 from stayfixed.scaffold import MANIFEST_PATH
+from tests.gitfixture import needs_git
+from tests.runners import Recorder, real_git
 from tests.scriptload import SCRIPTS, load
 
 WHEEL_LAST = f"stayfixed/templates/overlay/{OVERLAY_FILES[-1]}"
@@ -83,7 +85,7 @@ def test_a_template_file_missing_from_the_wheel_is_named(tmp_path: Path) -> None
     findings = module.check_wheel(_wheel(tmp_path / "k.whl", without=missing))
     assert findings == [f"wheel: missing {missing}"]
     # Both trees, because both are read at runtime by `resources.files` and `WHEEL_MUST` is
-    # what says so: the overlay's tree answers `overlay create --local` and the project's
+    # what says so: the overlay's tree answers `setup --overlay <path>` and the project's
     # answers `stayfixed init`, and a build that dropped either is invisible to every other test.
     absent = f"stayfixed/templates/project/{PROJECT_FILES[-1]}"
     assert module.check_wheel(_wheel(tmp_path / "p.whl", without=absent)) == [
@@ -171,7 +173,7 @@ def test_the_sdist_must_carry_every_mutation_group_file() -> None:
 
 
 def _rendered(root: Path, *, repository: bool = True) -> Path:
-    """What `overlay create --local` leaves: the shipped files, the manifest and a repository."""
+    """What `setup --overlay <path>` leaves: the shipped files, the manifest and a repository."""
     for relative in (*OVERLAY_FILES, str(MANIFEST_PATH)):
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_text("x", encoding="utf-8")
@@ -194,10 +196,33 @@ def test_a_rendered_overlay_is_exactly_the_shipped_files_plus_the_manifest(tmp_p
     assert module.check_render(root) == ["rendered: unexpected extra.txt"]
 
 
+@needs_git
+def test_what_setup_renders_at_an_absent_overlay_path_is_what_the_check_expects(
+    tmp_path: Path,
+) -> None:
+    # CI renders the overlay through the installed wheel's `setup --overlay <path>` and then runs
+    # this check over it, so the two have to agree: rendered through `setup` here, with `git` run
+    # for real and every other program recorded, the tree is exactly the shipped files, the
+    # scaffold manifest and a repository on `main`.
+    from stayfixed.setup.api import setup
+
+    destination = tmp_path / "rendered"
+    setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=Recorder(on_call=real_git),
+        yes=False,
+        overlay=str(destination),
+        project_root=tmp_path / "project",
+    )
+    assert checker().check_render(destination) == []
+
+
 def test_a_rendered_overlay_is_a_repository_and_a_tree_without_one_fails(tmp_path: Path) -> None:
-    # `overlay create --local` initialises a repository in what it renders, so the repository is
+    # `setup --overlay <path>` initialises a repository in what it renders, so the repository is
     # part of the contract: the check asks for `.git` and does not merely step over it. A tree
-    # that is otherwise exact but has none is a `--local` that stopped initialising.
+    # that is otherwise exact but has none is a render that stopped initialising.
     #
     # Mutation (declared): the missing-repository finding is deleted.
     module = checker()

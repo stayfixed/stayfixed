@@ -197,10 +197,9 @@ else, private by construction, and never a prerequisite for the public tool to b
 
 **What stayfixed does today.** The public plugin needs no overlay: with `[memory] mode` set to
 `local-only` or `in-repo` it runs whole. The overlay is its delivery layer, and the core runs
-without it. `stayfixed overlay create` makes a private overlay repository from the template
-repository, or renders one locally. `overlay init` names it after its owner, `overlay upgrade`
-refreshes the files nobody edited, `stayfixed setup --overlay` records it on a machine, and
-`stayfixed attach` binds a repository to it in `overlay` mode; `detach` takes back what `attach`
+without it. `stayfixed setup --overlay` makes a private overlay repository from the template
+repository, or renders one locally, and records it on a machine; `overlay upgrade` refreshes the
+files nobody edited, and `stayfixed attach` binds a repository to it in `overlay` mode; `detach` takes back what `attach`
 wrote and keeps the overlay's record of the binding. The memory store honours an overlay link
 only when its target lies inside this project's share of the recorded overlay root and the
 overlay's record binds this repository's `origin`.

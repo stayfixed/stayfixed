@@ -278,8 +278,9 @@ def register(groups: SubParsers) -> None:
         "--overlay",
         default=None,
         help=(
-            "record an existing overlay by path, or create one with "
-            "create:<owner>/<name> (asks GitHub for a private repository from the template)"
+            "record an existing overlay by path, render one at a path that names nothing, or "
+            "create one with create:<owner>/<name> (asks GitHub for a private repository from "
+            "the template)"
         ),
     )
     setup.add_argument(

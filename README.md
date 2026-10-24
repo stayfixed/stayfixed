@@ -17,7 +17,7 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > which enforces a repository's gates as each one passes; `stayfixed setup`, which configures a
 > machine from a preset; and `stayfixed doctor`, which reports on the result. The **delivery** areas
 > are the private layer: `memory`, the note store; `overlay`, the private overlay
-> — `overlay create`, `overlay init`, `overlay upgrade`, `overlay publish-template`; and `attach`,
+> — `overlay upgrade`, with `setup --overlay` making it; and `attach`,
 > whose `attach` binds a repository to the overlay and whose `detach` takes back what `attach`
 > wrote, keeping the overlay's record of the binding ([CONTRIBUTING.md](https://github.com/stayfixed/stayfixed/blob/main/CONTRIBUTING.md#areas) says
 > where the line between the two runs). The core is language-neutral, and a stack is a **profile**:
@@ -61,7 +61,7 @@ adds:
   earned it. `stayfixed assess` says what stands in the way, and `stayfixed adopt promote`
   enforces a gate once it passes.
 - **A personal overlay that is a versioned repository of its own**, named by its identity record
-  and with its own upgrade manifest, rather than a dotfiles sync. `stayfixed overlay create` renders one and `stayfixed attach`
+  and with its own upgrade manifest, rather than a dotfiles sync. `stayfixed setup --overlay` renders or generates one and `stayfixed attach`
   binds a repository to it: the hooks, skills, agents and allow rules you keep there reach that
   repository's sessions, and so do your rules — `common/claude/rules/*.md` and
   `projects/<name>/claude/rules/*.md`, a standing rule at every session's start and one with
@@ -269,12 +269,11 @@ to find the project root, and reaches no network.
 |---|---|---|---|
 | `git fetch` | `stayfixed bugs new` | the project's `origin` (note 1) | unless `--no-fetch` |
 | `git ls-remote` | `stayfixed init`, `stayfixed upgrade`, `stayfixed doctor`, `stayfixed gate` | `https://github.com/stayfixed/stayfixed`, for its release tags | note 2 |
-| `gh` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed overlay publish-template` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
-| `git clone` | `stayfixed overlay create --template`, `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
-| `git push` | `stayfixed overlay publish-template --yes` | the template repository on GitHub, through the remote `gh repo clone` set up | when the rendered template differs from what the repository carries |
+| `gh` | `stayfixed setup --overlay create:<owner>/<name> --yes` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
+| `git clone` | `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
 | `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted), `stayfixed attach`, `stayfixed detach` | for `setup`, the marketplace the preset names for Claude Code, and its plugins' sources; for `attach` and `detach`, nothing past this machine (note 4) | `setup` when the preset's agents include `claude` and it names a marketplace for it; `attach` on every run; `detach` where the main checkout's `.claude/settings.local.json` names the plugin or its marketplace and no other checkout of the repository is attached |
 | `codex plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Codex (note 4) | when the preset's agents include `codex` and it names a marketplace for it |
-| `pre-commit install` | `stayfixed overlay init`, `stayfixed setup --overlay create:<owner>/<name> --yes`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
+| `pre-commit install` | `stayfixed setup --overlay`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `setup` when it renders an overlay at a path or generates one with `create:`; `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
 | the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
 | the test command after `stayfixed prove --` | `stayfixed prove -- COMMAND` | wherever `COMMAND` reaches; stayfixed does not choose: `uv run` may sync the project's environment from its index, `go test` may download the modules `go.mod` names, and `npx` installs a runner no `node_modules` holds, from the registry the project's `.npmrc` names, without asking, since under `prove` its standard input is no terminal; each as outside `prove` | every run, in the directory `prove` is typed in or the one its launcher is told to run `COMMAND` in, once a runner adapter recognises `COMMAND`, or with `--junit` |
@@ -297,14 +296,12 @@ to find the project root, and reaches no network.
 2. **`git ls-remote`** runs in `init` and `upgrade` in `reusable` mode, to pin the CI workflow they
    write to a release's commit; in `doctor` when `[ci] ref` is recorded; and in `gate` when a
    change moves `[ci] ref` to the commit `--workflow-sha` names.
-3. **`gh`**: `overlay create` and `setup` look up the template, create the private overlay from it
-   with its clone, and ask whether it exists when that clone came down empty; `publish-template`
-   looks up the template repository, and with `--yes` creates it public, marks it a template and
-   clones it. `gh repo create --clone` and `gh repo clone` make their clones with git, over git's
-   own transport, from github.com or the host `GH_HOST` names. stayfixed passes `gh` your
-   environment, so a `GH_TOKEN` or `GITHUB_TOKEN` there is the account it acts as, over the one `gh`
-   is signed in to, and `GH_HOST` can point it at a GitHub Enterprise host — while the clone
-   `overlay create` falls back to is always `git@github.com:`.
+3. **`gh`**: `setup --overlay create:` looks up the template, creates the private overlay from it
+   with its clone, and asks whether it exists when that clone came down empty. `gh repo create
+   --clone` makes its clone with git, over git's own transport, from github.com or the host
+   `GH_HOST` names. stayfixed passes `gh` your environment, so a `GH_TOKEN` or `GITHUB_TOKEN` there
+   is the account it acts as, over the one `gh` is signed in to, and `GH_HOST` can point it at a
+   GitHub Enterprise host — while the clone `create:` falls back to is always `git@github.com:`.
 4. **`claude plugin`** registers the marketplace the preset names for Claude Code
    (`anthropics/claude-plugins-official` in `recommended`), reads its list of plugins, and
    downloads each of the preset's plugins from the source its entry there names, which can be
@@ -327,9 +324,8 @@ to find the project root, and reaches no network.
    your repository and stayfixed, may download a Python, on a pull request that moves `[ci] ref`
    lists stayfixed's release tags, and, once the configuration and built-in gates pass, runs the
    commands `[gates.custom]` names (that row above).
-7. **`scan.yml`** is written by `stayfixed overlay create --local`, `stayfixed overlay upgrade`
-   and `stayfixed overlay publish-template`; an overlay made with `--template` gets it from the
-   template repository. It checks out the overlay's whole history and runs
+7. **`scan.yml`** is written by `stayfixed setup --overlay <path>` and `stayfixed overlay
+   upgrade`; an overlay made with `create:` gets it from the template repository. It checks out the overlay's whole history and runs
    `gitleaks/gitleaks-action` at the commit it pins, v3.0.0. The action looks up the repository's
    owner through GitHub's API and, for an organisation, stops unless a `GITLEAKS_LICENSE` secret is
    set; in this release it checks only that the secret is present, its call to validate the
@@ -355,8 +351,7 @@ repository's own, so where the system, global or repository-local configuration 
 downloads the LFS objects of those two commits it does not have from the LFS server the repository
 configures, one a committed `.lfsconfig` can name. Beyond those two, your own git configuration
 can redirect a read or run a program of its own: `url.<base>.insteadOf` rewrites a remote's
-address, `core.fsmonitor` runs a program when git looks for changed files, and a hook under
-`core.hooksPath` runs on `publish-template`'s `git commit`.
+address, and `core.fsmonitor` runs a program when git looks for changed files.
 
 ## The threat model, in one paragraph
 
@@ -421,12 +416,7 @@ stayfixed test hygiene                                 # the faults that make a 
 stayfixed test attribute --command "uv sync --locked && uv run --locked pytest tests/x.py::t"   # the change, or the environment: three runs, one verdict
 
 # The private overlay
-stayfixed overlay create --owner you --name stayfixed-private --local   # render one here, no network call at all
-stayfixed overlay create --owner you --name stayfixed-private --template  # from your <owner>/stayfixed-overlay-template if you published one, else stayfixed's
-stayfixed overlay init --owner you --root ../stayfixed-private   # name it after you; install the secret scan
 stayfixed overlay upgrade --root ../stayfixed-private --dry-run  # what a release would refresh
-stayfixed overlay publish-template --owner you                   # what it would create, mark and push; nothing leaves yet
-stayfixed overlay publish-template --owner you --yes             # publish the template repository from this checkout
 
 # Binding a repository to the overlay
 stayfixed attach --check                               # the binding and the permission diff, writing nothing
@@ -435,8 +425,8 @@ stayfixed detach                                       # remove what attach adde
 
 # Machine setup
 stayfixed setup --preset recommended                   # the machine configuration, deny rules and preset plugins
-stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay; no --yes needed
-stayfixed setup --preset recommended --overlay create:you/stayfixed-private --yes  # create one on GitHub; --yes is the consent
+stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay, or render one there if nothing is; no network call
+stayfixed setup --preset recommended --overlay create:you/stayfixed-private --yes  # create one on GitHub from your <owner>/stayfixed-overlay-template if you published one, else stayfixed's; --yes is the consent
 stayfixed setup --git-hooks                            # install the commit-message hook into this repository
 stayfixed setup --git-hooks --uninstall                # remove it; restore the hook it chained to
 stayfixed setup --approval-boundary                    # print the deny rule and sandbox settings that keep an agent out of the trust record; writes nothing

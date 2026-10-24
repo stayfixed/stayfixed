@@ -64,10 +64,7 @@ Three things hold everywhere:
 - [`stayfixed init --questions [--root PATH] [--machine PATH]`](#stayfixed-init---questions---root-path---machine-path)
 - [`stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-upgrade---dry-run---force-path---root-path---machine-path)
 - [`stayfixed uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-uninstall---dry-run---force-path---root-path---machine-path)
-- [`stayfixed overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#stayfixed-overlay-create---owner-owner---name-name---template----local---root-path)
-- [`stayfixed overlay init --owner OWNER [--root PATH]`](#stayfixed-overlay-init---owner-owner---root-path)
 - [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
-- [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
 - [`stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
 - [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
@@ -2138,135 +2135,6 @@ a run that removed what it planned).
 
 ---
 
-## `stayfixed overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`
-
-Creates the private overlay: the repository that holds your standing rules, your cross-project
-notes, and one record per repository bound to them. Nothing in it is any project's, which is why
-it is a repository of its own and why it is private.
-
-`--owner` is the account it belongs to and `--name` the repository name (default
-`stayfixed-private`). Both are held to one path segment matching `[a-z0-9][a-z0-9._-]*`, because
-each becomes a directory name and half a remote path; a value shaped like an option is refused
-rather than quoted. `--root` is the directory the instance is
-created *in*, not a project root, and defaults to the current directory.
-
-**Neither source is a default.** `--template` asks GitHub to generate a private repository from
-a template repository and clone it; `--local` renders the shipped template here, makes a git
-repository of it, and makes no network call. An invocation with neither is refused (`2`) naming
-both, so that creating a repository on an account is never something an omitted flag does.
-
-**`--template` uses your template when you have published one, and the publisher's otherwise.**
-It asks `gh repo view <owner>/stayfixed-overlay-template --json isTemplate` once. A template
-there is generated from, and it is the one
-[`stayfixed overlay publish-template`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
-publishes to your account. A repository of that name that is not a template, and `gh`'s explicit
-answer that there is no such repository, both mean you have published none, and the template is
-`github.com/stayfixed/stayfixed-overlay-template`, the publisher's public copy, named with its
-host: `gh` looks an unqualified name up on `GH_HOST`, so on a GitHub Enterprise host
-`stayfixed/…` would be whoever owns that name there, while your own template's question stays on
-your host. The result names the template it used. Any other failure of that question — an expired token, a network error, a
-`gh` that is not installed or hung, an answer that is not the JSON asked for — stops the command
-with `gh`'s own message and creates nothing (`1`): it is not known whether you have a template of
-your own, and guessing "no" would generate your overlay from somebody else's. `--local` renders
-exactly the same tree here with no network call, so an owner setting up a first overlay can use
-either. `stayfixed setup --overlay create:<owner>/<name>` makes the same choice.
-
-A template and not a fork: a fork's visibility is bound to the upstream network and cannot be
-made private, which is the one outcome this command exists to prevent.
-
-The `--template` path is idempotent, because `gh` can give up on the clone with the repository
-already created: a directory that already carries `stayfixed-overlay.toml` is left alone and
-reported,
-before `gh` is asked anything. When the template question or `gh repo create` itself fails, the
-command stops there and reports **its** exit code and **its** stderr: a `gh` that is not installed,
-or one that hung, costs one launch rather than three, and the failure names the binary rather than
-sending you to `gh auth status` for a repository that was never there. It also names which
-template repository each source uses, because a template that does not exist yet is the usual
-reason this source cannot work. When `gh` reports success and the clone brings nothing down,
-`gh repo view` is asked whether the repository exists at all — the answer tells "not created"
-from "created, and the clone raced its generation" — and the clone is retried once, after a
-ten-second wait when it was the second. **That retry is carried on reasoning rather than on a
-measurement:** the one trial run against it did not reproduce the race, and one clean run cannot
-rule out an asynchronous generation step that sometimes outlasts a clone. If the second attempt
-is still empty, the command fails (`1`) naming both attempts and what GitHub said in between.
-
-**`--local` leaves a git repository.** After rendering, it runs `git init` and
-`git symbolic-ref HEAD refs/heads/main` in the instance directory (not `git init -b main`, which a
-`git` older than 2.28 refuses) and prints the two commands that give it a remote once you have
-created the private repository on GitHub: `git remote add origin git@github.com:<owner>/<name>.git`
-and `git push -u origin main`. A `git` that cannot run, or that runs and fails, is a note, not a
-failure: the tree is there, and the note says how the command ended and the commands to run. An
-instance directory that is already a git repository is left as it is — no `git init`, its branch
-and remotes unchanged — and the note says so. `pre-commit install` is `overlay init`'s.
-
-What `gh`, `git` and `pre-commit` print is quoted in these lines as it came, except that one
-holding anything but a plain path is escaped, so a line break or an escape sequence in it cannot
-start a line of its own or drive a terminal, and one longer than 120 characters is cut to its
-first 120 and its length.
-
-**Writes**, on `--local`, the instance directory `<root>/<name>` with every file of the template
-plus `.stayfixed/manifest.json`, and `<root>/<name>/.git`, the repository `git init` makes there
-when there is none yet. On
-`--template`, through `gh repo create <owner>/<name> --private --template <template> --clone`, where
-`<template>` is `<owner>/stayfixed-overlay-template` or
-`github.com/stayfixed/stayfixed-overlay-template` as above, a new private repository on GitHub under
-`<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
-from the retried `git clone`; a directory that already carries `stayfixed-overlay.toml` gets
-nothing.
-A template published at an earlier release also brings the files that release shipped and this
-one does not — `common/memory/README.md` from 0.1.x, `skills/attach/SKILL.md` and
-`common/rules/README.md` from any — which `overlay init` removes (below). Exits `0` on success, `1`
-when no tree arrived, `2` on a refused name or a missing `--root`.
-
----
-
-## `stayfixed overlay init --owner OWNER [--root PATH]`
-
-Finishes a created overlay. `--owner` is held to one path segment, as `overlay create` holds it.
-`--root` must name an overlay, a tree carrying its identity record (below, under
-[`overlay upgrade`](#stayfixed-overlay-upgrade---root-path---dry-run)), and anything else is refused
-(`2`) with nothing touched.
-
-It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
-template ships; the other is the workflow that runs on every push, so `--no-verify` is not the
-last word. `pre-commit` is optional: a missing or failing one is a reported note and never a
-traceback.
-
-Both halves are idempotent: a second run removes nothing the first removed.
-
-**Writes**, where the overlay carries one that records a file below, `.stayfixed/manifest.json` —
-through the same contained walk every other write in this project goes through; and, through the
-`pre-commit install` it runs in the overlay, the overlay's `pre-commit` git hook. It also
-**removes** the files an earlier release shipped and
-this one does not, by the rule and from the list
-[`overlay upgrade`](#stayfixed-overlay-upgrade---root-path---dry-run) gives below, and each directory
-above one of them that this leaves empty: `init` is the step every generated overlay runs, and a
-template published at an earlier release still ships those files.
-When it removes `common/memory/README.md` and `common/memory/_README.md` is not there, it
-**writes** the shipped `_README.md` in its place: a template from 0.1.x carries only the old name,
-and a directory left empty is one git does not keep, so a clone of the overlay elsewhere would
-have no `common/memory/` for the `developer` link to reach. A copy holding anything else is left,
-and the line says so and names the way out `overlay upgrade` gives for it. Until then each run
-names the copy again. A retired file it cannot read or
-cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
-write is named with `overlay upgrade`, which writes it — or, when this stayfixed was installed
-without its overlay template tree, which `overlay upgrade` reads too, with a reinstall first — and
-`common/memory/` is kept for it rather than removed as empty. None of the three is a failure: the
-run goes on, and `.stayfixed/manifest.json` drops the records of the files it did remove and keeps
-the others, so the next run finishes the job. A record of a retired file that is already gone, at
-its own place or at its place under `.stayfixed/local/artifacts/`, is dropped with a
-`dropped the record of <path>, which was already gone` line, since there was nothing to remove;
-for `common/memory/README.md`, `_README.md` is then written in its place as after a removal.
-A path these lines name that the manifest supplied and that holds anything but a plain path is
-escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
-terminal.
-A tree that arrived without a manifest is not given one. Exits `0`; `2` on a tree that is not an
-overlay, an owner that is not one path segment or a scaffold manifest that cannot be trusted.
-Nothing past the overlay check stops the run, and `.stayfixed/manifest.json` is written once, at
-the end, with the records of what it did.
-
----
-
 ## `stayfixed overlay upgrade [--root PATH] [--dry-run]`
 
 **`--root` must name an overlay, and that is checked before anything is planned.** It defaults
@@ -2304,7 +2172,7 @@ there as a note; `skills/attach/SKILL.md`, the template's own copy of the `attac
 plugin's own replaces, since it covers detaching and a moved remote as well; and
 `common/rules/README.md`, the README of a directory nothing read. It does so only when a file holds
 what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, in an overlay with
-no manifest (one generated from a template, since `publish-template` leaves it out), a file a
+no manifest (one generated from a template, since `scripts/publish_template.py` leaves it out), a file a
 release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
 other two. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
 nothing is removed, and its record is dropped. An unrecorded one that is gone is not listed at all,
@@ -2320,54 +2188,6 @@ file that was already gone when the run began. Exits `0`; `1` when the report
 carries a REFUSED section, because nothing would be written while one of those stands; `2` when
 `--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
 by the containment walk.
-
----
-
-## `stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`
-
-Publishes the repository `overlay create --template` generates from: the shipped
-`templates/overlay/` tree, as one commit on `<owner>/stayfixed-overlay-template`.
-
-```bash
-stayfixed overlay publish-template --owner you          # what it would create, mark and push
-stayfixed overlay publish-template --owner you --yes    # do it
-```
-
-Six steps, in this order. It renders the shipped template into a scratch directory; it strips
-the scaffold ledger, because a repository generated from a template carries none and publishing
-one would make every generated overlay read as hand-edited to `overlay upgrade`; it asks `gh`
-what exists under that name; it creates the repository **public** and marks it
-`is_template` if it is not one already; it clones it and replaces the tree with the render; and
-it commits and pushes to the repository's default branch.
-
-**`--yes` is the gate, and it covers three acts rather than one** — creating the repository,
-marking it a template, and pushing. Without it the command renders, asks `gh` what is there,
-and reports what it *would* create, mark and push. That is the dry run; there is no separate
-`--dry-run` flag, because a second way to say the same thing is a second thing to get wrong.
-The gate is a parameter and not a step in a procedure: in a session driven by an agent, a flag
-a model can type is not a control, so the flag is where the consent is recorded.
-
-**An existing repository that is not public is refused (`2`), never flipped.** A template is
-generated from by other accounts only when it is public, and a repository somebody made private
-under that name is not one this command may change a flag on — publish under another `--name`,
-or make it public yourself first.
-
-**It runs from your own authenticated checkout by design.** The public repository's CI holds no
-credential that can write a second repository, so this is not a workflow and does not become
-one: `gh` decides the protocol and carries the token. `gh` that cannot be run at all is a
-finding (`1`) naming it.
-
-`--owner` is your account and `--name` the repository (default `stayfixed-overlay-template`);
-both are held to one path segment, and the owner is lower-cased the way `overlay create` folds
-it. There is no `--root`: the tree is rendered from this stayfixed's own package.
-
-**Writes**, without `--yes`, nothing outside a temporary directory this command creates and
-removes. With it, on GitHub through `gh` and `git`: the public repository `<owner>/<name>`, when
-there is none; its template flag, when it is not set; and a commit pushed to its default branch,
-unless it already carries this stayfixed's template. The clone and the commit are made in the
-same temporary directory. Exits `0`; `1` on a `gh` or `git` that failed, with what it printed
-quoted as `overlay create` quotes it (escaped, and cut to its first 120 characters and its
-length); `2` on a refusal.
 
 ---
 
@@ -2514,9 +2334,9 @@ Code reads from every worktree, and — in the overlay — `projects/<name>/proj
 records no remote, this project's note directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the store's index link never dangles and `memory index --check` passes right after
-a first attach in an overlay this release rendered; one generated from a template published at
-0.1.x passes once `overlay init` has run on it, and an older overlay once `overlay upgrade` has,
-because both remove the `common/memory/README.md` 0.1.x shipped unless it was edited) and, through
+a first attach in an overlay this release rendered, and in an older one once `overlay upgrade` has
+run on it, because it removes the `common/memory/README.md` 0.1.x shipped unless it was edited)
+and, through
 the
 `pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
 `pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
@@ -2569,9 +2389,9 @@ yours to remove by hand.
 
 It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
 configuration and no hook is installed — the machine that cloned an overlay someone else created
-never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback, and what a
-failing one printed is quoted as `overlay create` quotes it (escaped, and cut to its first 120
-characters and its length).
+only recorded it. A missing `pre-commit` is a reported note, never a traceback, and what a failing
+one printed is quoted as `setup` quotes it (escaped, and cut to its first 120 characters and its
+length).
 
 Exits `0` on success. A failure or refusal below that the run meets before its first write ends
 `--check` with the run's code and line.
@@ -2841,18 +2661,43 @@ nothing here is vendored on a guessed marketplace name — and a missing binary 
 failed call is a reported note, never a failure.
 
 **The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply one.
-`--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>` asks GitHub
-for a private repository from the template and initialises it, the same as `stayfixed overlay create
---template` followed by `overlay init` — and makes the same choice of template that flag makes:
-yours when you have published one, `github.com/stayfixed/stayfixed-overlay-template` otherwise.
+It is the one entry for an overlay, in three forms. `--overlay <path>` naming an overlay records its
+root. `--overlay <path>` naming nothing renders the shipped template there, with no network call:
+the directory above it has to be one you can create it in, and a path whose parent is missing or
+not writable is refused before the first write. The render is made a git repository with `git init`
+and `git symbolic-ref HEAD refs/heads/main` (not `git init -b main`, which a `git` older than 2.28
+refuses), on `main` with no remote, and the note says how to give it one and to write its owner and
+name into its identity record; a `git` that cannot run, or runs and fails, is a note and not a
+failure, since the tree is there. `--overlay create:<owner>/<name>` asks GitHub for a private
+repository generated from a template — a template and not a fork, since a fork's visibility is
+bound to the upstream network and cannot be made private — and clones it to `<home>/<name>`. It
+asks `gh repo view <owner>/stayfixed-overlay-template --json isTemplate` once: a template there is
+generated from, and a repository of that name that is not one, or `gh`'s explicit answer that there
+is none, means you have published none, and the template is
+`github.com/stayfixed/stayfixed-overlay-template`, the publisher's public copy, named with its host:
+`gh` looks an unqualified name up on `GH_HOST`, so on a GitHub Enterprise host `stayfixed/…` would
+be whoever owns that name there. Any other failure of that question — an expired token, a network
+error, a `gh` that is not installed or hung, an answer that is not the JSON asked for — stops the
+command with `gh`'s own message and creates nothing (`1`). A destination that already carries
+`stayfixed-overlay.toml` is left alone and nothing is generated, because `gh` can give up on the
+clone with the repository already created. When `gh repo create` itself fails, the command stops
+there with its exit code and stderr; when it reports success and the clone brings nothing down,
+`gh repo view` is asked whether the repository exists, and the clone is retried once, after a
+ten-second wait when it does — a wait carried on reasoning rather than a measurement, since the one
+trial run against it did not reproduce the race. The generated overlay's identity record is then
+named after `<owner>/<name>` where it holds the template's placeholders. A rendered or generated
+overlay gets the commit-time secret scan with `pre-commit install`; a missing `pre-commit` is a
+note. What `gh`, `git` and `pre-commit` print is quoted in these notes as it came, except that one
+holding anything but a plain path is escaped, and one longer than 120 characters is cut to its
+first 120 and its length.
 Creating one needs `--yes` — explicit confirmation for the one irreversible, outward-facing act this
 command performs — and refuses (`2`) without it. Recording an *existing* path needs no `--yes` (a
 model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`, so the
 flag would be theatre there); instead the path itself is validated **before the first write** —
 before the machine file, the settings merge and the plugin installs, and for `create:` before `gh
-repo create` runs on anybody's account. It must exist; it must carry the identity record
-`stayfixed-overlay.toml`, parsing as TOML and holding `layout = 1`, which is what `overlay create`
-renders (the refusal of a tree without it names the file and its keys); and it must
+repo create` runs on anybody's account. An existing path must carry the identity record
+`stayfixed-overlay.toml`, parsing as TOML and holding `layout = 1`, which is what `setup` renders
+(the refusal of a tree without it names the file and its keys); and every overlay must
 lie outside the repository `--root` is in — not inside it, not above it, and not in another checkout
 of it, since a worktree is not a different repository and a clone ships its tree into all of them —
 and outside every checkout of any other repository, a checkout of its own nested in one included,
@@ -2890,19 +2735,20 @@ it, once for the preset and again for the overlay root `--overlay` records;
 commands it runs for each harness with a declared marketplace (`claude plugin marketplace add` and
 `claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
 registrations and installed plugins those commands write into each harness's own configuration.
-`--overlay <path>` writes nothing in the overlay; it is only recorded.
-`--overlay create:<owner>/<name>` writes what `overlay create --template` writes — a private
-repository on GitHub and its clone — and then what `overlay init` writes in that clone, including
-its removal of the files a template published at an earlier release ships and this one does not.
-Run again over the overlay it made, it generates nothing, but `overlay init` still runs there, and
-the report names each file `init` changed (an overlay named by 0.1.x gains its account) or says it
-changed none of the overlay's tracked files (`pre-commit install` may still have written its git
-hook).
+`--overlay <path>` naming an overlay writes nothing in it; it is only recorded. Naming nothing, it
+writes the directory with every file of the template plus `.stayfixed/manifest.json`, the
+repository `git init` makes there, and, through `pre-commit install`, its `pre-commit` git hook.
+`--overlay create:<owner>/<name>` writes, through `gh repo create <owner>/<name> --private
+--template <template> --clone`, a new private repository on GitHub under `<owner>` and its clone
+at `<home>/<name>` — or, when that clone brings nothing down, a clone from the retried `git clone`
+— then the `owner` and `name` lines of its `stayfixed-overlay.toml`, and its `pre-commit` git hook.
+Run again over the overlay it made, it generates nothing, and the record already names its owner.
 
 **Exits** `0` on success, and `2` on each of these refusals:
 
 - `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
-- a refused `--overlay`: missing, not an overlay, reachable from the project root, inside a
+- a refused `--overlay`: a path that names nothing under a directory that is missing or that you
+  cannot create it in, not an overlay, reachable from the project root, inside a
   checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
   not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
 - a `--home` that cannot take what this run writes under it, naming the directory you cannot write
@@ -2945,7 +2791,7 @@ root could reach or a checkout of another repository holds, a `<home>` you canno
 one the machine file could not record — still happens before `gh` is run at all.
 
 A plugin that fails to install or a harness that is absent is a note in the report, not a
-nonzero exit. What the failing plugin command printed is quoted as `overlay create` quotes it
+nonzero exit. What the failing plugin command printed is quoted as the overlay's notes quote it
 (escaped, and cut to its first 120 characters and its length).
 
 ---
@@ -3614,14 +3460,13 @@ in a parser, which is the whole point of the rule.
 anything differs. `stayfixed bugs index`, `stayfixed docs trail` and `stayfixed memory index` all
 take it with that meaning.
 
-Five commands mean something else by a shared name. Each is a **named exception** — a decision
+Four commands mean something else by a shared name. Each is a **named exception** — a decision
 that the flag means something else, not a sentence that drifted — and each has its own constant
 beside the six above:
 
 | Command and flag | What it means there |
 |---|---|
-| `stayfixed overlay create --root` | directory to create it in (default: current directory) |
-| `stayfixed overlay init --root`, `stayfixed overlay upgrade --root` | the overlay root (default: current directory) |
+| `stayfixed overlay upgrade --root` | the overlay root (default: current directory) |
 | `stayfixed setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
 | `stayfixed setup --machine` | the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the file every reader reads) |
 | `stayfixed attach --check` | report the binding and the diff, and write nothing |
@@ -3633,12 +3478,10 @@ failure.
 
 Every command that reads a project's configuration takes `--root` and `--machine`, with the
 meanings in the first table, whether or not its heading spells them.
-Neither flag is taken by `stayfixed commit strip`, `stayfixed hook`,
-`stayfixed overlay publish-template` and `stayfixed prove`, because none of them reads a project's
-configuration: the first reads only what it is handed, `hook` finds the project from the
-harness's own event, `publish-template` renders the shipped overlay template, and `prove` runs its
-command where it is typed and answers for that directory's repository. The other `overlay`
-commands take `--root` alone, in the sense the second table gives it, and read no
+Neither flag is taken by `stayfixed commit strip`, `stayfixed hook` and `stayfixed prove`,
+because none of them reads a project's configuration: the first reads only what it is handed,
+`hook` finds the project from the harness's own event, and `prove` runs its command where it is
+typed and answers for that directory's repository. `overlay upgrade` takes `--root` alone, in the sense the second table gives it, and read no
 `stayfixed.toml`; `setup` takes both, in its own senses. `tests/test_documents.py` holds both
 lists to the real parser.
 

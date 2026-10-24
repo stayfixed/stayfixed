@@ -4,8 +4,8 @@ Five things, each reported and each independently skippable, in this order: writ
 file (the personal defaults the preset names, for whichever of them nothing has recorded yet);
 merge the preset's deny rules and the personal values into the machine-scope settings file;
 register each preset plugin's marketplace and install from it, per configured harness; report
-whether `stayfixed` itself resolves on `PATH`; and, only when the caller named an answer, create
-or record the private overlay.
+whether `stayfixed` itself resolves on `PATH`; and, only when the caller named an answer, create,
+render or record the private overlay.
 
 **A preset default never overwrites a value already recorded.** The first draft of this module
 rebuilt `[personal]` from the preset's own defaults on every run, which meant a second
@@ -138,13 +138,19 @@ _PLUGIN_INSTALL = {
 # overlay probe raises. One sentence each, so the two commands that ask "is this an overlay"
 # differ in what they were doing and not in what the answer means.
 _RECORDING = (
-    "--overlay must name a real overlay's root — the tree `stayfixed overlay create` renders — "
-    "because this path becomes the machine's trust anchor: every `stayfixed attach` on this "
-    "machine reads rules and notes out of it"
+    "--overlay must name a real overlay's root, or a path that names nothing, where one is "
+    "rendered, because this path becomes the machine's trust anchor: every `stayfixed attach` on "
+    "this machine reads rules and notes out of it"
 )
 _CREATED = (
     "the repository was created and cloned, and nothing was recorded in the machine "
     "configuration; look at what arrived, then record it with `stayfixed setup --overlay <path>`"
+)
+# What `--overlay <path>` says of a path that is not there and cannot be rendered, `{path}` and
+# `{parent}` through `printed.quoted`.
+NO_PLACE_TO_RENDER = (
+    "{path} is not there, so --overlay would render an overlay at it, and {parent} is not a "
+    "directory this user can create it in; create that directory, or name an existing overlay"
 )
 
 
@@ -755,13 +761,16 @@ class _Overlay:
     """What `--overlay` asked for, once everything knowable before the first write is known.
 
     `create` is `(owner, name)` when this run has to create the repository, and `None` when the
-    root already exists and is only being recorded. `root` is where the overlay is or will be:
-    for the create branch it is `overlay.api.target_root`'s answer, computed from the arguments
-    alone so the destination can be refused before `gh repo create` runs.
+    root already exists and is only being recorded, or is not there and is rendered (`render`).
+    `root` is where the overlay is or will be: for the create branch it is
+    `overlay.api.target_root`'s answer, computed from the arguments alone so the destination can be
+    refused before `gh repo create` runs.
     """
 
     root: Path
     create: tuple[str, str] | None
+    # `--overlay <path>` naming nothing: the shipped template is rendered there.
+    render: bool = False
     # Why a `create:` destination is not compared with a `--root` in no repository, or `None`
     # when it is: `ABSENT` when nothing was there when the phase asked, so this run makes it, and
     # `RECORDED` when it is the overlay root the machine file already records, which is the
@@ -784,7 +793,10 @@ def _exemption(planned: _Overlay, *, machine: Path) -> str | None:
     repository, and why; `None` for `--overlay <path>` and for any destination this run neither
     makes nor already records. `create` leaves a populated destination alone and records it, so
     a tree an archive or a clone put at `<home>/<name>` would otherwise be recorded uncompared.
-    The machine file is read only for a destination that is there."""
+    The machine file is read only for a destination that is there. A path `--overlay` renders at
+    was not there when `_requested_overlay` asked, so this run makes it."""
+    if planned.render:
+        return ABSENT
     if planned.create is None or planned.destination is None:
         return None
     # The destination itself, not where it leads: a link there, dangling or not, is not a
@@ -866,6 +878,18 @@ def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overla
         return _Overlay(root=root, create=(account, name), destination=destination)
     candidate = fsops.resolved(Path(overlay).expanduser())
     _recordable(candidate)
+    # Through `fsops`, which raises for a path it cannot ask about (a directory above it nobody may
+    # search), so that is the floor's refusal and never read as "not there".
+    if not fsops.exists(candidate) and not fsops.is_symlink(candidate):
+        # Not there: the shipped template is rendered at it, so the directory above it has to be
+        # one this user can make it in, asked here rather than met by the render after the
+        # machine file is written.
+        parent = candidate.parent
+        if not fsops.is_dir(parent) or not fsops.creatable(candidate):
+            raise Refusal(
+                NO_PLACE_TO_RENDER.format(path=quoted(str(candidate)), parent=quoted(str(parent)))
+            )
+        return _Overlay(root=candidate, create=None, render=True)
     require_overlay(candidate, because=_RECORDING)
     return _Overlay(root=candidate, create=None)
 
@@ -885,29 +909,42 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     private repository on GitHub that this run made, and the report is discarded on a refusal,
     so nothing else would ever tell them.
     """
-    from stayfixed.overlay.api import create, init_instance, overlay_fault, require_overlay
+    from stayfixed.overlay.api import finish, generate, overlay_fault, render, require_overlay
 
+    if planned.render:
+        try:
+            rendered = render(planned.root, runner=runner)
+        except OSError as exc:
+            # The floor under `_requested_overlay`'s question: a directory that changed in
+            # between, or root, for whom `os.access` says yes whatever the mode.
+            raise Refusal(
+                f"{quoted(str(planned.root))} could not be rendered ({fsops.said(exc)}), and "
+                "nothing was recorded in the machine configuration"
+            ) from exc
+        root = fsops.resolved(rendered.root)
+        _outside_the_project(root, project_root=project_root, exempt=_same(root, planned.root))
+        notes = (*rendered.notes, *finish(root, runner=runner))
+        return root, f"rendered the overlay at {quoted(str(root))}: {'; '.join(notes)}"
     if planned.create is None:
         require_overlay(planned.root, because=_RECORDING)
         _outside_the_project(planned.root, project_root=project_root, exempt=False)
         return planned.root, f"recorded the existing overlay at {quoted(str(planned.root))}"
     owner, name = planned.create
     destination = planned.destination if planned.destination is not None else planned.root
-    created = create(owner, name, source="template", root=destination.parent, runner=runner)
-    # The one value judged, initialised and recorded, as the phase planned it: what the clone's
+    created = generate(owner, name, root=destination.parent, runner=runner)
+    # The one value judged, finished and recorded, as the phase planned it: what the clone's
     # path resolves to now, so a link that arrived there since is followed and not recorded.
     root = fsops.resolved(created.root)
-    # Before `init_instance`, which now asks the same question and refuses with an answer that
-    # does not say the repository exists; this one has to, and so it goes first.
+    # Before `finish`, which writes in the tree; this refusal has to say the repository exists.
     fault = overlay_fault(root)
     if fault is not None:
         raise Refusal(
             f"{fault}. {owner}/{name} was created and cloned to {quoted(str(root))}, but {_CREATED}"
         )
-    # Asked before `init_instance`, which writes in the tree and runs `pre-commit` there. An
-    # exemption is the phase's verdict on one directory, so it holds only for that directory; and
-    # a destination the phase found absent is exempt only if `create` made a directory there: one
-    # it left alone, or a link it cloned through, arrived after the phase, from somewhere else.
+    # Asked before `finish`, which writes in the tree and runs `pre-commit` there. An exemption is
+    # the phase's verdict on one directory, so it holds only for that directory; and a destination
+    # the phase found absent is exempt only if `generate` made a directory there: one it left
+    # alone, or a link it cloned through, arrived after the phase, from somewhere else.
     judged = _same(root, planned.root)
     exempt = judged and (
         planned.exempt == RECORDED
@@ -918,25 +955,18 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
         )
     )
     _outside_the_project(root, project_root=project_root, exempt=exempt)
-    initialised = init_instance(root, owner, runner=runner)
+    finished = "; ".join(finish(root, runner=runner, owner=owner, name=name))
     if created.template is None:
-        # `create` found a populated destination and generated nothing (no `gh` call at all),
+        # `generate` found a populated destination and generated nothing (no `gh` call at all),
         # which is what re-running `setup --overlay create:` does after the first run, so there is
-        # no template to name. `init` still ran on it, and an overlay named by an earlier release
-        # has its manifests completed or its old memory README removed, so the note says what
-        # `init` changed rather than that the overlay was left alone.
-        changed = initialised.changed
+        # no template to name.
         return root, (
             f"found the overlay already at {quoted(str(root))}, so nothing was generated; "
-            + (
-                f"`overlay init` changed {', '.join(changed)}"
-                if changed
-                # Not "nothing": `init` also runs `pre-commit install`, which may write the
-                # overlay's untracked git hook on this run.
-                else "`overlay init` changed none of the overlay's tracked files"
-            )
+            f"{finished}"
         )
-    return root, f"created the overlay at {quoted(str(root))}, generated from {created.template}"
+    return root, (
+        f"created the overlay at {quoted(str(root))}, generated from {created.template}; {finished}"
+    )
 
 
 def _before_the_first_write(

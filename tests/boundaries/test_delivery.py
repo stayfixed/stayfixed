@@ -27,12 +27,12 @@ ROOT = Path(__file__).resolve().parents[2]
 # covers exactly the statements and names written here, and cutting a crossing is deleting its rows
 # in the same commit.
 #
-# One crossing is left, and it is meant to stay. `stayfixed setup --overlay` creates or records the
-# private overlay as the last step of machine setup, so `setup/run.py` calls into the overlay area
-# by design, and its rows stay until that step leaves `setup`: one statement in
+# One crossing is left, and it is meant to stay. `stayfixed setup --overlay` creates, renders or
+# records the private overlay as the last step of machine setup, so `setup/run.py` calls into the
+# overlay area by design, and its rows stay until that step leaves `setup`: one statement in
 # `_requested_overlay`, which refuses before the first write, and one in `_apply_overlay`, which
-# creates and records. Both sit inside the functions, so importing `setup` — which `doctor` does —
-# loads none of it (`test_in_isolation_no_core_module_loads_a_delivery_area`).
+# creates or renders, and records. Both sit inside the functions, so importing `setup` — which
+# `doctor` does — loads none of it (`test_in_isolation_no_core_module_loads_a_delivery_area`).
 CORE_TO_DELIVERY = (
     (
         "setup/run.py",
@@ -42,7 +42,7 @@ CORE_TO_DELIVERY = (
     (
         "setup/run.py",
         "stayfixed.overlay.api",
-        frozenset({"create", "init_instance", "overlay_fault", "require_overlay"}),
+        frozenset({"finish", "generate", "overlay_fault", "render", "require_overlay"}),
     ),
 )
 

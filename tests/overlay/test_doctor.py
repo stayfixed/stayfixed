@@ -34,8 +34,8 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 
 def test_the_overlays_secret_scan_is_reported_when_it_is_not_installed(tmp_path: Path) -> None:
     # The overlay holds the machine owner's own notes, so its commit-time secret scan is
-    # the one that matters. `overlay init` installs it on the machine that created the overlay
-    # and never on a second one that cloned it.
+    # the one that matters. `setup --overlay` installs it on the machine that made the overlay
+    # and never on a second one that cloned it and only recorded it.
     root = _attached(tmp_path)
     (tmp_path / "overlay" / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     checks = _checks(tmp_path, root, machine=_machine(tmp_path))
