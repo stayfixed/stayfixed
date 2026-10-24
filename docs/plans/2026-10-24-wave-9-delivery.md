@@ -1229,3 +1229,69 @@ the plan before Wave E.
 
 The 2.1.304 runs are a proxy for D6, not D6: the desktop app draws its own permission dialog and
 passes its own `--settings`, which only Task 12 Step 3 sees.
+
+### Task 12 — HS2's final review and pull request, 2026-10-24
+
+**Owner's answers before the first dispatch:** every default of the five open questions. The
+controller merges HS2 and HS3 when their checks are green; HS4 is opened and left to the owner.
+Live D6 is deferred to after HS4, before 0.5.0 (the 2.1.304 proxy is in Task 1's table). Where
+this plan says "go to the owner", the controller rules and records it here; it stops only for a
+change a user would see or for an irreversible step.
+
+**Execution.** Waves B–H were dispatched one implementer each. C ran beside D, and F beside G, each
+pair in two worktrees with the second merged in. An automated commit-level security review ran on
+every commit. Its valid findings went back to the wave's implementer as a fix round: tracked placed
+paths, case folding, the main checkout's settings file, bare repositories, and a detach that fails
+part-way. Where the plan mandated a deletion, its findings were ruled against, as listed below.
+
+**Final review** at `49ed4de`: three read-only seats (correctness, refusals and deletion,
+security). They ran as in-session agents, because the owner's API key answered `claude -p` with
+"Credit balance is too low". The triage went to one fix round (`49ed4de..85a5056`), then one
+scoped re-review. The re-review found every item addressed and one regression. That regression and
+one residual on the same seam were fixed in `dd461ad`, read by the controller, with no further
+review round.
+
+**Rulings taken on the owner's behalf** (each costs what is said if wrong):
+- *Redesigned seams.* Two seams were redesigned rather than patched, because a second or third
+  finding landed on each.
+  - Delivery install and withdrawal: `attach` runs `marketplace add` and `install` on every attach
+    (measured idempotent). `detach` decides each call from what the main checkout's
+    `settings.local.json` names. It keeps the exclude block while that file names any
+    `stayfixed-delivery-` marketplace. The render is rebuilt whole on every attach.
+  - The tracked check: git's own `:(icase,literal)` view, plus file identity among a parent
+    directory's tracked children. Aliasing done by the filesystem alone inside a parent component
+    is a documented bound.
+- *The first bind takes the project from the repository's `[project] name`, with no stop.* Tasks 2
+  and 7 delete `--trust-remote` and `--yes`. The anchor is the owner running `attach` and reading a
+  screen that now names the project (quoted), the short id and the origin. This reverses Wave F's
+  ruling to omit the name. If wrong: a clone the owner attaches by mistake that names one of their
+  projects gets that project's delivery, shown on screen but not refused.
+- *Preferences from the overlay's layers* reach `attach`, `detach` and the memory commands as well
+  as sessions and `doctor`. This reverses Wave C's ruling.
+- *No terminal gate* on `trust approve` or on `attach --machine`. An agent passes it with
+  `script -q`.
+- *"`attach` writes the main checkout only"* (What they change 2) is partly in place. From a linked
+  worktree, the main checkout's `settings.local.json` is checked before anything is installed. The
+  rest moves with the link tree's retirement in HS3, since detach's multi-checkout branch and the
+  per-worktree `autoMemoryDirectory` fallback retire there.
+- `ID_COMMITTED` matches the whole `stayfixed-delivery-<id>` name rather than the bare prefix, since
+  stayfixed's own sources spell the prefix.
+- The path-rule handlers live in `attach/hooks.py`, not in core `hooks/`, because the delivery
+  boundary bars core from importing `attach`. The rendered `PostToolUse` entry runs through the
+  launcher that ran `attach`: the core plugin's `hooks/run-hook.sh`, or `<python> -I -m stayfixed`.
+
+**Measured on 2.1.301 at $0** in addition to D1–D5: `marketplace add` and `install` re-run exit 0.
+`uninstall` and `marketplace remove` on an absent target exit 1. `marketplace remove` is
+machine-wide, uninstalls its plugins, and leaves `"enabledPlugins": {}` and
+`"extraKnownMarketplaces": {}` in the local file.
+
+**Follow-ups left out of HS2:**
+- A copied checkout shares its binding id, so a detach in the copy removes the machine-wide
+  marketplace; a re-attach of the original repairs it, and doctor shows `RENDER_GONE` until then.
+- A `.claude` linked in from elsewhere is refused on every run.
+- `attach --store` is required, though its only accepted value is computed.
+- `attach/rules.py` re-implements the `paths:` rules Claude Code has natively, because the
+  overlay's rules cannot be placed where a linked worktree would read them.
+- `<data>/sessions/` is never pruned.
+- `Bound.checkout` has no reader.
+- A crash mid-render can leave a `.<short id>-…` directory under `<data>/delivery/`.
