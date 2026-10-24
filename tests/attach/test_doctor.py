@@ -457,6 +457,35 @@ def _worktree_row(tmp_path: Path, side: Path, machine: Path, home: Path) -> Chec
     return _by_name(rows, "attached")
 
 
+def test_the_pointer_at_the_composed_store_is_the_harness_answer_and_red_once_it_is_gone(
+    tmp_path: Path,
+) -> None:
+    # The harness reads the directory `autoMemoryDirectory` names whatever stands at the harness
+    # memory path, so the pointer `attach` writes is the row's answer: ok beside no link and a
+    # store nobody approved, which without it warns, and red once the composed store is gone.
+    # Mutation (oracle): `mutations/`'s "doctor reads the pointer at the composed store as a key
+    # set elsewhere" -> the first reads red.
+    from stayfixed.attach.write import attach
+    from stayfixed.memory.composed import store_directory
+    from tests.attach.test_links import _bound
+
+    root, store, machine = _bound(tmp_path)
+    home = tmp_path / "home"
+    attach(root, store=store, machine=machine, runner=Recorder(), home=home)
+    read = "not read, since autoMemoryDirectory points the harness at the composed store"
+    framed = f"attached; {attach_doctor.DELIVERY_IN_PLACE}; the harness memory path is {read}"
+    row = _worktree_row(tmp_path, root, machine, home)
+    assert (row.status, row.detail) == (OK, f"{framed}; the binding is bound")
+    id = binding.read_id(root)
+    assert id is not None
+    shutil.rmtree(store_directory(id))
+    row = _worktree_row(tmp_path, root, machine, home)
+    assert (row.status, row.detail) == (
+        RED,
+        f"{framed}, which is gone, so the harness reads no memory; the binding is bound",
+    )
+
+
 def test_a_normally_attached_linked_worktree_is_ok(tmp_path: Path) -> None:
     # `attach` points every checkout's harness link at the main checkout's tree, and the row
     # compared it with the worktree's own tree, so a linked worktree attached the ordinary way
@@ -617,18 +646,17 @@ def _forget_the_approval(case: _Machine) -> None:
 
 
 def _fallback_everywhere(case: _Machine) -> None:
-    # A real directory where each link goes, and `attach` run in each checkout: it takes the
-    # settings-file fallback there, naming the main checkout's tree.
-    from tests.attach.test_links import _attach
-
+    # A real directory where each link goes, and in each checkout the settings-file fallback an
+    # earlier release's `attach` took there, naming the main checkout's tree. `attach` writes the
+    # pointer at the composed store instead now; the row reads a checkout that release attached.
     _no_links(case)
-    store = case.tmp_path / "overlay" / PROJECTS / "p" / "memory"
     for checkout in (case.root, case.side):
         _harness_link_of(checkout, case.home).mkdir()
-    for checkout in (case.root, case.side):
-        _attach(checkout, store, case.machine, case.home)
-        settings = json.loads((checkout / LOCAL_SETTINGS).read_text(encoding="utf-8"))
-        assert settings["autoMemoryDirectory"] == str((case.root / "docs" / "memory").resolve())
+        settings = checkout / LOCAL_SETTINGS
+        settings.parent.mkdir(exist_ok=True)
+        document = json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
+        document["autoMemoryDirectory"] = str((case.root / "docs" / "memory").resolve())
+        settings.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
 
 def _links_elsewhere(case: _Machine) -> None:

@@ -139,12 +139,6 @@ def test_a_reattach_that_binds_another_project_says_both_on_one_line(
     assert REBOUND.format(earlier=quoted("p"), project=quoted("q")) in out
 
 
-def test_attach_without_a_store_is_refused_rather_than_defaulted(tmp_path: Path) -> None:
-    # A default here would be a store chosen by nobody, on a command whose whole point is that
-    # the owner chose one.
-    assert invoke(["attach", "--root", str(tmp_path)]) == 2
-
-
 def test_an_attach_after_an_added_hook_entry_proceeds_and_shows_the_binding_and_what_runs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

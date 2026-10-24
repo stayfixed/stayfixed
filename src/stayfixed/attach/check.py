@@ -25,7 +25,7 @@ from stayfixed.result import Result
 def check(
     root: Path,
     *,
-    store: Path,
+    store: Path | None,
     machine: Path | None,
     home: Path | None,
     owner: Owner | None = None,

@@ -68,7 +68,7 @@ Three things hold everywhere:
 - [`stayfixed overlay init --owner OWNER [--root PATH]`](#stayfixed-overlay-init---owner-owner---root-path)
 - [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
 - [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
-- [`stayfixed attach --store PATH [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---root-path---machine-path)
+- [`stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
 - [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
@@ -2447,7 +2447,7 @@ length); `2` on a refusal.
 
 ---
 
-## `stayfixed attach --store PATH [--check] [--root PATH] [--machine PATH]`
+## `stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`
 
 Binds this repository to your private overlay, renders the hooks, skills and agents you keep there
 into a local plugin and installs it, and links its note store in. After it, a session in this
@@ -2456,7 +2456,8 @@ project's own notes, and the allow rules you keep in the overlay are merged into
 `.claude/settings.local.json`.
 
 **`--store` names one directory and nothing else:** `<overlay>/projects/<project name>/memory`,
-where `<project name>` is the `[project] name` in this repository's `stayfixed.toml`. The overlay
+where `<project name>` is the `[project] name` in this repository's `stayfixed.toml`, and without it
+that directory is the store, derived from the overlay the machine records. The overlay
 root itself is **not** taken from that path — it comes from the `[overlay] root` your machine
 configuration records, which `stayfixed setup` writes. A `--store` anywhere else is refused (`2`),
 including a directory elsewhere under the same overlay: the session-start path holds every linked
@@ -2593,9 +2594,13 @@ binding record `$HOME/.local/share/stayfixed/bindings/<id>.toml`, the render
 `$HOME/.local/share/stayfixed/delivery/<id>/` (written whole into a directory beside it, then
 swapped into place, the render before removed whole) and, through the two `claude plugin` calls,
 Claude Code's own records of the marketplace and the plugin and the main checkout's
-`.claude/settings.local.json`; where the notes are linked, the link tree under
-`paths.memory` in this checkout and in every existing worktree, the harness memory link, and — in
-the overlay — `projects/<name>/project.toml` while it records no remote, this project's note
+`.claude/settings.local.json`; where the notes are linked, the composed store
+`$HOME/.local/share/stayfixed/stores/<id>/` (a link per group of the overlay's for this project and
+one to its `MEMORY.md`; each run makes its links exactly the overlay's current set and leaves any
+file there that is not a link, such as a note the harness wrote), the key `autoMemoryDirectory`
+naming that directory, absolute, in the main checkout's `.claude/settings.local.json`, which Claude
+Code reads from every worktree, the link tree under `paths.memory` in this checkout and in every
+existing worktree, the harness memory link, and — in the overlay — `projects/<name>/project.toml` while it records no remote, this project's note
 directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the index link never dangles and `memory index --check` passes right after
@@ -2647,11 +2652,12 @@ read it before the other writes, and the later write then undoes what the earlie
 one `attach` or `detach` at a time. Running `attach` again in the checkout whose lines went puts
 them back.
 
-It also **removes** one file, in one case. The `autoMemoryDirectory` fallback is taken only while
-the harness memory link cannot be made, so when the link becomes possible again — or when the
-store's trust record lapses — that key is withdrawn in the same run. If it was all
-`.claude/settings.local.json` held, the file goes with it, because `{}` is not what that file
-looked like before `attach` created it.
+**The harness reads its memory from the composed store.** Where the notes are linked, the
+`autoMemoryDirectory` key points the harness at `$HOME/.local/share/stayfixed/stores/<id>/`, outside
+every checkout, whose links reach the overlay's notes and nothing of the repository's, so it waits
+for no approval. The key is recorded in the ledger before it is written, so `detach` takes it back;
+the path names the whole binding id and is never printed. A repository that keeps its own notes gets
+no key.
 
 **When the harness memory link waits for approval, `attach` says so, and says why.** The link
 exposes the link tree, which sits inside the repository, so it is made only once the store is
@@ -2808,8 +2814,9 @@ delivering its notes. And a detached linked worktree is linked again by its next
 which builds a worktree's tree from the main checkout's store whenever that store resolves, ledger
 or none.
 
-**Writes**: it takes the recorded allow rules and the fallback key back out of
-`.claude/settings.local.json`, drops the hook entries an earlier release's `attach` merged there —
+**Writes**: it takes the recorded allow rules and the `autoMemoryDirectory` key back out of
+`.claude/settings.local.json` — and that key out of the main checkout's file too, run from a linked
+worktree where no other checkout of the repository is attached — drops the hook entries an earlier release's `attach` merged there —
 the ones its ledger records, under the event it records, and never one by its `# stayfixed:…` marker
 alone (a group that mixes one of those with your own entry is split, never replaced) — and leaves
 the file unwritten when none of those is in it, removes the `.codex/rules/` files it wrote,
@@ -2821,9 +2828,12 @@ local` where the main checkout's `.claude/settings.local.json` names that plugin
 `enabledPlugins`, and `claude plugin marketplace remove stayfixed-delivery-<id>` where it names that
 marketplace under `extraKnownMarketplaces`, each run from the main checkout, then the render
 directory `$HOME/.local/share/stayfixed/delivery/<id>/` removed whole where it is there, a link
-there unlinked — removes the `stayfixed:attach` block in the repository's exclude file, and deletes
-the ledger, `.stayfixed/local/attach.json`. The render directory is derived from the binding id and
-never read from the ledger, so a ledger a clone committed naming another directory removes nothing
+there unlinked, then every link in the composed store `$HOME/.local/share/stayfixed/stores/<id>/`
+and the directory where nothing else is left (a file there that is not a link is a note the harness
+wrote: it stays, and so does the directory, which the line says and `--json` reports as
+`store_kept: true`) — removes the `stayfixed:attach` block in the repository's exclude file, and deletes
+the ledger, `.stayfixed/local/attach.json`. The render directory and the composed store are derived
+from the binding id and never read from the ledger, so a ledger a clone committed naming another directory removes nothing
 outside it. The plugin goes before the exclude block, so Claude Code takes the plugin's entries,
 which name the id, out of `.claude/settings.local.json` while that file is still hidden. Each call
 is decided by what that file names, never by the ledger or the render directory, and the file is
@@ -3226,16 +3236,17 @@ rows need — where the overlay keeps its hooks, what this checkout's `origin` i
 binding's row asks, the repository's common directory, where the binding id is kept, which the
 binding's row, the note store's rows and the `preferences` row's read of the overlay's project
 file each ask for themselves, which
-checkout owns this one, which the binding's row asks to judge the harness memory path, whether a
+checkout owns this one, which the binding's row asks to judge the harness memory path where no
+`autoMemoryDirectory` naming the composed store is in effect, whether a
 path `attach` placed is tracked (`git ls-files`) or ignored (`git check-ignore`) and whether a
 tracked file names the delivery (`git grep`), which the binding's row asks of a bound checkout,
 and, for `hook-entries`, which files below the root a nested `.claude/skills` holds (`git
 ls-files`), asked a second time through each submodule's index where a `.gitmodules` sits at or
-above the root. Fourteen of those are measured on a green attached installation with no
-submodules — the wrapper probe and thirteen `git` questions — and fifteen where a `.gitmodules` is
+above the root. Thirteen of those are measured on a green attached installation with no
+submodules — the wrapper probe and twelve `git` questions — and fourteen where a `.gitmodules` is
 present; not one of them leaves this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
 `[ci] ref` at all, and it is the only one that does leave: it goes through the `Runner` seam,
-which is what lets the case that pins the fourteen answer it in process instead of launching it.
+which is what lets the case that pins the thirteen answer it in process instead of launching it.
 That one is bounded at **30 seconds**, not at the seam's own five minutes (the bound for
 `gh repo create --clone`), so a peer that does not answer cannot turn a one-line diagnostic into a
 five-minute block. Each `git ls-files` question has `gitenv`'s thirty seconds of its own for a
@@ -3270,7 +3281,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | as information, never a status: `STAYFIXED_CONFIG` set, or `XDG_CONFIG_HOME` set to anything but the `.config` of the home every command reads under (`HOME`, or the password database's where `HOME` is unset), and not honoured by any command; and a `HOME` that is not the home the password database records for this user, since stayfixed follows `HOME` | the environment, the password database |
 | `retired-deny` | whether `~/.claude/settings.json` still holds a deny rule an earlier `stayfixed setup` wrote and the machine's preset retired (its `[deny] retired`), such as `Read(.env*)`, which refuses `.env.example` too; matched by exact string, as `setup` removes them, and named in the preset's words | `~/.claude/settings.json`, the preset |
-| `attached` | the overlay binding, what it delivers, and, where `memory.mode` is `overlay`, the harness memory path's shape, read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.local/share/stayfixed/delivery/<id>/`, the overlay's executable parts, `git` on the paths `attach` placed, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
+| `attached` | the overlay binding, what it delivers, and, where `memory.mode` is `overlay`, the harness memory path's shape, read alike from every checkout (the states are below the table) | `.stayfixed/local/attach.json`, `~/.local/share/stayfixed/delivery/<id>/`, `~/.local/share/stayfixed/stores/<id>/`, the overlay's executable parts, `git` on the paths `attach` placed, `~/.claude/projects/<slug>/memory`, `.claude/settings.local.json`, the link tree |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `store-debris` | files in the note store that are not notes (at most 500,000 entries) | the note store |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
@@ -3305,7 +3316,10 @@ nothing.
 
 **How `attached` reads the harness memory path.** The row reads `~/.claude/projects/<slug>/memory`,
 and `autoMemoryDirectory` in the two settings files the repository controls beside whatever stands
-there, in one order, and the first state that matches answers. Two states answer before the ledger
+there, in one order, and the first state that matches answers. `pointer` answers first of all:
+`autoMemoryDirectory` in effect naming the composed store `~/.local/share/stayfixed/stores/<id>/`
+of this checkout's binding id, the one value `attach` writes where the notes are linked, which the
+harness reads whatever stands at the harness memory path. Two states answer before the ledger
 and the binding are read, since the harness reads what they name whatever the ledger says:
 `real-directory-no-fallback` and `fallback-elsewhere`, each the row's whole detail. Every other
 state answers only once this machine's binding of the checkout confirms the ledger. The store and the approval it asks about
@@ -3319,8 +3333,9 @@ below is shortened; the row spells the command in full.
 `.claude/settings.local.json` and the shared `.claude/settings.json`, the local file's key in effect
 over the shared one's. Each is no file, or one JSON object with no `autoMemoryDirectory`; or it
 holds the key; or it cannot be read as settings: unreadable, not a regular file, not UTF-8, a
-byte-order mark, a comment, a trailing comma, or anything but one object. One value is admitted, the main checkout's store exactly as `attach`
-writes it; any other value in effect, of any type, `~/…`, relative, empty or another spelling of the
+byte-order mark, a comment, a trailing comma, or anything but one object. Two values are admitted:
+the composed store as `attach` writes it (`pointer`), and the main checkout's store exactly as an
+earlier release's `attach` wrote it as a fallback; any other value in effect, of any type, `~/…`, relative, empty or another spelling of the
 store, is `fallback-elsewhere`. A file that cannot be read as settings is never read as having no
 key: beside it, every state that would read `ok` warns that what the harness makes of the file is
 unknown (`settings-unreadable`). The value is never printed. Your own `~/.claude/settings.json`,
@@ -3328,10 +3343,11 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 
 | State | What stands there | Status | Remedy |
 |---|---|---|---|
+| `pointer` | anything, with `autoMemoryDirectory` in effect naming the composed store; `red` where that directory is gone | `ok` | — (`attach`, when red) |
 | `dangling` | a link that reaches nothing | `red` | `attach` |
 | `real-directory-no-fallback` | a real directory, with no `autoMemoryDirectory` recorded in `.claude/settings.local.json` | `red` | move it aside, then `attach` |
 | `targets-unaskable` | anything else, where the main checkout's or this checkout's `paths.memory` cannot be asked where it leads (a symlink, a symlink loop, a fault the system names); the row says whose and why | `warn` | replace the symlink, or make the directory readable, then `doctor` |
-| `fallback-elsewhere` | anything else, with `autoMemoryDirectory` in effect and set to anything but the main checkout's store exactly as `attach` writes it; whether or not the store resolves; the row names the file | `red` | remove the key from that file, then `attach` |
+| `fallback-elsewhere` | anything else, with `autoMemoryDirectory` in effect and set to anything but the composed store or the main checkout's store exactly as an earlier release's `attach` wrote it; whether or not the store resolves; the row names the file | `red` | remove the key from that file, then `attach` |
 | `links-elsewhere` | a link to anything but the main checkout's `paths.memory` or this checkout's own | `red` | `attach` |
 | `tree-gone` | anything else, where the store does not resolve because its link tree at `paths.memory` is gone | `warn` | `attach` |
 | `tree-there-not-resolving` | anything else, where the store does not resolve and its link tree is there | `warn` | `memory index --check`, then `doctor` |
@@ -3339,9 +3355,9 @@ policy settings and `--settings` are yours, not the repository's, and this row d
 | `attached` | a link to the store, its approval holding | `ok` | — |
 | `link-lapsed` | a link to the store, its approval lapsed | `warn` | read what changed, have the person at the machine run `trust approve memory` in their own terminal, then `attach` |
 | `link-never-approved` | a link to the store, no approval recorded | `warn` | `attach`, which withdraws a link to the main checkout's tree; a link to this checkout's own tree, which it does not withdraw, is named to be removed |
-| `fallback-unapproved` | anything but a link, with the fallback naming the store, its approval lapsed or never given; the row says which | `warn` | `attach`, which withdraws the key |
+| `fallback-unapproved` | anything but a link, with the fallback naming the store, its approval lapsed or never given; the row says which | `warn` | `attach`, which points the key at the composed store |
 | `fallback-approved` | a real directory, with the fallback naming the store, its approval holding | `ok` | — |
-| `fallback-instead-of-a-link` | nothing, with the fallback naming the store, its approval holding | `warn` | `attach`, which makes the link |
+| `fallback-instead-of-a-link` | nothing, with the fallback naming the store, its approval holding | `warn` | `attach`, which points the key at the composed store |
 | `no-links-approved` | nothing, the store's approval holding | `warn` | `attach` |
 | `lapsed-links-withdrawn` | nothing, its approval lapsed | `warn` | read what changed, have the person at the machine run `trust approve memory` in their own terminal, then `attach` |
 | `never-approved` | nothing, no approval recorded | `ok` | — |

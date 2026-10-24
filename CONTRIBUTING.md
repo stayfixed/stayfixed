@@ -125,14 +125,16 @@ writes), and the handlers that write outside it.
 Removal is held tighter. Every file or directory stayfixed removes is one it names before it looks —
 a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
 a directory above a file the same run removed — and none is found by listing a directory and
-removing what the listing returned, with three exceptions, each inside a directory only stayfixed
-writes. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
+removing what the listing returned, with four exceptions, each inside a directory only stayfixed
+writes, or, for the last, writes links into. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
 prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. `stayfixed uninstall` walks
 `.stayfixed/local/artifacts/` and removes the directories it finds there that are empty, because
 that tree holds nothing but the local artifacts the same run just removed. And `stayfixed detach`
 removes the render directory `$HOME/.local/share/stayfixed/delivery/<id>/` whole, as `attach` does
 the one its new render replaces, a directory named by the binding id and never by the ledger, which
-only `attach` writes into. Both go through `fsops`,
+only `attach` writes into; and `attach` and `detach` take the links they list in the composed store
+`$HOME/.local/share/stayfixed/stores/<id>/`, named the same way, where only `attach` puts a link and
+a file that is not one is a note the harness wrote, which neither removes. All go through `fsops`,
 as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 

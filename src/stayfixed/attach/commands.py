@@ -13,24 +13,19 @@ from typing import TYPE_CHECKING
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import ATTACH_CHECK_HELP, command_owner, common_flags
-from stayfixed.errors import Refusal
 from stayfixed.printed import clipped, quoted
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
     from stayfixed.attach.write import Attached
 
-_NO_STORE = (
-    "`stayfixed attach` needs --store, naming this project's own directory inside the overlay "
-    "this machine records: <overlay>/projects/<project name>/memory"
-)
 
-
-def _target(args: argparse.Namespace) -> tuple[Path, Path, Path | None]:
-    if args.store is None:
-        raise Refusal(_NO_STORE)
+def _target(args: argparse.Namespace) -> tuple[Path, Path | None, Path | None]:
+    """The root, `--store` where it was given, which is otherwise this project's own directory in
+    the overlay the machine records, and the machine file."""
     machine = Path(args.machine) if args.machine else None
-    return Path(args.root).resolve(), Path(args.store), machine
+    store = Path(args.store) if args.store is not None else None
+    return Path(args.root).resolve(), store, machine
 
 
 def run_attach(args: argparse.Namespace) -> Result:
@@ -152,6 +147,8 @@ def run_detach(args: argparse.Namespace) -> Result:
         "link_tree_kept": removed.link_tree_kept,
         # A boolean this command computed, so it prints.
         "delivery_removed": removed.delivery_removed,
+        # A boolean this command computed, so it prints.
+        "store_kept": removed.store_kept,
     }
     # The link tree is kept only while another checkout is attached, which keeps the block too.
     what = (
@@ -165,6 +162,11 @@ def run_detach(args: argparse.Namespace) -> Result:
         else ""
     )
     withdrawn = "; the overlay's plugin was withdrawn" if removed.delivery_removed else ""
+    if removed.store_kept:
+        withdrawn += (
+            "; the composed memory store under this machine's data directory was kept, its links "
+            "taken, since it holds files the harness wrote"
+        )
     return Result(
         f"detached: {len(removed.allow_removed)} allow rule(s), "
         f"{len(removed.entries_removed)} hook entr(ies), "

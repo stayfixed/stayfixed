@@ -648,7 +648,7 @@ def _settings_fallback(root: Path) -> _Fallback:
 def _settings_key(path: Path) -> object:
     """`autoMemoryDirectory`'s value in one settings file, `_NO_KEY`, or `_CANNOT_TELL`."""
     from stayfixed import fsops
-    from stayfixed.attach.write import FALLBACK_KEY
+    from stayfixed.attach.write import POINTER_KEY
     from stayfixed.jsonobject import json_object
 
     try:
@@ -663,7 +663,7 @@ def _settings_key(path: Path) -> object:
         document = json_object(text, str(path), error=ValueError)
     except ValueError:
         return _CANNOT_TELL
-    return document.get(FALLBACK_KEY, _NO_KEY)
+    return document.get(POINTER_KEY, _NO_KEY)
 
 
 def _owner(context: Context) -> Path:
@@ -732,6 +732,9 @@ def _read_harness(
     it answers is named in `tests/attach/test_doctor.py`'s `ONE_MACHINE_STATE`, and the name is
     the comment on the line that answers it:
 
+    - `pointer`: `autoMemoryDirectory` in effect and set to the composed store this checkout's
+      binding id names (`_composed`), the one value `attach` writes in overlay mode, whatever
+      stands at the harness memory path. Ok, or red where that directory is gone; `attach`.
     - `dangling`: a link that reaches nothing. Red; `attach`.
     - `real-directory-no-fallback`: a real directory, and no `autoMemoryDirectory` in effect in
       either settings file the repository controls (`_settings_fallback`). Red, the row's whole
@@ -801,8 +804,9 @@ def _read_harness(
     (`tree-gone`, `tree-there-not-resolving`, `no-links-approved`, `lapsed-links-withdrawn`,
     `never-approved`), as it did.
     """
+    from stayfixed import fsops
     from stayfixed.attach import ATTACH_STORE
-    from stayfixed.attach.write import APPROVAL_LAPSED, FALLBACK_KEY, REAPPROVE
+    from stayfixed.attach.write import APPROVAL_LAPSED, POINTER_KEY, REAPPROVE
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.errors import Refusal
     from stayfixed.memory.api import GATE_LAPSED, GATE_OPEN, harness_gate, harness_targets
@@ -810,6 +814,15 @@ def _read_harness(
     # The remedy every arm but the green ones and the named ones carries: one command puts the link
     # back where `attach` puts it, whatever the wrong shape was.
     relink = f"run `{ATTACH_STORE}`"
+    if fallback.held and fallback.value == _composed(context):  # pointer
+        # The harness reads the directory the key names whatever stands at the harness memory
+        # path, so the pointer at the composed store is the whole answer.
+        from pathlib import Path
+
+        read = f"not read, since {POINTER_KEY} points the harness at the composed store"
+        if fsops.is_dir(Path(str(fallback.value))):
+            return _Verdict(OK, read, "")
+        return _Verdict(RED, f"{read}, which is gone, so the harness reads no memory", relink)
     shape = _shape_of(harness)
     if shape == _DANGLING:  # dangling
         return _Verdict(RED, "a dangling link, so the harness reads nothing through it", relink)
@@ -817,7 +830,7 @@ def _read_harness(
         return _real_directory(harness)
     words = {
         _LINK: "a link",
-        _REAL_DIRECTORY: f"a real directory beside the {FALLBACK_KEY} fallback",
+        _REAL_DIRECTORY: f"a real directory beside the {POINTER_KEY} fallback",
         _OTHER: "something other than a link",
         _ABSENT: "not in place",
     }[shape]
@@ -827,7 +840,7 @@ def _read_harness(
     except Refusal as refused:  # targets-unaskable
         unchecked = {
             _LINK: "what the link points at",
-            _REAL_DIRECTORY: f"whether {FALLBACK_KEY} names the store",
+            _REAL_DIRECTORY: f"whether {POINTER_KEY} names the store",
         }.get(shape, "whether the harness should see it")
         return _Verdict(
             WARN,
@@ -899,7 +912,7 @@ def _read_harness(
     # The file named through the harness registry (`CLAUDE.local_settings`), as `attach`'s own
     # fallback line names it: a harness fact spelled here is one more place a new harness would
     # have to be found.
-    points = f"{plain}, and {FALLBACK_KEY} in {fallback.where} points the harness"
+    points = f"{plain}, and {POINTER_KEY} in {fallback.where} points the harness"
     if fallback.held and gate != GATE_OPEN:  # fallback-unapproved
         why = APPROVAL_LAPSED if gate == GATE_LAPSED else "no approval is recorded for the store"
         return _Verdict(
@@ -933,6 +946,20 @@ def _read_harness(
     return _Verdict(OK, "not in place, which is what this store's trust record asks for", "")
 
 
+def _composed(context: Context) -> str | None:
+    """The one value `attach` writes into `autoMemoryDirectory` in overlay mode: the composed store
+    this checkout's binding id names, or `None` where there is no id or no home to derive it in."""
+    from stayfixed.binding import read_id
+    from stayfixed.errors import Failure
+    from stayfixed.memory.api import composed_directory
+
+    try:
+        id = read_id(context.root)
+        return None if id is None else str(composed_directory(id))
+    except Failure:
+        return None
+
+
 def _written_fallback(owner: Path, config: Config) -> Path:
     """The one value `attach` writes into `autoMemoryDirectory`: the owning checkout's store,
     resolved (`write._fallback_wanted`'s `str(store.path.resolve())`).
@@ -955,15 +982,15 @@ def _fallback_elsewhere(plain: str, where: str) -> _Verdict:
     never printed; another spelling of the store is this row too, since only the written one is
     admitted. Read before the ledger, so it is the row's whole detail."""
     from stayfixed.attach import ATTACH_STORE
-    from stayfixed.attach.write import FALLBACK_KEY
+    from stayfixed.attach.write import POINTER_KEY
     from stayfixed.doctor.api import RED
 
     return _Verdict(
         RED,
-        f"the harness memory path is {plain}, and {FALLBACK_KEY} in {where} is set to something "
+        f"the harness memory path is {plain}, and {POINTER_KEY} in {where} is set to something "
         "other than the store `attach` writes there, so the harness may read notes this "
         "repository is not bound to",
-        f"remove {FALLBACK_KEY} from {where}, then run `{ATTACH_STORE}`",
+        f"remove {POINTER_KEY} from {where}, then run `{ATTACH_STORE}`",
         whole=True,
     )
 

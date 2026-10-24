@@ -54,6 +54,11 @@ def test_the_memory_surface_carries_what_every_consumer_reaches_for() -> None:
         # every path the tree points at in the overlay, which attach asks the length of before
         # its first write
         "link_sources",
+        # the composed store attach builds and points the harness at, and detach withdraws, and
+        # its directory, which the attached row compares the pointer with
+        "build_composed",
+        "composed_directory",
+        "withdraw_composed",
         # the note store a doctor row reads, resolved once per area per report, for the attach
         # area's row
         "Answers",

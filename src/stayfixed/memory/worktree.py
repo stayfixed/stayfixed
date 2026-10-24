@@ -322,8 +322,7 @@ def _tree_base(worktree: Path, store: Store) -> str | None:
 def harness_link_needed(store: Store, config: Config) -> bool:
     """Whether `~/.claude/projects/<slug>/memory` may point at this store — asked in one place.
 
-    `link` asks it for a worktree, `attach_main` asks it for the owning checkout, and `attach`
-    asks it again before taking its settings-file fallback. Three callers and one spelling,
+    `link` asks it for a worktree and `attach_main` asks it for the owning checkout, one spelling
     because the question is easy to ask slightly wrong and asking it wrong costs everything the
     gate was for: `repository_data=in_repository(store, store.path)` is what makes it a question
     about *the directory this link exposes* rather than about the notes behind it. Asked without
@@ -751,7 +750,7 @@ def detach_main(
     - `attach_main` can refuse because refusing costs nothing: it runs before the first write,
       so an early exit leaves the repository as it was. `detach_main` cannot. By the time
       `attach.write.detach` reaches it, the recorded allow rules, the marked hook entries, the
-      fallback key and the `.codex/rules/` files are already withdrawn — so a `Refusal` here
+      pointer key and the `.codex/rules/` files are already withdrawn — so a `Refusal` here
       strands a half-detached repository with its ledger still on disk, which is a worse state
       than the one the check would be protecting against.
     - An owner who switched `memory.mode` to `in-repo` *after* attaching still needs `detach` to

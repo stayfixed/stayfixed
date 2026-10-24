@@ -688,21 +688,48 @@ def test_a_checkouts_own_paths_memory_that_is_a_symlink_loop_refuses_before_anyt
     assert tree_entries(*checkouts, home) == before
 
 
-def test_detach_withdraws_the_settings_fallback_it_recorded(tmp_path: Path) -> None:
-    # The fallback is a setting, not a link, so nothing expires it: if `detach` left it behind
-    # the harness would keep reading the store of a repository that is no longer bound.
+def test_detach_withdraws_the_memory_pointer_and_the_composed_store(tmp_path: Path) -> None:
+    # The key names a directory derived from the id; both go, the overlay the links point into
+    # stays, and a settings file that held nothing else goes with them.
+    from stayfixed import binding
+    from stayfixed.attach.write import attach
+    from stayfixed.memory.composed import store_directory
+
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    resolved = resolve(root, _config(root, machine), machine=machine)
-    assert resolved is not None
-    record(resolved, _config(root, machine))
-    harness_memory_path(root, home).mkdir(parents=True)
-    _attach(root, store, machine, home)
-    assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
+    attach(root, store=store, machine=machine, runner=Recorder(), home=home)
+    id = binding.read_id(root)
+    assert id is not None
+    composed = store_directory(id)
+    assert (root / SETTINGS).is_file()
+    assert "autoMemoryDirectory" in json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert composed.is_dir()
     _detach(root, machine, home)
     assert not (root / SETTINGS).exists()
+    assert not composed.exists()
+    assert (store.parents[2] / "common" / "memory").is_dir()
+
+
+def test_detach_from_a_worktree_takes_the_pointer_out_of_the_main_checkouts_file(
+    tmp_path: Path,
+) -> None:
+    # `attach` writes the pointer into the main checkout's file from any worktree, since Claude Code
+    # reads that file from every one, while the ledger is the worktree's: a detach there takes the
+    # key out of the main checkout's file, and leaves the rest of that file as it was.
+    from stayfixed.attach.write import attach
+
+    root, store, machine = _bound(tmp_path)
+    _grant(store.parents[2])
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    home = tmp_path / "home"
+    (root / ".claude").mkdir()
+    (root / SETTINGS).write_text('{"theme": "dark"}\n', encoding="utf-8")
+    attach(side, store=store, machine=machine, runner=Recorder(), home=home)
+    assert "autoMemoryDirectory" in json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    _detach(side, machine, home)
+    assert json.loads((root / SETTINGS).read_text(encoding="utf-8")) == {"theme": "dark"}
 
 
 def test_detach_leaves_the_binding_record_in_place(tmp_path: Path) -> None:
@@ -1099,71 +1126,21 @@ def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harne
     assert _directories(root) == before
 
 
-def test_the_settings_fallback_written_after_the_links_is_hidden_too(tmp_path: Path) -> None:
-    # The fallback key is written after the links, into the settings file every run places and
-    # hides in its one block above the first write, since Claude Code writes the plugin's entry
-    # there too.
+def test_the_memory_pointer_written_after_the_links_is_hidden_too(tmp_path: Path) -> None:
+    # The pointer is written after the links, into the settings file every run places and hides in
+    # its one block above the first write, since Claude Code writes the plugin's entry there too.
+    from stayfixed.attach.write import attach
     from tests.attach.test_write import _check_ignore
 
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    assert not (root / SETTINGS).exists()
-    resolved = resolve(root, _config(root, machine), machine=machine)
-    assert resolved is not None
-    record(resolved, _config(root, machine))
-    harness_memory_path(root, home).mkdir(parents=True)
-    _attach(root, store, machine, home)
-    # Non-vacuous: the fallback was taken, so the file exists and is this run's.
+    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    # Non-vacuous: the pointer is all this overlay gives the file, so the file is this run's.
     assert "autoMemoryDirectory" in (root / SETTINGS).read_text(encoding="utf-8")
     assert _check_ignore(root, SETTINGS)
     # The block hides it, and `attach` wrote nothing into the fixture's tracked `.gitignore`.
     status = git(root, "status", "--porcelain", "--untracked-files=all")
     assert SETTINGS not in status
-
-
-def _fallback_forced(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    """An attached repository whose store is approved and whose harness link cannot be made —
-    a real directory already sits where it goes — so the next attach takes the settings-file
-    fallback. Returns `(root, store, machine, home)` with no settings file written yet."""
-    root, store, machine = _bound(tmp_path)
-    _grant(store.parents[2])
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    resolved = resolve(root, _config(root, machine), machine=machine)
-    assert resolved is not None
-    record(resolved, _config(root, machine))
-    harness_memory_path(root, home).mkdir(parents=True)
-    assert not (root / SETTINGS).exists()
-    return root, store, machine, home
-
-
-def test_a_symlinked_exclude_file_is_refused_first_when_only_the_fallback_needs_a_line(
-    tmp_path: Path,
-) -> None:
-    # Every other path this run places is ignored already, so the only exclude line the run
-    # needs is the settings file, which holds the fallback key. That need is known before the
-    # first write, and so is the refusal of a symlinked exclude file.
-    root, store, machine, home = _fallback_forced(tmp_path)
-    exclude = root / ".git" / "info" / "exclude"
-    held = [
-        line for line in exclude.read_text(encoding="utf-8").splitlines() if SETTINGS not in line
-    ]
-    elsewhere = tmp_path / "exclude-elsewhere"
-    elsewhere.write_text("\n".join([*held, "/.codex/rules/", ".stayfixed/"]) + "\n", "utf-8")
-    exclude.unlink()
-    exclude.symlink_to(elsewhere)
-    overlay = store.parents[2]
-    project_files, overlay_files = snapshot(root), snapshot(overlay)
-    outside = elsewhere.read_bytes()
-    with pytest.raises(Refusal) as refused:
-        _attach(root, store, machine, home)
-    assert "symlink" in str(refused.value)
-    assert_snapshot_unchanged(root, project_files)
-    assert_snapshot_unchanged(overlay, overlay_files)
-    assert elsewhere.read_bytes() == outside
-    assert not (root / SETTINGS).exists()
 
 
 # --- the exclude block is shared by every checkout, and is taken back exactly ----------------
@@ -1645,12 +1622,18 @@ def test_a_settings_file_detach_withdraws_nothing_from_is_not_rewritten(tmp_path
     # written at all.
     #
     # Mutation: `mutations/`'s "detach rewrites a settings file it withdraws nothing from".
+    from stayfixed.attach.write import attach
+
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2])
     home = tmp_path / "home"
+    # A repository that keeps its own notes, so the composed store's pointer is not written either.
+    config = root / "stayfixed.toml"
+    text = config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "local-only"')
+    config.write_text(text, encoding="utf-8")
     (root / ".claude").mkdir()
     (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
-    _attach(root, store, machine, home)
+    attach(root, store=store, machine=machine, runner=Recorder(), home=home)
     _detach(root, machine, home)
     assert (root / SETTINGS).read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert not (root / LEDGER).exists()

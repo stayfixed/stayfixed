@@ -126,39 +126,10 @@ reddens = [
 [[mutation]]
 name = "detach drops whatever settings key the ledger names"
 file = "src/stayfixed/attach/write.py"
-before = '    foreign += sum(1 for key in keys if key != FALLBACK_KEY)'
+before = '    foreign += sum(1 for key in keys if key != POINTER_KEY)'
 after = '    foreign += 0'
 reddens = [
   "tests/attach/test_detach.py::test_a_ledger_claiming_the_permissions_key_never_drops_the_owners_deny_rules",
-]
-
-# The worktree's settings-file fallback is state that persists, on the one channel `memory/worktree`
-# calls the one hop that leaves `memory`'s gate. A gate evaluated once at creation over such
-# state is not a gate: the key outlived the trust record that allowed it, while the ledger that
-# `detach` reads was reset to `[]` around it.
-[[mutation]]
-name = "the settings fallback outlives the gate that allowed it"
-file = "src/stayfixed/attach/write.py"
-before = '''    document = settings_document(local_document(root))
-    if document.get(FALLBACK_KEY) == wanted:'''
-after = '''    document = settings_document(local_document(root))
-    if wanted is None or document.get(FALLBACK_KEY) == wanted:'''
-reddens = [
-  "tests/attach/test_links.py::test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_reason",
-  "tests/attach/test_links.py::test_the_fallback_goes_when_the_symlink_it_stood_in_for_can_be_made",
-]
-
-# And the record of it, which is the half `detach` reads. `settings_keys` was written from the
-# run's own memory rather than from the file, so a second attach reset it to `[]` while the key
-# was still in `.claude/settings.local.json` — and `detach` then left it there for good.
-[[mutation]]
-name = "the ledger records the fallback from the run rather than from the file"
-file = "src/stayfixed/attach/write.py"
-before = '    return _keys_in(local_document(root))'
-after = '    return ()'
-reddens = [
-  "tests/attach/test_links.py::test_a_second_attach_that_changes_nothing_still_records_the_standing_fallback",
-  "tests/attach/test_detach.py::test_the_two_values_attach_really_writes_are_still_acted_on",
 ]
 
 # `worktree.link` is documented as a no-op for the main checkout, so applying the owning-checkout
@@ -1484,8 +1455,8 @@ reddens = [
 [[mutation]]
 name = "doctor spells the local settings file again"
 file = "src/stayfixed/attach/doctor.py"
-before = "    points = f\"{plain}, and {FALLBACK_KEY} in {fallback.where} points the harness\""
-after = "    points = f\"{plain}, and {FALLBACK_KEY} in .claude/settings.local.json points the harness\""
+before = "    points = f\"{plain}, and {POINTER_KEY} in {fallback.where} points the harness\""
+after = "    points = f\"{plain}, and {POINTER_KEY} in .claude/settings.local.json points the harness\""
 reddens = [
   "tests/test_harnesses.py::test_every_harness_fact_outside_the_registry_is_listed_where_the_registry_says",
 ]
@@ -2100,34 +2071,15 @@ after = '''        except LookupError:
             # Refused only for a home it cannot name'''
 reddens = ["tests/attach/test_doctor.py::test_an_empty_home_is_told_it_is_home_that_names_none"]
 
-# A linked worktree's harness link points at the store the owning checkout holds, so the fallback
-# and the waiting note are asked of that store: asked of the worktree's own link tree, a run that
-# made the link said it could not be created and recorded `autoMemoryDirectory` beside it, or
-# said it waited for an approval the store it linked already had.
-[[mutation]]
-name = "the settings fallback compares a worktree's link with that worktree's own store"
-file = "src/stayfixed/attach/write.py"
-before = "    store = _fallback_store(owner, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
-after = "    store = _fallback_store(root, config, machine=machine)\n    if store is None or not harness_link_needed(store, config):"
-reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made"]
-
+# A linked worktree's harness link points at the store the owning checkout holds, so the waiting
+# note is asked of that store: asked of the worktree's own link tree, a run that made the link said
+# it waited for an approval the store it linked already had.
 [[mutation]]
 name = "attach says the harness link waits by a worktree's own store"
 file = "src/stayfixed/attach/write.py"
-before = "    elif (waits := _harness_waits(owner, config, machine=machine)) is not None:"
-after = "    elif (waits := _harness_waits(root, config, machine=machine)) is not None:"
+before = "    if (waits := _harness_waits(owner, config, machine=machine)) is not None:"
+after = "    if (waits := _harness_waits(root, config, machine=machine)) is not None:"
 reddens = ["tests/attach/test_links.py::test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does"]
-
-# Why the gate kept the harness link back reads the store's trust record and digests its notes; it
-# was asked on every attach and thrown away wherever a fallback line was said instead.
-[[mutation]]
-name = "attach asks why the harness link waits on every run"
-file = "src/stayfixed/attach/write.py"
-before = "    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))\n"
-after = "    _harness_waits(owner, config, machine=machine)\n    if links.revoked:\n        notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))\n"
-reddens = [
-  "tests/attach/test_links.py::test_an_attach_that_records_the_fallback_never_asks_why_the_link_waits",
-]
 
 # Both close the gate, and only a lapsed approval withdraws the links an earlier run made: one line
 # appended to one note withdrew every checkout's harness link under a sentence that read as a store
@@ -2474,10 +2426,22 @@ reddens = [
 [[mutation]]
 name = "doctor reads a settings fallback that is no absolute path as no key"
 file = "src/stayfixed/attach/doctor.py"
-before = "    return document.get(FALLBACK_KEY, _NO_KEY)"
-after = "    return document.get(FALLBACK_KEY, _NO_KEY) if str(document.get(FALLBACK_KEY, \"/\")).startswith(\"/\") else _NO_KEY"
+before = "    return document.get(POINTER_KEY, _NO_KEY)"
+after = "    return document.get(POINTER_KEY, _NO_KEY) if str(document.get(POINTER_KEY, \"/\")).startswith(\"/\") else _NO_KEY"
 reddens = [
   "tests/attach/test_doctor.py::test_one_machine_state_reads_one_status_from_every_checkout[tilde-fallback-beside-a-link]",
+]
+
+# The pointer `attach` writes names the composed store, and the harness reads the directory it names
+# over whatever stands at the harness memory path; read as a key set to something else, the row was
+# red on every checkout `attach` had just pointed.
+[[mutation]]
+name = "doctor reads the pointer at the composed store as a key set elsewhere"
+file = "src/stayfixed/attach/doctor.py"
+before = "    if fallback.held and fallback.value == _composed(context):  # pointer"
+after = "    if fallback.held and fallback.value != _composed(context):  # pointer"
+reddens = [
+  "tests/attach/test_doctor.py::test_the_pointer_at_the_composed_store_is_the_harness_answer_and_red_once_it_is_gone",
 ]
 
 # The harness reads more than strict JSON, so a settings file this cannot parse may still point it

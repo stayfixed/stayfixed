@@ -45,7 +45,7 @@ import datetime
 import json
 import os
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -108,13 +108,11 @@ from stayfixed.memory.api import (
     STORE_DIR,
     Links,
     PartialLink,
-    Store,
     attach_main,
+    build_composed,
     detach_main,
     harness_anchor,
     harness_gate,
-    harness_link_needed,
-    harness_memory_path,
     harness_targets,
     link,
     linked_names,
@@ -122,6 +120,7 @@ from stayfixed.memory.api import (
     read_binding_record,
     require_readable_record,
     resolve,
+    withdraw_composed,
 )
 from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
 from stayfixed.printed import answered, quoted
@@ -137,10 +136,10 @@ from stayfixed.scaffold import (
 from stayfixed.trust.api import ONLY_OUTSIDE, PERSON_RUNS, SANDBOX_REFUSED
 
 LEDGER_FORMAT = 1
-# `attach`'s fallback for the one link that leaves stayfixed's own channel: a settings-file value
-# is subject to workspace trust and a link is not, so the symlink is preferred and this is taken
-# only when it cannot be made.
-FALLBACK_KEY = "autoMemoryDirectory"
+# The one settings key `attach` writes: the harness's memory directory, which in overlay mode names
+# the composed store (`memory.composed`), absolute, in the main checkout's `settings.local.json`,
+# which Claude Code reads from every worktree.
+POINTER_KEY = "autoMemoryDirectory"
 # What `attach` says of a checkout with no `origin`, which binds as any other: the binding is the
 # id in the git common directory, and the remote is only what the records note beside it.
 NO_ORIGIN_NOTE = "this checkout has no `origin` remote, so the binding records none"
@@ -262,7 +261,8 @@ class AttachLedger:
 
     - `rules` may only be `.codex/rules/<file>`, the one place `permissions.codex_rules`
       enumerates, one path segment deep and never a dotfile; and
-    - `settings_keys` may only be `autoMemoryDirectory`, the one key `_harness_fallback` writes.
+    - `settings_keys` may only be `autoMemoryDirectory`, the pointer at the composed store and the
+      one key `_point` writes.
 
     `directories` is the third, and is bounded by membership in `CREATED_DIRS`. It records which
     of those directories this repository did **not** have before the attach, so `detach` can put
@@ -354,7 +354,7 @@ def _checked(
     # this; a name outside the list is a ledger no attach wrote, and that is a refusal.
     directories = tuple(d for d in _listed(raw, "directories", path) if isinstance(d, str))
     foreign = sum(1 for rule in rules if not _rule_is_writable(rule))
-    foreign += sum(1 for key in keys if key != FALLBACK_KEY)
+    foreign += sum(1 for key in keys if key != POINTER_KEY)
     foreign += sum(1 for name in directories if name not in CREATED_DIRS)
     if foreign:
         raise Refusal(
@@ -692,17 +692,6 @@ def named_placed(config: Config, paths: tuple[str, ...]) -> str:
     return ", ".join(named)
 
 
-def _fallback_store(owner: Path, config: Config, *, machine: Path | None) -> Store | None:
-    """The store the harness link and its settings-file fallback point at: the owning
-    checkout's, `owner`, which `_link_everywhere` points every checkout's harness link at.
-
-    One function, because two places ask it and must ask it alike: `_fallback_wanted` after the
-    links, which writes the file, and `_harness_waits`, which says why the link is missing. Each
-    used to resolve a store of its own, and from a linked worktree one asked the worktree's while
-    the other asked the owner's."""
-    return resolve(owner, config, machine=machine)
-
-
 def _write_ledger(
     root: Path, planned: AttachPlan, settings_keys: tuple[str, ...], render: Rendered | None
 ) -> None:
@@ -978,90 +967,19 @@ def _link_everywhere(
 
 def _keys_in(document: str) -> tuple[str, ...]:
     """The settings keys `attach` owns that a settings document holds."""
-    return (FALLBACK_KEY,) if FALLBACK_KEY in settings_document(document) else ()
+    return (POINTER_KEY,) if POINTER_KEY in settings_document(document) else ()
 
 
-def _recorded_keys(root: Path) -> tuple[str, ...]:
-    """The settings keys `attach` owns that `.claude/settings.local.json` holds *right now*.
-
-    Read back from the file rather than carried out of the run that wrote it, because
-    `settings_keys` is a claim about state that persists. Carried out of the run, it would be the
-    key only when this run had just written it — so the second attach after a fallback would
-    reset the record to `[]` while the key was still in the file, and `detach` would then leave
-    it there for good.
-    """
-    return _keys_in(local_document(root))
-
-
-def _fallback_wanted(
-    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
-) -> str | None:
-    """The store directory the fallback would record, or `None` when the gate does not want the
-    harness link or the link already points at the store.
-
-    The store is the owning checkout's, `owner`, which is the one `_link_everywhere` points every
-    checkout's harness link at. Resolved against `root` instead, a linked worktree answered with
-    its own link tree, a different directory: the link just made never matched it, and the run
-    said the link could not be created and recorded the fallback beside it."""
-    store = _fallback_store(owner, config, machine=machine)
-    if store is None or not harness_link_needed(store, config):
-        return None
-    harness = harness_memory_path(root, home)
-    if fsops.is_symlink(harness) and harness.readlink() == store.path.resolve():
-        return None
-    return str(store.path.resolve())
-
-
-def _harness_fallback(
-    root: Path, config: Config, *, owner: Path, machine: Path | None, home: Path | None
-) -> tuple[str, ...]:
-    """The settings-file fallback, taken only when no symlink could be made — and withdrawn here.
-
-    The link is preferred because a settings-file value is subject to workspace trust and a link
-    is not. It cannot be made on a filesystem that refuses symlinks, or where a real directory
-    already sits at the path — the case `worktree._link` refuses to clobber. The gate
-    is asked with the same predicate `worktree.harness_link_needed` answers for the link itself,
-    so a store the owner has not approved gets neither channel.
-
-    **And it is asked in both directions, in the same call**, which is `memory/worktree`'s rule
-    one hop over: "a gate evaluated once, at creation, over state that persists is not a gate".
-    A settings value is exactly such state, and this is the same channel that module calls "the
-    one hop that leaves stayfixed's gate" — the harness's own native reader, outside every
-    delimiter and every trust record this area controls. `_apply_harness_link` revokes the
-    *symlink* when the record lapses; a key that outlived it would let a `git pull` that added one
-    note shut every channel except the one pointing the harness straight at the new bytes.
-
-    The two arms that return without writing are the two that would otherwise leak: the link is
-    not needed, and the symlink exists so the fallback is not warranted. Both take the key back
-    out. The answer is what the file holds afterwards, so the caller's ledger is the file's own
-    state rather than a memory of this run.
-
-    **This is the one place `attach` removes a file**, and it is worth saying out loud rather
-    than leaving to be discovered. Withdrawing the key can empty `.claude/settings.local.json`,
-    and `{}` is not what that file looked like before the fallback was taken — it is a file
-    `attach` created and this is the last thing it takes away, which is the rule
-    `_withdraw_settings` already applies on the `detach` side and what keeps the round trip
-    byte-for-byte. It can only fire when stayfixed's own key was all the file held, so nothing of
-    the owner's is ever what goes.
-    """
-    wanted = _fallback_wanted(root, config, owner=owner, machine=machine, home=home)
-    document = settings_document(local_document(root))
-    if document.get(FALLBACK_KEY) == wanted:
-        # Includes the ordinary case where the key is absent and is not wanted: nothing to do,
-        # and rewriting a file the owner owns on a run that changed nothing is a write.
-        return _recorded_keys(root)
-    if wanted is None:
-        document.pop(FALLBACK_KEY, None)
-    else:
-        document[FALLBACK_KEY] = wanted
-    if document:
-        fsops.write_within(root, LOCAL_SETTINGS, settings_text(document, LOCAL_SETTINGS) + "\n")
-    else:
-        # `{}` is not what the file looked like before the fallback was taken, and a document
-        # holding only this key is one `attach` created — the same rule `_withdraw_settings`
-        # applies when `detach` empties it.
-        fsops.remove_within(root, LOCAL_SETTINGS)
-    return () if wanted is None else (FALLBACK_KEY,)
+def _point(main: Path, store: Path) -> bool:
+    """Write `POINTER_KEY` naming `store` into the main checkout's settings file, whether it was
+    written: the file is left alone where it already names `store`. Asked after the placed-path rule
+    has passed for that file (`_carry_out`), since the path names the whole binding id."""
+    document = settings_document(local_document(main))
+    if document.get(POINTER_KEY) == str(store):
+        return False
+    document[POINTER_KEY] = str(store)
+    fsops.write_within(main, LOCAL_SETTINGS, settings_text(document, LOCAL_SETTINGS) + "\n")
+    return True
 
 
 # How the sentences below ask for the store's approval: of the person at the machine, never of an
@@ -1106,10 +1024,10 @@ HARNESS_WITHDREW = "withdrew {count} harness memory link(s)"
 def _harness_waits(owner: Path, config: Config, *, machine: Path | None) -> str | None:
     """Why the gate kept the harness link from being made, or `None` where it did not:
     `harness_link_needed`, asked exactly as `_apply_harness_link` asks it, of the store the run
-    just linked, which is the owning checkout's (`_fallback_store`). `HARNESS_LAPSED` where an
+    just linked, which is the owning checkout's, `owner`. `HARNESS_LAPSED` where an
     approval is recorded and the store changed since it (`harness_gate`), and `HARNESS_WAITS`
     where none is."""
-    store = _fallback_store(owner, config, machine=machine)
+    store = resolve(owner, config, machine=machine)
     gate = GATE_OPEN if store is None else harness_gate(store, config)
     if gate == GATE_OPEN:
         return None
@@ -1151,7 +1069,7 @@ class AttachPlan:
 def attach(
     root: Path,
     *,
-    store: Path,
+    store: Path | None,
     machine: Path | None,
     runner: Runner,
     home: Path | None,
@@ -1280,7 +1198,7 @@ class Gates:
 def _plan(
     root: Path,
     *,
-    store: Path,
+    store: Path | None,
     machine: Path | None,
     home: Path | None,
     owner: Owner | None,
@@ -1372,6 +1290,9 @@ def plan_writes(
     if memory:
         for tree in checkouts:
             harness_anchor(tree, home)
+        # The main checkout's settings file, which `_point` reads after the writes: read now as it
+        # reads it, so a file it cannot read refuses while nothing is written.
+        settings_document(local_document(checkouts[0]))
     placed = placed_paths(config, (target for target, _ in codex_rules(binding)), memory=memory)
     # One rule for every placed path: none tracked, asked here above every write, and each ignored,
     # asked once the block stands (`_carry_out`).
@@ -1424,9 +1345,9 @@ def _carry_out(
 
     What is still asked here is asked of what this run has just written, and cannot be asked
     before it: whether git ignores each placed path once the block stands, whether the store
-    resolves once the link tree stands, and whether the harness link or the settings fallback is
-    wanted once it does. A write that itself fails is the other way this can stop after the first
-    write.
+    resolves once the link tree stands, and whether the harness link is wanted once it does; the
+    composed store and its pointer follow the links. A write that itself fails is the other way
+    this can stop after the first write.
     """
     config, binding, previous = planned.config, planned.binding, planned.previous
     if planned.hidden is not None:
@@ -1445,7 +1366,9 @@ def _carry_out(
     written = planned.settings is not None
     if planned.settings is not None:
         fsops.write_within(root, LOCAL_SETTINGS, planned.settings)
-    carried = planned.carried
+    # The pointer is recorded before it is written, so a run that stops on the way leaves `detach`
+    # a record of it; with no notes linked, what an earlier attach left in the file stays recorded.
+    carried = (POINTER_KEY,) if planned.memory else planned.carried
     recorded = previous.render if previous is not None else None
     _write_ledger(root, planned, carried, recorded)
     # The binding: the id in the git common directory and the machine's record of it, then the
@@ -1502,22 +1425,17 @@ def _carry_out(
     if not planned.memory:
         return said(written)
     owner = planned.checkouts[0]
-    keys = _harness_fallback(root, config, owner=owner, machine=machine, home=home)
-    if keys != carried:
-        _write_ledger(root, planned, keys, recorded)
-        written = True
+    # The composed store, rebuilt, and the one key that points the harness at it, in the main
+    # checkout's settings file, whose placed-path rule passed above; the ledger already records the
+    # key (`carried`), so a run that stops here leaves `detach` able to take it back.
+    written = _point(owner, build_composed(binding.overlay, binding.project, id)) or written
     if links.revoked:
         notes.append(HARNESS_WITHDREW.format(count=len(links.revoked)))
     if links.refresh_refused:
         notes.append(REFRESH_REFUSED)
-    if keys:
-        notes.append(
-            f"the harness memory link could not be created, so {FALLBACK_KEY} was recorded in "
-            f"{LOCAL_SETTINGS} instead; `stayfixed detach` removes it"
-        )
     # Asked only here, where its answer is said: it reads the store's trust record and digests
     # its notes, and a run that says something else above has no use for that.
-    elif (waits := _harness_waits(owner, config, machine=machine)) is not None:
+    if (waits := _harness_waits(owner, config, machine=machine)) is not None:
         notes.append(waits)
     return said(written)
 
@@ -1670,6 +1588,9 @@ class Detached:
     # The rendered plugin's render directory was removed, Claude Code having been told to forget
     # whatever of it the main checkout's settings file named.
     delivery_removed: bool = False
+    # The composed store was kept, its links taken, because it holds a file that is not a link: a
+    # note the harness wrote there, which nothing of stayfixed's placed.
+    store_kept: bool = False
 
 
 def _emptied(raw: dict[str, Any]) -> dict[str, Any]:
@@ -1703,7 +1624,7 @@ class SettingsWithdrawal:
 
 
 def _planned_settings(root: Path, recorded: AttachLedger) -> SettingsWithdrawal:
-    """Take exactly the recorded rules, the recorded entries and the fallback key back out.
+    """Take exactly the recorded rules, the recorded entries and the pointer key back out.
 
     The allow rules come from the ledger and never from a guess at their content: that is the
     whole reason the ledger exists. So do the hook entries an earlier release merged, through
@@ -2086,6 +2007,12 @@ def detach(
         if fsops.is_file(root / rule):
             fsops.remove_within(root, rule)
             rules_removed.append(rule)
+    # The pointer, which `attach` writes into the main checkout's settings file from any worktree:
+    # taken out of that file too where it is not this checkout's own and no other checkout is still
+    # attached, the rest of it as it is. That file was read as `_plugin_keys` reads it, above.
+    if plugin is not None and plugin[1] != root.resolve() and POINTER_KEY in recorded.settings_keys:
+        only = replace(recorded, allow=(), entries={}, settings_keys=(POINTER_KEY,))
+        _withdraw_settings(plugin[1], _planned_settings(plugin[1], only))
     # The mirror of `_link_everywhere`, and it had the mirror defect: `detach_main` was applied
     # to `--root` and the loop then skipped the owning checkout unconditionally, so a detach run
     # from a linked worktree withdrew that worktree's tree twice and left the main checkout's
@@ -2112,6 +2039,11 @@ def detach(
     if not kept and delivery is not None and (fsops.is_dir(delivery) or fsops.is_symlink(delivery)):
         _remove_render(delivery)
         removed = True
+    # The composed store the pointer named, derived from the id as the render is: its links, then
+    # the directory where nothing else is left.
+    store_kept = False
+    if not kept and id is not None and delivery is not None:
+        store_kept = not withdraw_composed(id)
     if hidden is not None:
         exclude.write(hidden)
     memory = _withdraw_memory_directories(root, trees, config, recorded)
@@ -2129,4 +2061,5 @@ def detach(
         kept,
         root.resolve() not in trees,
         removed,
+        store_kept,
     )

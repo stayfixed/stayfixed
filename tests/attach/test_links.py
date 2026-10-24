@@ -6,6 +6,7 @@ is `worktree.link`'s, unchanged. This module asserts that `attach` reaches both.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
@@ -18,7 +19,7 @@ from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import load
 from stayfixed.config.schema import Config
 from stayfixed.errors import Refusal
-from stayfixed.memory.api import PartialLink, harness_memory_path
+from stayfixed.memory.api import PartialLink, harness_memory_path, main_checkout
 from tests.attach.test_binding import CONFIG, DEFAULT_MEMORY, _machine
 from tests.gitfixture import git as _git
 from tests.runners import Recorder
@@ -59,13 +60,27 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def _attach(root: Path, store: Path, machine: Path, home: Path) -> Attached:
-    return attach(
+    """`attach`, then the main checkout's settings file as an attach left it before the composed
+    store: without `autoMemoryDirectory`. The harness reads the directory that key names whatever
+    stands at the harness memory path, so with it in place no state of the link tree or the harness
+    link that the cases built on this read is reachable; the pointer itself is held by
+    `tests/attach/test_write.py` and `tests/attach/test_detach.py`."""
+    attached = attach(
         root,
         store=store,
         machine=machine,
         runner=Recorder(),
         home=home,
     )
+    settings = main_checkout(root) / ".claude" / "settings.local.json"
+    if settings.is_file():
+        document = json.loads(settings.read_text(encoding="utf-8"))
+        document.pop("autoMemoryDirectory", None)
+        if document:
+            settings.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        else:
+            settings.unlink()
+    return attached
 
 
 def test_every_existing_worktree_is_linked(tmp_path: Path) -> None:
@@ -127,42 +142,6 @@ def test_a_partial_link_failure_carries_every_link_the_run_already_made(
     assert on_disk <= carried, f"made on disk and absent from .created: {on_disk - carried}"
 
 
-def test_the_harness_fallback_is_recorded_so_it_can_be_withdrawn(tmp_path: Path) -> None:
-    # `~/.claude/projects/<slug>/memory` has a fallback — `autoMemoryDirectory` in
-    # settings.local.json. The symlink is preferred, because a settings-file value is subject to
-    # workspace trust and a link is not, and the fallback is taken only when the link cannot be
-    # made; when it is, it goes into the same ledger as everything else, because a fallback nothing
-    # records is a setting that outlives its reason.
-    import json
-
-    from stayfixed.attach.api import ledger
-    from stayfixed.memory.api import resolve
-    from tests.approved import record
-
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    resolved = resolve(root, _config(root, machine), machine=machine)
-    assert resolved is not None
-    record(resolved, _config(root, machine))
-    # A real directory where the link belongs: the case `_link` refuses to clobber, and the one
-    # that takes the fallback alongside a filesystem that has no symlinks.
-    harness = harness_memory_path(root, home)
-    harness.mkdir(parents=True)
-    attached = _attach(root, store, machine, home)
-    settings = json.loads((root / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
-    assert settings["autoMemoryDirectory"] == str(resolved.path.resolve())
-    assert ledger(root).settings_keys == ("autoMemoryDirectory",)
-    assert any("autoMemoryDirectory" in note for note in attached.notes)
-
-
-def _settings(root: Path) -> dict[str, object]:
-    import json
-
-    path = root / ".claude" / "settings.local.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-
-
 def _trusted(root: Path, machine: Path) -> None:
     from stayfixed.memory.api import resolve
     from tests.approved import record
@@ -171,85 +150,6 @@ def _trusted(root: Path, machine: Path) -> None:
     store = resolve(root, config, machine=machine)
     assert store is not None
     record(store, config)
-
-
-def test_a_second_attach_neither_forgets_the_fallback_nor_lets_it_outlive_its_reason(
-    tmp_path: Path,
-) -> None:
-    # `memory/worktree.py`'s own rule, one function over: "a gate evaluated once, at creation,
-    # over state that persists is not a gate". A settings value is exactly such state, and this
-    # is the channel that module calls the one hop that leaves its gate — read by the harness's
-    # native reader, outside every delimiter and trust record stayfixed controls.
-    #
-    # The sequence measured: attach with a real directory where the link belongs, so the
-    # fallback is taken and recorded; then a `git pull` adds a note, which lapses the trust
-    # record. `_apply_harness_link` correctly revokes the *symlink* channel — and the key used
-    # to survive, with `_write_ledger` handed `()` on every run so the ledger forgot it too. The
-    # harness went on reading the new bytes through a setting nothing recorded and `detach`
-    # could no longer remove.
-    #
-    # Mutation: `mutations/`'s "the settings fallback outlives the gate that allowed it" —
-    # make `_harness_fallback` return early when the link is no longer needed.
-    from stayfixed.attach.api import ledger
-
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    harness_memory_path(root, home).mkdir(parents=True)
-    _attach(root, store, machine, home)
-    # Non-vacuous: the rest of this is only about a lapse if the fallback was taken at all.
-    assert "autoMemoryDirectory" in _settings(root)
-    assert ledger(root).settings_keys == ("autoMemoryDirectory",)
-
-    (tmp_path / "overlay" / "common" / "memory" / "pulled.md").write_text("# n\n", "utf-8")
-    _attach(root, store, machine, home)
-    assert "autoMemoryDirectory" not in _settings(root)
-    assert ledger(root).settings_keys == ()
-
-
-def test_the_fallback_goes_when_the_symlink_it_stood_in_for_can_be_made(tmp_path: Path) -> None:
-    # The other arm of the same gate, and the one that needs no trust record to lapse. The
-    # fallback exists only "when the link cannot be made"; once the real directory in the way is
-    # gone the link is made and the setting has no reason left. It used to be left in the file
-    # while the ledger was reset to `[]` around it, so `detach` left it behind for good — two
-    # readers pointed at the store, one of them recorded nowhere.
-    from stayfixed.attach.api import ledger
-
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    harness = harness_memory_path(root, home)
-    harness.mkdir(parents=True)
-    _attach(root, store, machine, home)
-    assert "autoMemoryDirectory" in _settings(root)
-
-    harness.rmdir()
-    _attach(root, store, machine, home)
-    assert harness.is_symlink()
-    assert "autoMemoryDirectory" not in _settings(root)
-    assert ledger(root).settings_keys == ()
-
-
-def test_a_second_attach_that_changes_nothing_still_records_the_standing_fallback(
-    tmp_path: Path,
-) -> None:
-    # The vacuity guard for the two cases above: a `_harness_fallback` that simply never
-    # recorded the key would pass both. While the real directory is still in the way, every
-    # later attach must go on recording the key that is still in the file — which is the defect
-    # in its original direction, since the ledger is what `detach` reads.
-    from stayfixed.attach.api import ledger
-
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    harness_memory_path(root, home).mkdir(parents=True)
-    _attach(root, store, machine, home)
-    _attach(root, store, machine, home)
-    assert "autoMemoryDirectory" in _settings(root)
-    assert ledger(root).settings_keys == ("autoMemoryDirectory",)
 
 
 def test_attaching_from_a_linked_worktree_links_the_main_checkout_too(tmp_path: Path) -> None:
@@ -270,96 +170,6 @@ def test_attaching_from_a_linked_worktree_links_the_main_checkout_too(tmp_path: 
     assert (side / "docs" / "memory" / "developer").is_symlink()
 
 
-def test_attaching_from_a_linked_worktree_takes_no_fallback_for_the_link_it_made(
-    tmp_path: Path,
-) -> None:
-    # The worktree's harness link points at the store the owning checkout holds, which is what
-    # `link` hands every worktree; the fallback compared it with the worktree's own resolved
-    # store instead, a different directory, so a run that made the link still said "the harness
-    # memory link could not be created" and recorded `autoMemoryDirectory`. Asked of the store
-    # the link was made to, it takes none. Where a real directory does stand in the way, the
-    # fallback names that same store. Mutation: `mutations/`'s "the settings fallback compares a
-    # worktree's link with that worktree's own store".
-    from stayfixed.attach.api import ledger
-    from stayfixed.memory.api import resolve
-
-    root, store, machine = _bound(tmp_path)
-    side = tmp_path / "side"
-    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    home = tmp_path / "home"
-    _attach(side, store, machine, home)
-    _trusted(root, machine)
-    _trusted(side, machine)
-    attached = _attach(side, store, machine, home)
-    assert harness_memory_path(side, home).is_symlink()
-    assert "autoMemoryDirectory" not in _settings(side)
-    assert ledger(side).settings_keys == ()
-    assert not [note for note in attached.notes if "could not be created" in note]
-
-    owner = resolve(root, _config(root, machine), machine=machine)
-    assert owner is not None
-    harness_memory_path(side, home).unlink()
-    harness_memory_path(side, home).mkdir()
-    _attach(side, store, machine, home)
-    assert _settings(side)["autoMemoryDirectory"] == str(owner.path.resolve())
-
-
-def _approved_only_by_the_owner(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
-    """A linked worktree attached once, whose owning checkout's store is approved and whose own
-    is not, with a real directory where the worktree's harness link goes: the run takes the
-    settings-file fallback, pointed at the owner's store. Returns `(root, side, store, machine,
-    home)`."""
-    root, store, machine = _bound(tmp_path)
-    side = tmp_path / "side"
-    _git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    home = tmp_path / "home"
-    _attach(side, store, machine, home)
-    _trusted(root, machine)
-    harness_memory_path(side, home).mkdir(parents=True)
-    return root, side, store, machine, home
-
-
-def test_attaching_from_a_linked_worktree_hides_the_fallback_the_owners_approval_takes(
-    tmp_path: Path,
-) -> None:
-    # The fallback is written after the links, and asks the owning checkout's store, the one every
-    # checkout's harness link points at. The settings file it goes into is placed, and hidden, by
-    # every run above the first write; when the plan asked the worktree's own store whether to
-    # place it, with only the owner's approved, the run wrote this machine's absolute store path
-    # into a file `git status` offered for commit.
-    from stayfixed.memory.api import resolve
-    from tests.attach.test_write import _check_ignore
-
-    root, side, store, machine, home = _approved_only_by_the_owner(tmp_path)
-    _attach(side, store, machine, home)
-    owner = resolve(root, _config(root, machine), machine=machine)
-    assert owner is not None
-    # Non-vacuous: the fallback was taken, and named the owner's store.
-    assert _settings(side)["autoMemoryDirectory"] == str(owner.path.resolve())
-    assert _check_ignore(side, ".claude/settings.local.json")
-    assert ".claude" not in _git(side, "status", "--porcelain", "--untracked-files=all")
-
-
-def test_reattaching_from_a_linked_worktree_hides_the_fallback_the_owners_record_takes(
-    tmp_path: Path,
-) -> None:
-    # The same before any link tree stands, which is every attach after a detach: the store the
-    # run goes on to link and write the fallback for is the owning checkout's, and the file is
-    # hidden whatever the plan could ask before the tree stands.
-    from stayfixed.attach.write import detach
-    from tests.attach.test_write import _check_ignore
-
-    root, side, store, machine, home = _approved_only_by_the_owner(tmp_path)
-    harness_memory_path(side, home).rmdir()
-    detach(side, machine=machine, runner=Recorder(), home=home)
-    # Non-vacuous: the detach took every link tree back, so nothing resolves at plan time.
-    assert not (root / "docs" / "memory" / "developer").is_symlink()
-    harness_memory_path(side, home).mkdir(parents=True)
-    _attach(side, store, machine, home)
-    assert "autoMemoryDirectory" in _settings(side)
-    assert _check_ignore(side, ".claude/settings.local.json")
-
-
 def test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does(
     tmp_path: Path,
 ) -> None:
@@ -378,33 +188,6 @@ def test_attaching_from_a_linked_worktree_says_the_link_waits_only_when_it_does(
     attached = _attach(side, store, machine, home)
     assert harness_memory_path(side, home).is_symlink()
     assert HARNESS_WAITS not in attached.notes
-
-
-def test_an_attach_that_records_the_fallback_never_asks_why_the_link_waits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Why the gate kept the harness link back is said only where no fallback line is, and asking
-    # it reads the store's trust record and digests its notes. It was asked on every attach, the
-    # runs that record the settings-file fallback included, and its answer thrown away there.
-    # Mutation (oracle): `mutations/`'s "attach asks why the harness link waits on every run".
-    from stayfixed.attach import write
-
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    harness_memory_path(root, home).mkdir(parents=True)
-    asked: list[Path] = []
-
-    def waits(owner: Path, config: Config, *, machine: Path | None) -> str | None:
-        asked.append(owner)
-        return None
-
-    monkeypatch.setattr(write, "_harness_waits", waits)
-    attached = _attach(root, store, machine, home)
-    # Non-vacuous: this run is the one that records the fallback.
-    assert any(write.FALLBACK_KEY in note for note in attached.notes)
-    assert asked == []
 
 
 def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
@@ -442,57 +225,6 @@ def test_detaching_from_a_linked_worktree_withdraws_the_main_checkouts_tree_too(
         assert not os.path.lexists(harness_memory_path(checkout, home)), checkout
     projects = home / ".claude" / "projects"
     assert [path for path in projects.rglob("*") if path.is_symlink()] == []
-
-
-def test_withdrawing_the_fallback_takes_the_settings_file_with_it_when_nothing_is_left(
-    tmp_path: Path,
-) -> None:
-    # The one case in which `attach` removes a file, pinned rather than left to be discovered.
-    # `{}` is not what `.claude/settings.local.json` looked like before the fallback was taken —
-    # it is a file `attach` itself created — so the last thing withdrawn takes it away, which is
-    # the rule `detach`'s own `_withdraw_settings` already applies and what keeps the round trip
-    # byte-for-byte.
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    harness = harness_memory_path(root, home)
-    harness.mkdir(parents=True)
-    _attach(root, store, machine, home)
-    # Non-vacuous: the file exists, and the key is the only thing in it.
-    assert list(_settings(root)) == ["autoMemoryDirectory"]
-
-    harness.rmdir()
-    _attach(root, store, machine, home)
-    assert not (root / ".claude" / "settings.local.json").exists()
-
-
-def test_withdrawing_the_fallback_never_takes_anything_else_out_of_that_file(
-    tmp_path: Path,
-) -> None:
-    # The guard on the case above, and the one that matters: the removal may only ever fire when
-    # stayfixed's own key was the file's entire contents. An owner's own setting beside it keeps
-    # the file, and keeps itself.
-    root, store, machine = _bound(tmp_path)
-    home = tmp_path / "home"
-    (root / ".claude").mkdir(exist_ok=True)
-    (root / ".claude" / "settings.local.json").write_text(
-        '{\n  "permissions": {\n    "deny": [\n      "Bash(curl:*)"\n    ]\n  }\n}\n', "utf-8"
-    )
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    harness = harness_memory_path(root, home)
-    harness.mkdir(parents=True)
-    _attach(root, store, machine, home)
-    assert "autoMemoryDirectory" in _settings(root)
-
-    harness.rmdir()
-    _attach(root, store, machine, home)
-    document = _settings(root)
-    assert "autoMemoryDirectory" not in document
-    permissions = document["permissions"]
-    assert isinstance(permissions, dict)
-    assert permissions["deny"] == ["Bash(curl:*)"]
 
 
 def test_a_worktree_whose_directory_is_gone_is_skipped_rather_than_blamed_on_git(

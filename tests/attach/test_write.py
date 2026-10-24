@@ -76,6 +76,9 @@ def _never_the_developers_own_claude(monkeypatch: pytest.MonkeyPatch) -> None:
 
 LEDGER = ".stayfixed/local/attach.json"
 SETTINGS = ".claude/settings.local.json"
+# The settings key that points the harness at the composed store, which every overlay-mode attach
+# writes beside whatever else the case is about.
+POINTER = "autoMemoryDirectory"
 RULE = "Bash(uv run pytest:*)"
 ENTRY = {"type": "command", "command": "echo hello"}
 
@@ -196,11 +199,11 @@ def test_the_same_repository_under_another_url_form_attaches_with_no_note(
     assert record.read_bytes() == before
 
 
-def test_an_attach_of_an_overlay_that_grants_nothing_binds_and_writes_no_settings(
+def test_an_attach_of_an_overlay_that_grants_nothing_binds_and_writes_only_the_memory_pointer(
     tmp_path: Path,
 ) -> None:
     # An overlay with no allow rules and no hooks, the state of a freshly created one: the run
-    # binds and leaves the settings file unwritten.
+    # binds and writes nothing into the settings file but the pointer at the composed store.
     root, store, machine = _attachable(tmp_path)
     attached = attach(
         root,
@@ -210,7 +213,8 @@ def test_an_attach_of_an_overlay_that_grants_nothing_binds_and_writes_no_setting
         home=tmp_path / "home",
     )
     assert attached.binding_recorded
-    assert not attached.settings_written
+    assert attached.settings_written
+    assert list(json.loads((root / SETTINGS).read_text(encoding="utf-8"))) == [POINTER]
     assert (root / LEDGER).is_file()
 
 
@@ -440,7 +444,7 @@ def test_after_attach_the_local_settings_file_holds_the_allow_rules_and_no_hook_
         home=tmp_path / "home",
     )
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
-    assert document == {"permissions": {"allow": [RULE]}}
+    assert document.pop(POINTER) and document == {"permissions": {"allow": [RULE]}}
     assert ledger(root).entries == {}
 
 
@@ -480,6 +484,7 @@ def test_an_attach_withdraws_the_hook_entries_its_earlier_ledger_records_and_no_
     )
     assert attached.settings_written
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert document.pop(POINTER)
     assert document == {"hooks": {"SessionStart": [{"hooks": [mine, unrecorded]}]}}
     assert ledger(root).entries == {}
 
@@ -500,14 +505,61 @@ def test_attach_delivers_whatever_the_memory_mode(tmp_path: Path) -> None:
     assert (root / LEDGER).is_file()
 
 
+def test_attach_points_the_harness_at_the_composed_store_in_the_main_checkout(
+    tmp_path: Path,
+) -> None:
+    # One settings key reaches every worktree: `autoMemoryDirectory` in the main checkout's
+    # excluded settings file, absolute, naming the store under this machine's data directory whose
+    # group links resolve into the overlay. The ledger records the key, so `detach` takes it back.
+    from stayfixed import binding
+    from stayfixed.memory.composed import store_directory
+
+    root, store, machine = _attachable(tmp_path)
+    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    id = binding.read_id(root)
+    assert id is not None
+    composed = store_directory(id)
+    assert (root / SETTINGS).is_file()
+    settings = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert settings["autoMemoryDirectory"] == str(composed)
+    assert (composed / "developer").resolve() == (store.parents[2] / "common/memory").resolve()
+    assert ledger(root).settings_keys == ("autoMemoryDirectory",)
+
+
+def test_attach_needs_no_store_argument(tmp_path: Path) -> None:
+    # The store is derived: this project's share of the overlay the machine records.
+    from stayfixed import binding
+
+    root, _, machine = _attachable(tmp_path)
+    code, out, err = cli(root, tmp_path, "attach", machine=machine)
+    assert code == 0, out + err
+    found = binding.bound_project(root)
+    assert found is not None and found.project == "p"
+
+
+def test_a_mode_other_than_overlay_writes_no_memory_pointer(tmp_path: Path) -> None:
+    # Only the overlay's notes are composed; a repository that keeps its own store gets no key.
+    root, store, machine = _attachable(tmp_path, allow=(RULE,))
+    config = root / CONFIG_FILE
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('mode = "overlay"', 'mode = "local-only"'),
+        encoding="utf-8",
+    )
+    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    assert "autoMemoryDirectory" not in json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert ledger(root).settings_keys == ()
+
+
 def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
     tmp_path: Path,
 ) -> None:
     # The guard for the clause above: `owned_ids` widened the early return, and a widening that
     # went too far would reformat a file the owner owns on every run and report itself as a
-    # write. An overlay that grants nothing and a project that was never attached still touch
-    # nothing.
+    # write. A second attach of an overlay that grants nothing touches nothing: the pointer the
+    # first one wrote is already there.
     root, store, machine = _attachable(tmp_path)
+    attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    before = (root / SETTINGS).read_bytes()
     attached = attach(
         root,
         store=store,
@@ -516,7 +568,7 @@ def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
         home=tmp_path / "home",
     )
     assert not attached.settings_written
-    assert not (root / SETTINGS).exists()
+    assert (root / SETTINGS).read_bytes() == before
 
 
 def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
@@ -977,7 +1029,7 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
         home=tmp_path / "home",
     )
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
-    assert document == {"permissions": {"allow": [RULE]}}
+    assert document.pop(POINTER) and document == {"permissions": {"allow": [RULE]}}
     assert ledger(root).allow == (RULE,)
 
 

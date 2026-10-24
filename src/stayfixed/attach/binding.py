@@ -391,7 +391,7 @@ def _bound(root: Path, config: Config, overlay: Path) -> Binding:
 
 
 def read_binding(
-    root: Path, *, store: Path, machine: Path | None, config: Config | None = None
+    root: Path, *, store: Path | None, machine: Path | None, config: Config | None = None
 ) -> Binding:
     """The binding this repository would attach under, or a refusal that it may not.
 
@@ -405,13 +405,16 @@ def read_binding(
     disagree if the file changed in between. `binding_for` is the seam for a caller that has a
     `Config` and no `--store` to check; this is the seam for one that has both. For the same
     reason the overlay root is read once, and `--store` is checked against the root the binding
-    is then made under (`_bound`).
+    is then made under (`_bound`). `store` is `None` where the caller named none, and is then this
+    project's own directory in that overlay, derived and never read.
     """
     config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)
     if overlay is None:
         raise Refusal(NO_OVERLAY)
     expected = permitted_roots(overlay, config.project.name)[1]
+    if store is None:
+        return _bound(root, config, overlay)
     try:
         resolved: Path | None = fsops.resolved(store)
     except OSError:

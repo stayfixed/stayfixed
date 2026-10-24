@@ -649,7 +649,11 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # where the binding record is. Under the suite's own `HOME` the row found no record, read the
 # checkout as unbound and warned, and asked nothing a bound checkout's rows ask, so the nine it
 # counted were not a green installation's.
-DOCTOR_LAUNCHES = 14
+#
+# Thirteen and not fourteen since `attach` points the harness at the composed store: the row reads
+# the pointer, which asks git for the common directory where the binding id is kept, and no longer
+# asks which checkout owns this one to judge the harness memory path the harness does not read.
+DOCTOR_LAUNCHES = 13
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -706,11 +710,11 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
         True,
     ), attached
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the fourteen the paragraph names, not fourteen of something else: one wrapper
-    # probe, and thirteen `git` questions. Asserted by shape rather than by full argv, because
+    # And they are the thirteen the paragraph names, not thirteen of something else: one wrapper
+    # probe, and twelve `git` questions. Asserted by shape rather than by full argv, because
     # each `git` call carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 13
+    assert sum(1 for argv in launched if argv[0] == "git") == 12
 
 
 def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) -> None:
@@ -718,6 +722,12 @@ def test_doctor_is_red_when_the_memory_path_is_a_real_directory(tmp_path: Path) 
     # directory and assert `attached` goes red. This is the shape one existing checkout already
     # has, which is why it is named rather than left to a general "not attached".
     walk = _install_path(tmp_path)
+    # Without the pointer at the composed store, as an earlier release's attach left the checkout:
+    # the harness reads the directory that key names whatever stands at the harness memory path.
+    settings = walk.root / ".claude" / "settings.local.json"
+    document = json.loads(settings.read_text(encoding="utf-8"))
+    del document["autoMemoryDirectory"]
+    settings.write_text(json.dumps(document), encoding="utf-8")
     harness = harness_memory_path(walk.root, walk.home)
     harness.mkdir(parents=True, exist_ok=True)
     attached = next(row for row in _doctor(walk) if row["name"] == "attached")

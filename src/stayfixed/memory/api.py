@@ -12,7 +12,7 @@ what an area might be said to need, which is a list that grows names nothing imp
 that needs something absent from this list grows it deliberately, in a commit that says which
 area and why — it does not import a private module of this area.
 
-Thirty-two names are imported from outside this area today, by the `attach` and `overlay` areas
+Thirty-five names are imported from outside this area today, by the `attach` and `overlay` areas
 and by this repository's tests: the resolver (`resolve`, `permitted_roots` and `main_checkout`),
 the overlay layout `attach` writes and `overlay` renders (`PROJECTS`, `PROJECT_RECORD`,
 `STORE_DIR`, `COMMON_GROUP`), the one reader of the overlay's project record, which `attach`
@@ -34,7 +34,10 @@ binding's one classifier and the states it answers in (`binding_state`, `UNBOUND
 which `attach`'s own doctor row reads), which `attach` answers the binding question with instead
 of a second classifier of its own, and the note a moved `origin` earns (`origin_note`), which
 `attach` and its session-start line say, the bundle slots
-`tests/hooks/test_hooks_json.py` holds the hooks file to (`SLOTS`), the note store a `doctor` row
+`tests/hooks/test_hooks_json.py` holds the hooks file to (`SLOTS`), the composed store `attach`
+builds, points the harness at and `detach` withdraws, and its directory, which the `attach` area's
+`doctor.py` compares the pointer with (`build_composed`, `composed_directory`,
+`withdraw_composed`), the note store a `doctor` row
 reads, resolved once per area per report (`Answers`, which the `attach` area's own `doctor.py`
 creates for its row), and
 the trust region `tests/test_install_path.py` asserts end to end (`DELIMITER`, `markers`). The
@@ -102,6 +105,9 @@ surface".
 
 from stayfixed.memory.answers import Answers
 from stayfixed.memory.bundles import SLOTS
+from stayfixed.memory.composed import build as build_composed
+from stayfixed.memory.composed import store_directory as composed_directory
+from stayfixed.memory.composed import withdraw as withdraw_composed
 from stayfixed.memory.store import (
     BINDING_STATES,
     BOUND,
@@ -170,7 +176,9 @@ __all__ = [
     "approval_recorded",
     "attach_main",
     "binding_state",
+    "build_composed",
     "changed",
+    "composed_directory",
     "detach_main",
     "harness_anchor",
     "harness_gate",
@@ -189,5 +197,6 @@ __all__ = [
     "read_binding_record",
     "require_readable_record",
     "resolve",
+    "withdraw_composed",
     "wrap",
 ]
