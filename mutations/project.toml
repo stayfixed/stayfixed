@@ -873,9 +873,18 @@ reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_
 [[mutation]]
 name = "an attached repository is counted as files kept out of git instead of being told to detach"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if fsops.is_file(contained(root, ATTACH_LEDGER)):"
+before = "    if _attached(root):"
 after = "    if False:"
 reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
+
+# `attach` keeps its ledger in the main checkout from every worktree, so a linked worktree's
+# uninstall asks the main checkout's.
+[[mutation]]
+name = "uninstall asks only this checkout for attach's ledger"
+file = "src/stayfixed/project/uninstall.py"
+before = "for checkout in (root, main))"
+after = "for checkout in (root,))"
+reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attached_repository_is_refused_too"]
 
 # `uninstall` replans the write-once pass over the body the footprint pass leaves, so an untouched
 # footprint leaves only what was there before.
@@ -2119,8 +2128,8 @@ reddens = ["tests/project/test_rewrite.py::test_a_restore_that_fails_too_still_n
 [[mutation]]
 name = "uninstall asks for attach's ledger past contained"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if fsops.is_file(contained(root, ATTACH_LEDGER)):"
-after = "    if fsops.is_file(root / ATTACH_LEDGER):"
+before = "fsops.is_file(contained(checkout, ATTACH_LEDGER))"
+after = "fsops.is_file(checkout / ATTACH_LEDGER)"
 reddens = [
   "tests/project/test_footprint_commands.py::test_uninstall_refuses_a_local_directory_linked_where_nobody_may_search_by_name",
 ]

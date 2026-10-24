@@ -14,15 +14,18 @@ from stayfixed.memory.bundles import (
     CAP_MARGIN,
     SLOTS,
     STANDING_LEAD,
+    VOLATILE_LEAD,
     Bundle,
     blocks,
     fit,
     render,
     split,
 )
-from stayfixed.memory.store import Store, resolve
+from stayfixed.memory.notes import walk
+from stayfixed.memory.reviewed import promote
+from stayfixed.memory.store import Store, composed_directory, resolve
 from stayfixed.memory.trust import DELIMITER
-from tests.approved import record
+from tests.cli import cli
 from tests.gitfixture import git
 
 CONFIG = """
@@ -68,6 +71,7 @@ def a_store(
     mode: str = "overlay",
     startup_words: int = 1600,
     volatile_words: int = 2500,
+    reviewed: bool = True,
 ) -> tuple[Store, Config]:
     root = tmp_path / "project"
     base = (tmp_path / "overlay" / "memory") if mode == "overlay" else (root / "docs" / "memory")
@@ -91,10 +95,19 @@ def a_store(
         encoding="utf-8",
     )
     config = load(root, machine=tmp_path / "absent.toml")
-    # A machine file of this test's own. Without one the store carries `machine=None`, and
-    # `may_inject` would consult the developer's real `~/.config/stayfixed/trust.json`.
+    # A machine file of this test's own. Without one the store carries `machine=None`, and a
+    # reader of the overlay root would consult the developer's real machine file.
     store = Store(base, mode, root, {g: base / g for g in GROUPS}, machine=a_machine(tmp_path))
+    if reviewed:
+        review(store)
     return store, config
+
+
+def review(store: Store) -> None:
+    """Promote every note the store holds now, as `memory promote --changed` does: a note counts
+    as a standing rule only once promoted (`memory.reviewed`), and these cases are about what the
+    bundles do with the owner's notes."""
+    promote(store, walk(store.path, list(store.groups)).notes)
 
 
 def a_machine(tmp_path: Path) -> Path:
@@ -122,6 +135,7 @@ def test_a_volatile_note_is_not_a_standing_rule_even_when_it_is_flagged(tmp_path
     (store.groups["project-volatile"] / "loud.md").write_text(
         note("loud", startup="-100"), encoding="utf-8"
     )
+    review(store)
     assert "loud" not in "\n".join(blocks(Bundle.STANDING_RULES, store, config))
 
 
@@ -143,13 +157,23 @@ def test_volatile_notes_degrade_to_one_line_each_over_budget(tmp_path: Path) -> 
     assert "Body." not in text
 
 
-def test_notes_that_live_in_the_repository_inject_nothing_before_trust(tmp_path: Path) -> None:
-    store, config = a_store(tmp_path, mode="local-only")
+def test_an_in_repo_store_reaches_volatile_notes_as_data_and_never_the_standing_rules(
+    tmp_path: Path,
+) -> None:
+    # A store committed to the repository, with nothing promoted: its volatile notes reach the
+    # session as the harness delivers `CLAUDE.md`, still marked as data, and a note claiming
+    # `startup: 1` is not a standing rule, whatever it says about itself; it arrives with the
+    # volatile notes, labelled and as data. Only the lead, stayfixed's own words, is outside a
+    # region.
+    store, config = a_store(tmp_path, mode="in-repo", reviewed=False)
+    volatile = blocks(Bundle.VOLATILE_NOTES, store, config)
+    assert volatile[0] == VOLATILE_LEAD
+    assert volatile[1:] != []
+    assert all(block.startswith(DELIMITER) for block in volatile[1:])
+    assert "fresh" in "\n".join(volatile)
+    assert "### first [unreviewed]" in "\n".join(volatile)
     assert blocks(Bundle.STANDING_RULES, store, config) == []
-    record(store, config)
-    produced = blocks(Bundle.STANDING_RULES, store, config)
-    assert produced != []
-    assert all(block.startswith(DELIMITER) for block in produced)
+    assert not (tmp_path / "trust.json").exists()
 
 
 def test_an_overlay_store_is_not_wrapped_as_repository_data(tmp_path: Path) -> None:
@@ -203,6 +227,7 @@ def test_a_note_sized_to_the_margins_edge_is_flagged_oversized(tmp_path: Path) -
     (store.groups["developer"] / f"{name}.md").write_text(
         note(name, startup="1", body=body), encoding="utf-8"
     )
+    review(store)
     report = fit(Bundle.STANDING_RULES, store, config)
     assert report.oversized == 1
     assert report.fits is False
@@ -214,6 +239,7 @@ def test_fit_reports_overflow_and_an_oversized_part_separately(tmp_path: Path) -
     (store.groups["developer"] / "huge.md").write_text(
         note("huge", startup="9", body="word " * 30_000), encoding="utf-8"
     )
+    review(store)
     report = fit(Bundle.STANDING_RULES, store, config)
     assert report.oversized == 1
     assert report.fits is False
@@ -237,6 +263,7 @@ def test_a_volatile_set_sized_exactly_at_the_budget_is_still_injected_in_full(
     (store.groups["project-volatile"] / "solo.md").write_text(
         note("solo", as_of=today, body="word " * (budget - heading_words)), encoding="utf-8"
     )
+    review(store)
     text = "\n".join(blocks(Bundle.VOLATILE_NOTES, store, config))
     assert "outgrown its budget" not in text
     assert text.count("word") == budget - heading_words
@@ -245,6 +272,7 @@ def test_a_volatile_set_sized_exactly_at_the_budget_is_still_injected_in_full(
     (store.groups["project-volatile"] / "solo.md").write_text(
         note("solo", as_of=today, body="word " * (budget - heading_words + 1)), encoding="utf-8"
     )
+    review(store)
     assert "outgrown its budget" in "\n".join(blocks(Bundle.VOLATILE_NOTES, store, config))
 
 
@@ -259,16 +287,15 @@ def test_an_oversized_part_is_withheld_rather_than_delivered_unterminated(
     # the lead sentence "It ends at the matching end marker and nowhere else", and no end
     # marker — the exact state `trust.wrap`'s nonce region exists to make unreachable.
     store, config = a_store(tmp_path, mode="in-repo")
-    for path in store.groups["developer"].glob("*.md"):
+    for path in store.groups["project-volatile"].glob("*.md"):
         path.unlink()
     cap = config.native_caps.hook_output_chars - CAP_MARGIN
-    (store.groups["developer"] / "huge.md").write_text(
-        note("huge", startup="1", body="x" * (cap * 2)), encoding="utf-8"
+    (store.groups["project-volatile"] / "huge.md").write_text(
+        note("huge", as_of=date.today().isoformat(), body="x" * (cap * 2)), encoding="utf-8"
     )
-    record(store, config)
-    assert fit(Bundle.STANDING_RULES, store, config).oversized == 1
+    assert fit(Bundle.VOLATILE_NOTES, store, config).oversized == 1
 
-    text = render(Bundle.STANDING_RULES, store, config, part=2)
+    text = render(Bundle.VOLATILE_NOTES, store, config, part=2)
     assert text is not None
     assert len(text) <= cap
     assert "was withheld" in text
@@ -277,8 +304,8 @@ def test_an_oversized_part_is_withheld_rather_than_delivered_unterminated(
     assert DELIMITER not in text
     assert "x" * 100 not in text
     # The parts that do fit are unaffected — this withholds one slot, not the bundle.
-    first = render(Bundle.STANDING_RULES, store, config, part=1)
-    assert first is not None and STANDING_LEAD in first
+    first = render(Bundle.VOLATILE_NOTES, store, config, part=1)
+    assert first is not None and VOLATILE_LEAD in first
 
 
 def test_a_part_that_fits_is_never_replaced_by_the_notice(tmp_path: Path) -> None:
@@ -294,6 +321,7 @@ def test_a_part_that_fits_is_never_replaced_by_the_notice(tmp_path: Path) -> Non
     (store.groups["developer"] / "solo.md").write_text(
         note("solo", startup="1", body="x" * filler), encoding="utf-8"
     )
+    review(store)
     text = render(Bundle.STANDING_RULES, store, config, part=1)
     assert text is not None and len(text) == cap
     assert "was withheld" not in text
@@ -305,6 +333,7 @@ def test_many_standing_rules_overflow_the_declared_slots(tmp_path: Path) -> None
         (store.groups["developer"] / f"r{index:02d}.md").write_text(
             note(f"r{index:02d}", startup=str(index), body="word " * 400), encoding="utf-8"
         )
+    review(store)
     report = fit(Bundle.STANDING_RULES, store, config)
     assert report.parts > report.slots
     assert report.overflow > 0
@@ -347,6 +376,7 @@ def test_the_margin_is_additive_because_the_text_is_emitted_raw(tmp_path: Path) 
     (store.groups["developer"] / "solo.md").write_text(
         note("solo", startup="1", body="x" * filler), encoding="utf-8"
     )
+    review(store)
     text = render(Bundle.STANDING_RULES, store, config, part=1)
     assert text is not None and len(text) == cap
     # Raw: the bundle plus one newline, and the margin is what is left over.
@@ -359,11 +389,10 @@ def test_the_margin_is_additive_because_the_text_is_emitted_raw(tmp_path: Path) 
 
 # --- an overlay store built the way overlay mode really builds one ----------------------------
 #
-# `a_store` above hand-builds a `Store` whose `base` sits *outside* the project root. In overlay
-# mode `paths.memory` is a real directory of links **inside the repository** while every group
-# resolves out into the overlay, so `inside_project` is False and the notes are the machine
-# owner's own, however much of the store's path the repository holds. This fixture goes through
-# `resolve()` so the shape is the real one.
+# `a_store` above hand-builds a `Store`. In overlay mode the store is the composed store under the
+# machine's data directory, a directory of links whose groups resolve out into the overlay, and a
+# note promoted there is the owner's: one record, under the note's resolved path in the overlay.
+# This fixture goes through `resolve()` so the shape is the real one.
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -402,7 +431,9 @@ def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]
         'remote = "git@example.com:acme/widget.git"\n', encoding="utf-8"
     )
     binding.record(root, "widget", "git@example.com:acme/widget.git")
-    memory = root / "docs" / "memory"
+    id = binding.read_id(root)
+    assert id is not None
+    memory = composed_directory(id)
     memory.mkdir(parents=True)
     (memory / "developer").symlink_to(overlay / "common" / "memory", target_is_directory=True)
     (root / CONFIG_FILE).write_text(OVERLAY_CONFIG, encoding="utf-8")
@@ -411,16 +442,46 @@ def a_resolved_overlay_store(tmp_path: Path) -> tuple[Store, Config, Path, Path]
     config = load(root, machine=machine)
     store = resolve(root, config, machine=machine)
     assert store is not None
-    assert store.path == memory  # the store really is a directory in the repository
+    assert store.path == memory  # the composed store, outside the repository
+    review(store)
     return store, config, machine, overlay
 
 
 @needs_git
 def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: Path) -> None:
-    # The store's directory sitting in the repository must not gate the notes behind it: the
-    # machine owner's overlay notes are not repository content, and wrapping them as data would
-    # defeat every standing rule in the mode this project actually ships.
+    # The machine owner's overlay notes are not repository content, and wrapping them as data
+    # would defeat every standing rule in the mode this project actually ships.
     store, config, _machine, _ = a_resolved_overlay_store(tmp_path)
     produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert not any(DELIMITER in block for block in produced)
+
+
+LOCAL_CONFIG = """
+[stayfixed]
+version = "0.1.0"
+preset = "recommended"
+
+[project]
+name = "widget"
+{memory}
+"""
+
+
+def test_with_no_mode_chosen_session_context_prints_no_bundle(tmp_path: Path) -> None:
+    # The same local-only store twice: chosen explicitly it is delivered as today, and with no
+    # layer choosing a mode memory is the harness's own, so not one bundle is printed.
+    root = tmp_path / "project"
+    (root / ".stayfixed" / "local" / "memory" / "project-volatile").mkdir(parents=True)
+    (root / ".stayfixed" / "local" / "memory" / "project-volatile" / "now.md").write_text(
+        note("now", as_of=date.today().isoformat(), body="Volatile body."), encoding="utf-8"
+    )
+    machine = a_machine(tmp_path)
+    chosen = '[memory]\nmode = "local-only"\ngroups = ["project-volatile"]\n'
+    (root / CONFIG_FILE).write_text(LOCAL_CONFIG.format(memory=chosen), encoding="utf-8")
+    argv = ("memory", "session-context", "--bundle", "volatile-notes")
+    code, out, _ = cli(root, tmp_path, *argv, machine=machine)
+    assert (code, "Volatile body." in out) == (0, True)
+    unchosen = '[memory]\ngroups = ["project-volatile"]\n'
+    (root / CONFIG_FILE).write_text(LOCAL_CONFIG.format(memory=unchosen), encoding="utf-8")
+    assert cli(root, tmp_path, *argv, machine=machine) == (0, "\n", "")

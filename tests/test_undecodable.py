@@ -10,7 +10,7 @@ unreadable file as absent, the same absent answer.
 
 Mutation (by hand, per case): take `UnicodeDecodeError` out of the reader's `except` -> that
 case reddens on the decode error itself. Three of these readers are declared: the two a
-command's first read meets, `stayfixed.toml` and the machine file, and the trust gate's, as
+command's first read meets, `stayfixed.toml` and the machine file, and the trust record's, as
 `mutations/`'s "a stayfixed.toml that is not UTF-8 crashes every command that loads it", "a
 machine file that is not UTF-8 crashes every command that loads the configuration" and "a trust
 record that is not UTF-8 crashes instead of refusing loudly".
@@ -32,13 +32,14 @@ from stayfixed.config.loader import CONFIG_FILE, load, read_document
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.reading import ConfigError, MachineConfigError
 from stayfixed.errors import Failure
-from stayfixed.memory import index, store, trust
+from stayfixed.memory import index, store
 from stayfixed.overlay import create, identity
 from stayfixed.overlay.api import COMMON_CODEX
 from stayfixed.overlay.layout import PLUGIN_MANIFEST
 from stayfixed.project.init import _existing
 from stayfixed.setup.machine import read_machine
 from stayfixed.setup.run import _read_document
+from stayfixed.trust.record import UnreadableTrust, recorded
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
@@ -93,8 +94,8 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
     ),
     (
         "the trust record",
-        lambda t: (_plant(t / "trust.json"), lambda: trust._recorded(t / "machine.toml"))[1],
-        trust.UnreadableTrustRecord,
+        lambda t: (_plant(t / "trust.json"), lambda: recorded(t / "machine.toml"))[1],
+        UnreadableTrust,
     ),
     (
         "the overlay's project record",
@@ -174,8 +175,8 @@ def test_an_undecodable_file_is_its_readers_own_failure(
 ABSENT: list[tuple[str, Callable[[Path], Callable[[], object]], object]] = [
     (
         "the memory index a second writer appended to",
-        lambda t: lambda: index._appended(_plant(t / "MEMORY.md")),
-        {},
+        lambda t: lambda: index._outside(_plant(t / "MEMORY.md")),
+        [],
     ),
     (
         "the attach record's first-attach date",

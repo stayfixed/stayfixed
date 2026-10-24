@@ -390,7 +390,7 @@ def git_answer(root: Path, *args: str) -> GitAnswer:
     **When there is no answer, why**, read where it is known rather than guessed afterwards. No
     process at all is `_ask`'s own cause: ran out of time, or could not be started. A negative exit
     is a `git` a signal ended — no answer, as `ForkUnknown.of` reads it, and never "git said no",
-    which made `main_checkout` answer `root` for a `git` the OOM killer ended. A positive exit is
+    which made a checkout's own path the answer for a `git` the OOM killer ended. A positive exit is
     "git declined" or "git is broken", and two questions tell them apart, asked only after it.
     First whether `root` is still a directory: `git -C <gone>` exits 128 for `--version` too, so a
     worktree removed mid-walk read as a broken `git`. Then `git --version` from the same `root`,

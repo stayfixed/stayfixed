@@ -14,8 +14,9 @@ entry that can be quoted gets quoted instead of opened, and the note always carr
 that decides the work. No status tail either — a factual tail is the same failure in another
 position.
 
-Notes with `metadata.startup: <rank>` are standing rules, injected whole at session start in
-rank order; volatile notes are injected whole too, and
+Notes with `metadata.startup: <rank>` are standing rules once the owner promotes them
+(`stayfixed memory promote`), injected whole at session start in rank order; an edit makes a note
+unreviewed again until it is promoted anew; volatile notes are injected whole too, and
 `stayfixed memory session-context --bundle volatile-notes` reports one past its `as_of` or its
 budget. Before ranking a note, decide where it belongs at all: a rule that fires on an
 *action* belongs on that action's hook; a rule already mechanized by a repository setting or a

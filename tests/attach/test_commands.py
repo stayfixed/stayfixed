@@ -18,12 +18,9 @@ import pytest
 from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.schema import Config
-from stayfixed.overlay.layout import COMMON_MEMORY
 from stayfixed.printed import quoted
-from tests.attach.test_binding import DEFAULT_MEMORY, _machine, _project_and_store
+from tests.attach.test_binding import _machine, _project_and_store
 from tests.attach.test_write import ENTRY, LEDGER, RULE, SETTINGS, _overlay_grants, _wide
-from tests.cli import cli
-from tests.gitfixture import run_git
 from tests.runners import Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
@@ -34,9 +31,8 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 def _never_the_developers_own_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Two seams every case here needs, closed once.
 
-    No test may reach the real `~/.claude/`. `attach` takes a `home` for exactly this reason and
-    the CLI passes `None`, because in production the answer is the machine owner's own home
-    directory — so the seam a command test has to close is `Path.home` itself.
+    No test may reach the real home directory, which in production is the machine owner's own,
+    so the seam a command test has to close is `Path.home` itself.
     """
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     # And no case reaches the developer's real `claude`: `attach` installs the rendered plugin
@@ -44,10 +40,6 @@ def _never_the_developers_own_home(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     # for the case, answering every program as having succeeded.
     runner = Recorder()
     monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda **_: runner)
-
-
-# `Path.home` as the library defines it, before the fixture below replaces it for every case.
-_REAL_HOME = Path.home
 
 
 def invoke(argv: list[str]) -> int:
@@ -137,12 +129,6 @@ def test_a_reattach_that_binds_another_project_says_both_on_one_line(
     from stayfixed.attach.write import REBOUND
 
     assert REBOUND.format(earlier=quoted("p"), project=quoted("q")) in out
-
-
-def test_attach_without_a_store_is_refused_rather_than_defaulted(tmp_path: Path) -> None:
-    # A default here would be a store chosen by nobody, on a command whose whole point is that
-    # the owner chose one.
-    assert invoke(["attach", "--root", str(tmp_path)]) == 2
 
 
 def test_an_attach_after_an_added_hook_entry_proceeds_and_shows_the_binding_and_what_runs(
@@ -284,7 +270,7 @@ def test_detach_undoes_an_attach_through_the_command_surface(tmp_path: Path) -> 
     (store.parents[2] / "common" / "memory").mkdir(parents=True, exist_ok=True)
     machine = _machine(tmp_path, overlay=store.parents[2])
     assert invoke(["attach", *_flags(root, store, machine)]) == 0
-    assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 0
+    assert invoke(["detach", "--root", str(root)]) == 0
     assert not (root / LEDGER).exists()
     assert not (root / SETTINGS).exists()
 
@@ -294,23 +280,6 @@ def test_detach_on_a_repository_that_was_never_attached_is_a_finding(tmp_path: P
     # answer is to say so rather than to guess which rules were stayfixed's.
     root, _ = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     assert invoke(["detach", "--root", str(root)]) == 1
-
-
-def test_no_command_prints_a_path_a_repository_chose(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # Every link path is built out of `paths.memory` and a `memory.groups` entry, both
-    # repository-authored and neither schema-constrained, and `--json` puts `data` in front of
-    # the model. `stayfixed.memory.hooks` already reports this value as a count and `attach`
-    # must too — the first draft of it shipped the paths.
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store)
-    (store.parents[2] / "common" / "memory").mkdir(parents=True, exist_ok=True)
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    assert invoke(["attach", *_flags(root, store, machine), "--json"]) == 0
-    printed = json.loads(capsys.readouterr().out)
-    assert printed["links_created"] >= 1
-    assert DEFAULT_MEMORY not in json.dumps(printed)
 
 
 def test_check_names_the_codex_rule_files_it_would_place(
@@ -362,7 +331,7 @@ def test_nothing_the_ledger_holds_reaches_detachs_line_or_its_json(
     assert HOSTILE_RULE in (root / LEDGER_PATH).read_text(encoding="utf-8")
     assert HOSTILE_RULE in (root / SETTINGS).read_text(encoding="utf-8")
 
-    assert invoke(["detach", "--root", str(root), "--machine", str(machine), "--json"]) == 0
+    assert invoke(["detach", "--root", str(root), "--json"]) == 0
     report = capsys.readouterr().out
     assert HOSTILE_RULE not in report
     data = json.loads(report)
@@ -382,34 +351,10 @@ def test_detachs_line_says_what_went_without_naming_any_of_it(
     machine = _machine(tmp_path, overlay=store.parents[2])
     assert invoke(["attach", *_flags(root, store, machine)]) == 0
     capsys.readouterr()
-    assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 0
+    assert invoke(["detach", "--root", str(root)]) == 0
     line = capsys.readouterr().out
     assert RULE not in line
     assert "1 allow rule(s)" in line
-
-
-def test_check_counts_the_groups_that_never_moved_and_exits_one(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # `--check` refuses nothing, so its job here is to report the finding `attach` will refuse
-    # on: exit 1, the same code a mismatch answers with, because both are findings the owner
-    # acts on before the real run rather than faults in the command. The count is `attach`'s
-    # own and prints; the group's name is repository-authored and does not, which is the rule
-    # `real_directories` is a count for.
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store)
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
-    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 1
-    report = capsys.readouterr().out
-    data = json.loads(report)
-    assert data["real_directories"] == 1
-    assert "developer" not in report
-    # Non-vacuous in the other direction: the same fixture with nothing left behind answers 0
-    # and reports none, so the exit code above is this finding and not the fixture's state.
-    (root / DEFAULT_MEMORY / "developer").rmdir()
-    assert invoke(["attach", "--check", *_flags(root, store, machine), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["real_directories"] == 0
 
 
 def test_check_reads_each_of_its_two_documents_once(
@@ -502,14 +447,14 @@ def test_a_name_whose_record_fits_while_a_path_attach_links_does_not_is_refused_
     tmp_path: Path, capsys: pytest.CaptureFixture[str], groups: tuple[str, ...]
 ) -> None:
     # A `project.name` whose directory and binding record fit under the longest path while a path
-    # the link tree points at inside that directory does not: the index, which the first attach
-    # writes, or a group's directory, which it creates. `--check` read the overlay's sources under
-    # the name -- shorter than a long group's directory -- and exited 0. `attach` then wrote the
-    # ignore region, the settings merge, the ledger and the record, and ended in an internal error
-    # (`PartialLink`, "File name too long") linking the tree. Both refuse it above every write,
-    # and neither quotes the name or a group back: both are the repository's.
+    # the composed store's links point at inside that directory does not: the index, which the
+    # first attach writes, or a group's directory, which it creates. `--check` read the overlay's
+    # sources under the name -- shorter than a long group's directory -- and exited 0. `attach`
+    # then wrote the ignore region, the settings merge, the ledger and the record, and ended in an
+    # internal error ("File name too long") linking it. Both refuse it above every write, and
+    # neither quotes the name or a group back: both are the repository's.
     #
-    # The longest path is measured off the paths the tree is built from (`link_sources`), for a
+    # The longest path is measured off the paths the store links point at (`link_sources`), for a
     # placeholder name, and the name is then made exactly long enough for that path to be as long
     # as the system's longest -- which no path may be, since the limit counts the terminating NUL.
     #
@@ -680,14 +625,9 @@ def test_check_refuses_a_settings_file_the_run_refuses_in_its_diff(
     shape: str,
 ) -> None:
     # The real run reads the project's settings file in the diff and refuses these there;
-    # `--check` reads it in the same diff and refuses them alike. A group that never moved stops
-    # `--check` past the diff, so the diff's own reading is the only one that can refuse here:
-    # elsewhere the run's later merge refuses the same documents too.
-    # Mutations (oracle): `mutations/`'s "check reads a null allow list as no rules" -> the `null`
-    # cases, and "attach plans a settings write-back the next read refuses" -> the last, end
-    # `--check` with the finding's `1`.
+    # `--check` reads it in the same diff and refuses them alike, and the run's later merge refuses
+    # the same documents too, so neither reading alone decides the code.
     root, store, machine = _granting(tmp_path)
-    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
     (root / ".claude").mkdir(exist_ok=True)
     if shape == "written-back-past-the-cap":
         monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", 16 * 1024)
@@ -805,25 +745,6 @@ def test_check_ends_on_an_overlay_rule_that_is_not_utf8_with_the_runs_code_and_l
     assert_snapshot_unchanged(tmp_path, before)
 
 
-def test_check_ends_on_a_trust_record_that_does_not_parse_with_the_runs_code_and_line(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The real run reads the machine's trust record before its first write and refuses one that
-    # does not parse, since the index render and the harness link both read it after the writes.
-    # `--check` never read it, so it exited 0 for a run that then refused. Mutation (oracle):
-    # `mutations/`'s "check skips the reads the run makes before its first write".
-    root, store, machine = _granting(tmp_path)
-    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
-    before = snapshot(tmp_path)
-    (checked, checked_err), (attached, attached_err) = _check_then_attach(
-        _flags(root, store, machine), capsys
-    )
-    assert checked == attached == 2
-    assert checked_err == attached_err
-    assert checked_err.startswith(f"stayfixed: refused: {machine.parent / 'trust.json'}")
-    assert_snapshot_unchanged(tmp_path, before)
-
-
 def _exclude_file(root: Path) -> Path:
     exclude = root / ".git" / "info" / "exclude"
     exclude.parent.mkdir(exist_ok=True)
@@ -871,24 +792,6 @@ def test_check_ends_on_each_refusal_past_the_runs_gates_with_the_runs_code_and_l
     assert_snapshot_unchanged(tmp_path, before)
 
 
-@pytest.mark.parametrize("stop", ["group-never-moved"])
-def test_check_reads_nothing_past_where_the_run_stops(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], stop: str
-) -> None:
-    # The run refuses a group that never moved before it reads what comes after, so a trust record
-    # that does not parse never decides its code; `--check` reports it as the finding it is, exit
-    # 1, and reads no further either. Mutation (oracle): `mutations/`'s "check reads past a group
-    # that never moved".
-    root, store, machine = _granting(tmp_path)
-    (root / DEFAULT_MEMORY / "developer").mkdir(parents=True)
-    (machine.parent / "trust.json").write_text("{not json", encoding="utf-8")
-    flags = _flags(root, store, machine)
-    assert invoke(["attach", "--check", *flags]) == 1
-    assert capsys.readouterr().err == ""
-    assert invoke(["attach", *flags]) == 2
-    assert "trust.json" not in capsys.readouterr().err
-
-
 def test_attach_reads_each_of_its_two_documents_once_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -918,196 +821,6 @@ def test_attach_reads_each_of_its_two_documents_once_too(
     monkeypatch.setattr("stayfixed.attach.binding.load", counted)
     assert invoke(["attach", *_flags(root, store, machine)]) == 0
     assert loads == []
-
-
-def test_a_harness_link_that_waits_for_approval_is_said_with_the_way_out(tmp_path: Path) -> None:
-    # The link tree sits inside the repository, so the harness link that exposes it waits for
-    # `memory trust --in-repo-memory` (`worktree.harness_link_needed`). `attach` skipped it and
-    # said nothing, so the owner found out from a session with no native memory.
-    from stayfixed.attach.write import HARNESS_WAITS
-    from stayfixed.config.loader import load
-    from stayfixed.memory.api import harness_memory_path, resolve
-    from tests.approved import record
-
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store)
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    code, out, _ = cli(root, tmp_path, "attach", "--store", str(store), machine=machine)
-    assert code == 0
-    assert HARNESS_WAITS in out
-    # The other direction, so the sentence is about the gate and not about every attach: once
-    # the store is approved the link is made and nothing asks for the approval again.
-    config = load(root, machine=machine)
-    resolved = resolve(root, config, machine=machine)
-    assert resolved is not None
-    record(resolved, config)
-    code, out, _ = cli(root, tmp_path, "attach", "--store", str(store), machine=machine)
-    assert code == 0
-    assert "--in-repo-memory" not in out
-    assert harness_memory_path(root, tmp_path / "home").is_symlink()
-
-
-def _linked_in_two_checkouts(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    """The main checkout and a linked worktree, attached with the store approved, so each holds a
-    harness memory link `attach` made. Returns `(root, side, store, machine)`."""
-    from stayfixed.memory.api import harness_memory_path
-    from tests.attach.test_links import _attach, _bound, _trusted
-
-    root, store, machine = _bound(tmp_path)
-    side = tmp_path / "side"
-    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    home = tmp_path / "home"
-    _attach(root, store, machine, home)
-    _trusted(root, machine)
-    _attach(root, store, machine, home)
-    # Non-vacuous: both links are there to be withdrawn.
-    for checkout in (root, side):
-        assert harness_memory_path(checkout, home).is_symlink(), checkout
-    return root, side, store, machine
-
-
-def _attach_json(
-    root: Path, store: Path, machine: Path, capsys: pytest.CaptureFixture[str]
-) -> tuple[str, dict[str, object]]:
-    """One `attach --json` run: the line it prints without `--json`, and the document."""
-    capsys.readouterr()
-    assert invoke(["attach", *_flags(root, store, machine), "--json"]) == 0
-    data = json.loads(capsys.readouterr().out)
-    return str(data["summary"]), data
-
-
-def test_a_changed_store_says_the_approval_lapsed_and_counts_the_withdrawn_links(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # One line appended to one note lapses the approval, and the run withdrew every checkout's
-    # harness link and said only that the link "has no approval yet", which reads as a store
-    # nobody approved, and nothing of what it removed. Mutation (oracle): `mutations/`'s "attach
-    # says a lapsed approval was never given" -> "no approval yet" again.
-    root, _, store, machine = _linked_in_two_checkouts(tmp_path)
-    # `developer` is the overlay's shared group, and its note is one the digest covers.
-    with (store.parents[2] / COMMON_MEMORY / "shared.md").open("a", encoding="utf-8") as note:
-        note.write("A line a pull added.\n")
-    summary, data = _attach_json(root, store, machine, capsys)
-    assert "withdrew 2 harness memory link(s)" in summary
-    assert "the store or its memory.index_extra changed since" in summary
-    assert "no approval yet" not in summary
-    # The count is still in `--json`, under the key a reader of it already reads.
-    assert data["links_revoked"] == 2
-
-
-def test_a_store_never_approved_still_says_no_approval_yet(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The vacuity guard for the case above: with no record at all the sentence is still the one
-    # that asks for a first approval, and nothing was withdrawn, so no count is said.
-    from tests.attach.test_links import _bound
-
-    root, store, machine = _bound(tmp_path)
-    summary, data = _attach_json(root, store, machine, capsys)
-    assert "no approval yet" in summary
-    assert "changed since" not in summary
-    assert "withdrew" not in summary
-    assert data["links_revoked"] == 0
-
-
-def test_a_second_attach_on_an_unchanged_store_withdraws_nothing(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The other guard: an approved store attached again keeps every link, so the run withdraws
-    # nothing and says neither sentence.
-    root, _, store, machine = _linked_in_two_checkouts(tmp_path)
-    summary, data = _attach_json(root, store, machine, capsys)
-    assert data["links_revoked"] == 0
-    assert "withdrew" not in summary
-    assert "approval" not in summary
-
-
-def test_attach_whose_home_is_empty_refuses_in_words(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # An empty `HOME` names no home. `Path.home` reads it as `/`, so `attach` aimed the link at
-    # `/.claude/projects/...` and ended in an internal error on a read-only root; it now refuses
-    # before its first write. `--check` and `detach`, which make nothing under the home, so a
-    # mutated run cannot either. The real `Path.home` is put back, safe here because it reads the
-    # empty `HOME` and never the developer's. Mutation (oracle): `mutations/`'s "an empty HOME is
-    # read as the root directory".
-
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store)
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    assert cli(root, tmp_path, "attach", "--store", str(store), machine=machine)[0] == 0
-    monkeypatch.setattr(Path, "home", _REAL_HOME)
-    monkeypatch.setenv("HOME", "")
-    refused = (
-        "stayfixed: refused: HOME names no home directory, so there is nowhere to put the "
-        "harness memory link; set HOME to your home directory and run this again\n"
-    )
-    for argv in (["attach", "--check", "--store", str(store)], ["detach"]):
-        code, out, err = cli(root, tmp_path, *argv, machine=machine)
-        assert (code, out, err) == (2, "", refused), argv
-
-
-def test_detachs_line_says_when_it_kept_the_block_another_checkout_needs(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The exclude block is shared by every checkout; a detach that keeps it for a worktree still
-    # attached says so on its line and in `--json`, rather than leaving the owner to find the
-    # block and wonder why a detach did not take it.
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store, allow=(RULE,))
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    side = tmp_path / "side"
-    run_git(root, "add", "-A")
-    run_git(root, "commit", "-qm", "the project, committed so the worktree has it too")
-    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    assert invoke(["attach", *_flags(root, store, machine)]) == 0
-    assert invoke(["attach", *_flags(side, store, machine)]) == 0
-    capsys.readouterr()
-    assert invoke(["detach", "--root", str(root), "--machine", str(machine)]) == 0
-    assert "the exclude block and this checkout's link tree were kept" in capsys.readouterr().out
-    assert invoke(["detach", "--root", str(side), "--machine", str(machine), "--json"]) == 0
-    data = json.loads(capsys.readouterr().out)
-    assert data["exclude_block_kept"] is False
-    assert data["exclude_block_removed"] is True
-
-
-@pytest.mark.parametrize("first", ["main", "worktree"])
-def test_detachs_line_names_the_link_tree_it_kept_for_another_checkout(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], first: str
-) -> None:
-    # Detaching the main checkout while a linked worktree is attached keeps the main checkout's
-    # link tree too, since the worktree's harness memory link points at it, and the line named only
-    # the kept exclude block, so the owner found a tree a detach had seemingly forgotten. Both are
-    # named now, and `--json` says it as `link_tree_kept`; a worktree detached first keeps no tree
-    # of its own and says nothing of one. Mutation (oracle): `mutations/`'s "detach's line says
-    # nothing of the link tree it kept" -> the main case's line names the block alone.
-    root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
-    _overlay_grants(store, allow=(RULE,))
-    machine = _machine(tmp_path, overlay=store.parents[2])
-    side = tmp_path / "side"
-    run_git(root, "add", "-A")
-    run_git(root, "commit", "-qm", "the project, committed so the worktree has it too")
-    run_git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    assert invoke(["attach", *_flags(root, store, machine)]) == 0
-    assert invoke(["attach", *_flags(side, store, machine)]) == 0
-    capsys.readouterr()
-    detached = root if first == "main" else side
-    assert invoke(["detach", "--root", str(detached), "--machine", str(machine), "--json"]) == 0
-    data = json.loads(capsys.readouterr().out)
-    assert (data["exclude_block_kept"], data["link_tree_kept"]) == (True, first == "main")
-    # Attached again, so the same detach can be read as a line too.
-    assert invoke(["attach", *_flags(detached, store, machine)]) == 0
-    capsys.readouterr()
-    assert invoke(["detach", "--root", str(detached), "--machine", str(machine)]) == 0
-    kept = (
-        "the exclude block and this checkout's link tree were kept, because another checkout of "
-        "this repository is still attached"
-        if first == "main"
-        else "the exclude block was kept, because another checkout of this repository is still "
-        "attached"
-    )
-    line = capsys.readouterr().out
-    assert line.rstrip("\n").endswith(f"the binding record was left in place; {kept}"), line
 
 
 def test_a_name_longer_than_a_file_name_under_an_overlay_with_no_projects_is_refused_by_both(
@@ -1152,7 +865,7 @@ def test_a_first_attach_under_an_overlay_root_too_deep_for_its_links_is_refused_
     tmp_path: Path, capsys: pytest.CaptureFixture[str], projects_there: bool
 ) -> None:
     # An ordinary name under an overlay root so deep that a path the first attach links into it
-    # reaches the longest path: the run wrote four files and then ended in a raw `PartialLink`.
+    # reaches the longest path: the run wrote four files and then ended in a raw `OSError`.
     # Both commands refuse it above every write, `projects/` there or not, without printing the
     # name. Mutation (oracle): `mutations/`'s "attach and --check go on for a name whose share
     # holds a path past the longest one".
@@ -1164,7 +877,7 @@ def test_a_first_attach_under_an_overlay_root_too_deep_for_its_links_is_refused_
     root, store = _project_and_store(tmp_path, recorded=None, origin="git@example.com:o/p.git")
     _overlay_grants(store, allow=(RULE,))
     # How far past the overlay root the longest path the first attach links under `projects/p`
-    # reaches, off the paths the link tree is built from.
+    # reaches, off the paths the composed store's links point at.
     shallow = store.parents[2]
     linked = link_sources(shallow, load(root, machine=_machine(tmp_path, overlay=shallow)))
     tail = max(len(str(path)) for path in linked if store.parent in path.parents) - len(
@@ -1198,7 +911,6 @@ def test_a_first_attach_under_an_overlay_root_too_deep_for_its_links_is_refused_
     assert invoke(["attach", *flags]) == 2
     attached = capsys.readouterr()
     assert refused in attached.err
-    assert "PartialLink" not in attached.err
     assert_snapshot_unchanged(tmp_path, before)
 
 

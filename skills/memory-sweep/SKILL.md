@@ -27,5 +27,8 @@ description: Sweep the working-memory store — inventory by size, verify anchor
    gone — or no store resolving at all, which is a sweep that covered nothing. The summary line
    says which; the number alone does not.
 6. **Regenerate the index.** Run `stayfixed memory index`, then `stayfixed memory index --check`.
+7. **Hand the rewrites back for review.** A rewritten note is unreviewed again, and so no longer a
+   standing rule: tell the owner which notes changed, and leave `stayfixed memory promote --changed`
+   to them once they have read the diff.
 
 Conventions for what a note is and how the index routes: [references/protocol.md](references/protocol.md).

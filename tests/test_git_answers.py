@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.attach.write import _worktrees, attach
+from stayfixed.attach.write import attach, main_checkout_of
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import GitUnavailable, Unasked, _git_toplevel, origin_remote
 from stayfixed.guards.commit import commits_in
@@ -185,14 +185,16 @@ def test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path
     tmp_path: Path,
 ) -> None:
     # `worktree list --porcelain` ends each line with `\n` and prints a path's `\r` raw, and
-    # `str.splitlines()` breaks at both: measured, `attach` listed `…/wt` for the worktree at
-    # `…/wt\rx` — a directory that is not that worktree, and one `attach` then links into — and
-    # `setup` recorded it among the project's checkouts in place of the real one. Lines are
-    # split where git ends them. Mutation (declared): split with `splitlines()` again -> this
-    # reddens.
+    # `str.splitlines()` breaks at both: measured, `setup` recorded `…/wt` among the project's
+    # checkouts for the worktree at `…/wt\rx`, and `attach` named a main checkout at `…/ma` for
+    # one at `…/ma\rin`, a directory it then writes into. Lines are split where git ends them.
+    # Mutation (declared): split with `splitlines()` again -> this reddens.
     main, linked = _worktree_with_a_carriage_return(tmp_path)
     expected = linked.resolve()
-    assert expected in [tree.resolve() for tree in _worktrees(main)]
+    odd = tmp_path / "ma\rin"
+    odd.mkdir()
+    git(odd, "init", "-q", "-b", "main")
+    assert main_checkout_of(odd) == odd.resolve()
     listed = _repository(main)
     assert listed is not None
     assert expected in [tree.resolve() for tree in listed.checkouts]
@@ -215,7 +217,6 @@ def test_attach_binds_an_origin_it_cannot_record_and_records_none(tmp_path: Path
         store=store,
         machine=machine,
         runner=Recorder(),
-        home=tmp_path / "home",
     )
     found = binding.bound_project(root)
     assert found is not None and found.origin is None

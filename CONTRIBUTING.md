@@ -67,7 +67,7 @@ refuses any other call, except the few it pins with a reason (the package's own 
 
 **Repository bytes are data.** Anything a repository authored — a note, an index line, a
 `memory.groups` entry, a refusal message built out of one — reaches the model only inside
-`trust.wrap`'s delimited region, and only after `stayfixed trust approve memory`. If you find
+`trust.wrap`'s delimited region. If you find
 yourself putting such a string into a `Result.summary`, a `HookResult.context` or an exception message,
 wrap it.
 
@@ -125,14 +125,16 @@ writes), and the handlers that write outside it.
 Removal is held tighter. Every file or directory stayfixed removes is one it names before it looks —
 a fixed name in the code, a path its ledger or manifest recorded, one its configuration computes, or
 a directory above a file the same run removed — and none is found by listing a directory and
-removing what the listing returned, with three exceptions, each inside a directory only stayfixed
-writes. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
+removing what the listing returned, with four exceptions, each inside a directory only stayfixed
+writes, or, for the last, writes links into. The hook sink's sessions are unbounded in number, so it lists its `markers/` directory and
 prunes all but the newest `MARKER_SESSIONS_KEPT` sessions. `stayfixed uninstall` walks
 `.stayfixed/local/artifacts/` and removes the directories it finds there that are empty, because
 that tree holds nothing but the local artifacts the same run just removed. And `stayfixed detach`
 removes the render directory `$HOME/.local/share/stayfixed/delivery/<id>/` whole, as `attach` does
 the one its new render replaces, a directory named by the binding id and never by the ledger, which
-only `attach` writes into. Both go through `fsops`,
+only `attach` writes into; and `attach` and `detach` take the links they list in the composed store
+`$HOME/.local/share/stayfixed/stores/<id>/`, named the same way, where only `attach` puts a link and
+a file that is not one is a note the harness wrote, which neither removes. All go through `fsops`,
 as every removal in a project root does. A temporary directory a command creates for itself and removes whole when
 it finishes is outside the rule: nothing but that command ever wrote into it.
 
@@ -166,7 +168,7 @@ are **delivery**: `overlay`, `attach` and `memory`, the private layer's code —
 a repository to it, and the note store — named in `DELIVERY_AREAS` in `src/stayfixed/areas.py`.
 `overlay` renders and upgrades the private overlay; `attach` binds a repository to one, and its
 `detach` takes back what `attach` wrote while the overlay keeps its record of the binding; and
-`memory` keeps the notes and their trust gate. Every other module under `src/stayfixed/`, `cli.py`
+`memory` keeps the notes. Every other module under `src/stayfixed/`, `cli.py`
 and the subpackages that are not areas included, is the **core**: what stayfixed does without its
 private layer — the gates, the records they check and a machine's setup. `ledger` keeps the bug
 ledger, `docs` the documentation and plan lints, `guards` the session guard, the commit-message
@@ -181,8 +183,8 @@ repository as it is, judges a change's `stayfixed.toml` against what its base br
 none of it. `assess` publishes no `api.py`: nothing under `src/` or `scripts/` outside it imports
 it, and tests reach its modules directly, as they do every area's. (`config`, `presets`, `profiles`,
 `release`, `scaffold` and `templates` are subpackages and not areas, and `harnesses` is a module —
-area discovery does not find them, because they carry none of `commands.py`, `hooks.py`,
-`doctor.py` and `approvals.py`. `release` still publishes an `api.py`, which holds what an installed stayfixed reads
+area discovery does not find them, because they carry none of `commands.py`, `hooks.py` and
+`doctor.py`. `release` still publishes an `api.py`, which holds what an installed stayfixed reads
 about its own releases: the tags it pins and the record of the files a release ships.)
 
 The rule between the two runs one way: delivery may import the core, and the core may not import
@@ -232,10 +234,9 @@ among them) is a row of `MACHINERY_IMPORTERS`, with what each file reaches in it
 so the core calls it only on its own package, `__package__` or `"stayfixed"`, and every other read
 of it is a row.
 
-Every call of `area_modules` or `area_imports` names `commands`, `hooks`, `doctor` or `approvals`
-as a literal, and is made by that submodule's one reader: `cli.py` asks for `commands`,
-`hooks/registry.py` for `hooks`, `doctor/registry.py` for `doctor` and `trust/kinds.py` for
-`approvals`, pinned in `DISCOVERY_CALLERS`. No other module refers
+Every call of `area_modules` or `area_imports` names `commands`, `hooks` or `doctor` as a literal,
+and is made by that submodule's one reader: `cli.py` asks for `commands`, `hooks/registry.py` for
+`hooks` and `doctor/registry.py` for `doctor`, pinned in `DISCOVERY_CALLERS`. No other module refers
 to `cli.discover_registrars`, which hands on what discovery found.
 
 These rules are a tripwire, not a proof: they catch a crossing written the ordinary way. They cannot
@@ -284,13 +285,6 @@ too, since Python runs each package's `__init__.py` first.
   modules, such as the binding and the note store, resolves the root again.
   `Contribution`, `Context` and `Row` come from `stayfixed.doctor.api`, and, as in a `hooks.py`,
   every import sits inside a function body; `tests/boundaries/test_discovery.py` holds that one.
-- `approvals.py` with a `KINDS` tuple of `stayfixed.trust.api.ApprovalKind` gives it kinds of
-  approval: what a person approves, how this checkout's subjects of it are found and hashed, and
-  the flags `stayfixed trust approve` takes for it, each with the words `--help` gives it, so a
-  kind's new flag edits its own `approvals.py` and nothing in the core. `memory` contributes `memory`, its store. The
-  `trust` area reads every one through discovery (`trust/kinds.py`), so a kind a delivery area owns
-  reaches the core without the core importing it, and two kinds of one name refuse. `KINDS` is read
-  when the CLI's parser is built, so every other import sits inside the kind's functions.
 - `api.py` is the area's import surface. Other areas import from it and from nothing else, and its
   `__all__` must equal exactly what it imports — a test parses the file and checks, and
   `tests/boundaries/test_api_surface.py` walks every module under `src/stayfixed/` and `scripts/`

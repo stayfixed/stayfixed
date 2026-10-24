@@ -2855,7 +2855,6 @@ before = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEX
 after = "_REGULAR_OPEN = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC"
 reddens = [
   "tests/test_fsops.py::test_a_regular_file_is_read_through_a_link_and_anything_else_is_refused",
-  "tests/memory/test_trust.py::test_an_overlay_owners_linked_index_and_groups_are_hashed_through_their_links",
   "tests/ledger/test_entries.py::test_a_ledger_file_linked_to_a_device_is_a_ledger_error_and_one_linked_to_a_file_is_read",
 ]
 
@@ -3165,17 +3164,6 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_information_naming_it[agent]",
 ]
 
-# Claude Code keeps a project's memory under a slug of its resolved path, `/` and `.` each read as
-# `-`, which the registry states and `memory` links into.
-[[mutation]]
-name = "Claude Code's memory slug keeps a dot"
-file = "src/stayfixed/harnesses.py"
-before = '    slug = project.replace("/", "-").replace(".", "-")'
-after = '    slug = project.replace("/", "-")'
-reddens = [
-  "tests/test_harnesses.py::test_claude_codes_memory_directory_is_keyed_by_the_projects_path",
-]
-
 # At a terminal an empty `HOME` names no home, where `Path.home` answers `/`: `attach` there aimed the
 # harness memory link at `/.claude/...` and ended in an internal error on a read-only root.
 [[mutation]]
@@ -3185,7 +3173,6 @@ before = "    if value is not None and not os.path.isabs(value):"
 after = "    if value and not os.path.isabs(value):"
 reddens = [
   "tests/config/test_machine.py::test_an_empty_home_names_no_home",
-  "tests/attach/test_commands.py::test_attach_whose_home_is_empty_refuses_in_words",
   "tests/attach/test_doctor.py::test_an_empty_home_is_told_it_is_home_that_names_none",
 ]
 
@@ -3266,7 +3253,7 @@ file = "src/stayfixed/gitenv.py"
 before = "    return Unasked.TIMED_OUT if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
 after = "    return Unasked.BROKEN if asked is _NoAnswer.TIMED_OUT else Unasked.NOT_STARTED"
 reddens = [
-  "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
+  "tests/memory/test_store.py::test_a_question_that_runs_out_of_time_is_named_and_not_called_a_broken_git",
 ]
 
 [[mutation]]
@@ -3276,7 +3263,6 @@ before = "    if not fsops.is_dir(root):"
 after = "    if False:"
 reddens = [
   "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
-  "tests/attach/test_write.py::test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked",
 ]
 
 # The other causes, each with the remedy that fits it. A `git` a signal ended is no answer, as
@@ -4125,8 +4111,8 @@ after = '''    try:
     except UnreadableTrust:
         return {}'''
 reddens = [
-  "tests/memory/test_trust.py::test_a_corrupt_record_refuses_rather_than_reading_as_untrusted",
-  "tests/memory/test_trust.py::test_a_corrupt_record_is_never_overwritten",
+  "tests/trust/test_record.py::test_a_record_that_does_not_parse_says_why_and_that_it_is_kept[not-json]",
+  "tests/trust/test_record.py::test_a_record_past_the_parser_is_refused_and_never_overwritten[nested]",
 ]
 
 # Nor does a record past the parser's reach escape as an internal error. Nested past the parser,
@@ -4141,8 +4127,8 @@ after = '''    try:
     except json.JSONDecodeError as exc:
         raise UnreadableTrust(f"{path} is not valid JSON: {exc}; {_KEPT}") from exc'''
 reddens = [
-  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[nested]",
-  "tests/memory/test_commands.py::test_a_trust_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
+  "tests/trust/test_record.py::test_a_record_past_the_parser_is_refused_and_never_overwritten[nested]",
+  "tests/trust/test_record.py::test_a_record_past_the_parser_is_refused_and_never_overwritten[long-number]",
 ]
 
 # No home is no trust record: none is read, and none is written beside
@@ -4152,14 +4138,14 @@ name = "a trust record with no home is written beside the working directory"
 file = "src/stayfixed/trust/record.py"
 before = '        raise Failure(NO_HOME)'
 after = '        path = Path(RECORD)'
-reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_fails_and_writes_nothing"]
+reddens = ["tests/trust/test_record.py::test_a_record_with_no_home_is_written_nowhere"]
 
 [[mutation]]
 name = "a trust record with no home is read as a path"
 file = "src/stayfixed/trust/record.py"
 before = '    if path is None or not fsops.is_file(path):'
 after = '    if not fsops.is_file(path):'
-reddens = ["tests/memory/test_commands.py::test_trust_with_no_home_fails_and_writes_nothing"]
+reddens = ["tests/trust/test_record.py::test_a_record_with_no_home_is_written_nowhere"]
 
 # A trust record that cannot be written under the home is a failure naming the directory, never an
 # internal error.
@@ -4169,7 +4155,7 @@ file = "src/stayfixed/trust/record.py"
 before = "    except OSError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        linked = fsops.linked_directory(path)"
 after = "    except LookupError as exc:\n        if sandbox_refused(exc):\n            raise SandboxedWrite(SANDBOXED) from None\n        linked = fsops.linked_directory(path)"
 reddens = [
-  "tests/memory/test_commands.py::test_trust_where_the_home_cannot_be_written_fails_naming_the_directory",
+  "tests/trust/test_record.py::test_a_home_that_cannot_be_written_fails_naming_the_directory",
 ]
 
 # A record a dotfiles manager links elsewhere is written where the link leads, and the link stays:
@@ -4199,20 +4185,9 @@ name = "a trust record that cannot be read is reported with the error's own text
 file = "src/stayfixed/trust/record.py"
 before = '            f"{path} cannot be read ({fsops.said(exc)}); refusing to answer about trust or to "'
 after = '            f"{path} cannot be read ({exc}); refusing to answer about trust or to "'
-reddens = ["tests/memory/test_trust.py::test_a_record_that_cannot_be_read_says_why_in_words"]
+reddens = ["tests/trust/test_record.py::test_a_record_that_cannot_be_read_says_why_in_words"]
 
-# The record reads `0.3.0`'s flat map as approvals of kind `memory`, and refuses, never reads as
-# empty, a version it does not know.
-[[mutation]]
-name = "the trust record no longer reads 0.3.0's flat map"
-file = "src/stayfixed/trust/record.py"
-before = "            if isinstance(digest, str)\n        }"
-after = "            if isinstance(digest, str) and False\n        }"
-reddens = [
-  "tests/trust/test_record.py::test_a_0_3_0_record_keeps_every_memory_approval",
-  "tests/trust/test_record.py::test_the_first_write_upgrades_the_file_in_place",
-]
-
+# The record refuses, never reads as empty, a version it does not know.
 [[mutation]]
 name = "a trust record of a later version is read as empty"
 file = "src/stayfixed/trust/record.py"
@@ -4293,27 +4268,12 @@ reddens = [
 [[mutation]]
 name = "an approval over an unreadable trust record writes the record anyway"
 file = "src/stayfixed/trust/record.py"
-before = "    approvals = recorded(machine)\n    was = {"
-after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    was = {"
+before = "    approvals = recorded(machine)\n    if not digests:"
+after = "    try:\n        approvals = recorded(machine)\n    except UnreadableTrust:\n        approvals = {}\n    if not digests:"
 reddens = [
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[not-json]",
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[version-2]",
 ]
-
-# An approval holds at its digest, and the record tells a changed digest from none at all.
-[[mutation]]
-name = "the trust record ignores the digest"
-file = "src/stayfixed/trust/record.py"
-before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
-after = "    return State.APPROVED"
-reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
-
-[[mutation]]
-name = "a lapsed approval reads as missing"
-file = "src/stayfixed/trust/record.py"
-before = "    return State.APPROVED if approval.digest == current else State.LAPSED"
-after = "    return State.APPROVED if approval.digest == current else State.MISSING"
-reddens = ["tests/trust/test_record.py::test_lapsed_missing_and_approved_are_told_apart"]
 
 # An approval is one kind and one subject: approving another kind of the same subject replaces
 # nothing.
@@ -4340,48 +4300,17 @@ before = "    if revoked:\n        _write(machine, approvals)\n    return revoke
 after = "    for _ in revoked:\n        _write(machine, approvals)\n    return revoked"
 reddens = [
   "tests/trust/test_record.py::test_every_subject_of_a_kind_is_revoked_in_one_write",
-  "tests/trust/test_commands.py::test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_write",
 ]
 
-# `trust list` reads the record once, however many subjects the kinds describe.
+# A revocation follows the record's matching rule: withdrawn by one subject, a digest is withdrawn
+# from every entry of the kind holding it.
 [[mutation]]
-name = "trust list reads the record once per subject"
-file = "src/stayfixed/trust/commands.py"
-before = "            if approvals is None:\n                approvals = record.recorded(context.machine)"
-after = "            if True:\n                approvals = record.recorded(context.machine)"
-reddens = [
-  "tests/trust/test_commands.py::test_a_kind_of_several_subjects_is_listed_off_one_read_and_revoked_in_one_write",
-]
-
-# A refresh, stayfixed's own write over an approval its caller read, moves only the digest it read,
-# never brings back a revoked approval, and keeps when the person approved.
-[[mutation]]
-name = "a refresh writes over an approval it did not read"
+name = "a revoke leaves another entry holding the same digest"
 file = "src/stayfixed/trust/record.py"
-before = "    if held is None or held.digest != expected:"
-after = "    if held is None:"
-reddens = ["tests/trust/test_record.py::test_a_refresh_moves_only_the_digest_it_was_read_at"]
-
-[[mutation]]
-name = "a refresh brings back a revoked approval"
-file = "src/stayfixed/trust/record.py"
-before = "    if held is None or held.digest != expected:"
-after = """    if held is None:
-        held = Approval(kind, subject, expected, "")
-    if held.digest != expected:"""
+before = "    revoked = list(dict.fromkeys([*named, *same]))"
+after = "    revoked = named"
 reddens = [
-  "tests/trust/test_record.py::test_a_refresh_never_brings_back_a_revoked_approval",
-  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[record]",
-]
-
-[[mutation]]
-name = "a refresh restamps when the person approved"
-file = "src/stayfixed/trust/record.py"
-before = "    approvals[(kind, subject)] = replace(held, digest=digest)"
-after = "    approvals[(kind, subject)] = replace(held, digest=digest, approved_at=datetime.now().isoformat())"
-reddens = [
-  "tests/trust/test_record.py::test_a_refresh_moves_only_the_digest_it_was_read_at",
-  "tests/memory/test_trust.py::test_a_refresh_keeps_when_the_person_approved",
+  "tests/memory/test_reviewed.py::test_revoking_one_entry_unreviews_every_note_holding_its_bytes",
 ]
 
 # The record is beside the machine file, and with no home there is none.
@@ -4392,23 +4321,11 @@ before = "    base = machine_config_path() if machine is None else machine"
 after = "    base = Path.home() / \".config\" / \"stayfixed\" / \"config.toml\" if machine is None else machine"
 reddens = ["tests/trust/test_record.py::test_the_record_ignores_xdg"]
 
-# A sentence that names an approval command speaks of the person and tells an agent to stop; it
-# never tells its reader, likely an agent, to run the approval itself.
-[[mutation]]
-name = "the approval sentence tells its reader to run the approval itself"
-file = "src/stayfixed/trust/approving.py"
-before = '    "ask the person at this machine to run `{command}` in their own terminal — an agent must not "'
-after = '    "run `{command}` yourself, in a terminal — an agent must not "'
-reddens = [
-  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
-  "tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line",
-]
-
 # Withdrawing needs no terminal, and a revoke that matches nothing says so with exit 1.
 [[mutation]]
 name = "trust revoke revokes nothing"
 file = "src/stayfixed/trust/commands.py"
-before = "    revoked = record.revoke_all(context.machine, kind.name, keys)"
+before = "    revoked = record.revoke_all(machine, args.kind, [_unshown(args.subject)])"
 after = "    revoked: list[str] = []"
 reddens = ["tests/trust/test_commands.py::test_revoke_needs_no_terminal"]
 
@@ -4419,23 +4336,6 @@ before = "        exit_code=1,\n    )"
 after = "        exit_code=0,\n    )"
 reddens = ["tests/trust/test_commands.py::test_revoke_of_nothing_lists_what_is_recorded"]
 
-# Every line `trust list` prints that is not approved names the command that approves it.
-[[mutation]]
-name = "trust list names no command on an unapproved line"
-file = "src/stayfixed/trust/commands.py"
-before = '                line = f"{line} — to approve it, {PERSON_RUNS.format(command=command)}"'
-after = "                line = line"
-reddens = ["tests/trust/test_commands.py::test_list_names_the_command_on_every_unapproved_line"]
-
-# A kind with nothing to approve here says its own reason: `trust approve`, which would say it,
-# refuses with no terminal before it asks the kind anything.
-[[mutation]]
-name = "trust list sends its reader to the approve command for the reason"
-file = "src/stayfixed/trust/commands.py"
-before = '            lines.append(f"{name}: nothing to approve in this checkout: {refused}")'
-after = '            lines.append(f"{name}: nothing to approve in this checkout (`stayfixed trust approve {name}` says why)")'
-reddens = ["tests/trust/test_commands.py::test_list_says_why_a_kind_has_nothing_to_approve"]
-
 # A recorded subject prints on a line, from `~` under the home, and always
 # escaped and bounded, never withheld and never raw.
 [[mutation]]
@@ -4444,7 +4344,7 @@ file = "src/stayfixed/trust/commands.py"
 before = "    if home is not None:"
 after = "    if False:"
 reddens = [
-  "tests/trust/test_commands.py::test_list_all_names_each_subject_from_the_home",
+  "tests/trust/test_commands.py::test_list_names_each_subject_from_the_home",
   "tests/trust/test_commands.py::test_revoke_of_nothing_lists_what_is_recorded",
 ]
 
@@ -4461,14 +4361,6 @@ file = "src/stayfixed/trust/commands.py"
 before = '    shown = ", ".join(_shown(subject) for subject in recorded) or "none"'
 after = '    shown = ", ".join(recorded) or "none"'
 reddens = ["tests/trust/test_commands.py::test_a_hostile_subject_prints_escaped_and_bounded"]
-
-# Two areas contributing a kind of one name refuse, rather than the second answering for the first.
-[[mutation]]
-name = "approval kind discovery accepts a duplicate name"
-file = "src/stayfixed/trust/kinds.py"
-before = "            if kind.name in found:"
-after = "            if False:"
-reddens = ["tests/trust/test_commands.py::test_kind_discovery_refuses_a_duplicate_name"]
 
 # A trust record that is there and does not parse says why, and that nothing will overwrite it.
 [[mutation]]
@@ -4516,7 +4408,7 @@ before = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS})"
 after = "SANDBOX_ERRNOS = frozenset({errno.EPERM, errno.EROFS, errno.EACCES})"
 reddens = [
   "tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[eacces]",
-  "tests/memory/test_commands.py::test_trust_where_the_home_cannot_be_written_fails_naming_the_directory",
+  "tests/trust/test_record.py::test_a_home_that_cannot_be_written_fails_naming_the_directory",
 ]
 
 [[mutation]]
@@ -4526,9 +4418,7 @@ before = "        if sandbox_refused(exc):\n            raise SandboxedWrite(SAN
 after = "        if False:\n            raise SandboxedWrite(SANDBOXED) from None"
 reddens = [
   "tests/trust/test_record.py::test_a_write_refused_as_a_sandbox_refuses_one_is_said_so[eperm]",
-  "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[revoke]",
-  "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it[approve]",
-  "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
+  "tests/trust/test_commands.py::test_a_record_write_a_sandbox_refused_says_a_person_must_run_it",
 ]
 
 [[mutation]]
@@ -4722,37 +4612,7 @@ before = 'sandbox.allowUnsandboxedCommands = false"'
 after = 'sandbox.allowUnsandboxedCommands = true"'
 reddens = ["tests/setup/test_approval_boundary.py::test_the_sandbox_settings_are_the_documented_keys_and_values"]
 
-# `trust list` and `trust revoke` describe a checkout as a session reads it, so a file a session
-# reads past cannot hide or keep a live approval; a revoke whose kind cannot describe the
-# checkout names the spelling that revokes by key.
-[[mutation]]
-name = "trust list describes a checkout as a command reads it"
-file = "src/stayfixed/trust/commands.py"
-before = "    context, _ = kind_context(args, noting=True)\n    if args.all:"
-after = "    context, _ = kind_context(args)\n    if args.all:"
-reddens = [
-  "tests/trust/test_commands.py::test_list_reports_an_approval_a_session_uses_past_a_newer_section",
-]
-
-[[mutation]]
-name = "trust revoke describes a checkout as a command reads it"
-file = "src/stayfixed/trust/commands.py"
-before = "    context, _ = kind_context(args, noting=True)\n    kind = known_kind(args.kind)"
-after = "    context, _ = kind_context(args)\n    kind = known_kind(args.kind)"
-reddens = [
-  "tests/trust/test_commands.py::test_revoke_withdraws_an_approval_a_session_uses_past_a_newer_section",
-]
-
-[[mutation]]
-name = "trust revoke lets a kind that cannot describe the checkout refuse"
-file = "src/stayfixed/trust/commands.py"
-before = "        except (Failure, Refusal) as refused:\n            return _not_revoked("
-after = "        except ZeroDivisionError as refused:\n            return _not_revoked("
-reddens = [
-  "tests/trust/test_commands.py::test_revoke_that_cannot_describe_the_checkout_names_the_spelling_that_can",
-]
-
-# `approve_kind` records every subject of a kind in one write of the record (`record.approve_all`).
+# `record.approve_all` records every subject of a kind in one write of the record.
 [[mutation]]
 name = "approving a kind writes the record once per subject"
 file = "src/stayfixed/trust/record.py"
@@ -4765,32 +4625,10 @@ reddens = [
 [[mutation]]
 name = "approving no subject writes the record"
 file = "src/stayfixed/trust/record.py"
-before = "    if not digests:\n        return was"
-after = "    if False:\n        return was"
+before = "    if not digests:\n        return\n"
+after = "    if False:\n        return\n"
 reddens = [
   "tests/trust/test_record.py::test_approving_no_subject_writes_nothing",
-]
-
-# The record's surface loads no command module: the hook path reaches it through `memory`.
-[[mutation]]
-name = "the trust surface takes the approve path from the command module"
-file = "src/stayfixed/trust/api.py"
-before = "from stayfixed.trust.approving import PERSON_RUNS, approve_kind, kind_context"
-after = "from stayfixed.trust.commands import PERSON_RUNS, approve_kind, kind_context"
-reddens = [
-  "tests/trust/test_commands.py::test_the_records_surface_loads_no_command_module",
-]
-
-# A refresh to the digest the record already holds writes nothing: rewritten, a `memory index` that
-# changed nothing was refused in an agent's sandbox and said the approval no longer matched.
-[[mutation]]
-name = "a refresh rewrites the digest the record already holds"
-file = "src/stayfixed/trust/record.py"
-before = "    if digest != held.digest:\n        approvals[(kind, subject)] = replace(held, digest=digest)"
-after = "    if True:\n        approvals[(kind, subject)] = replace(held, digest=digest)"
-reddens = [
-  "tests/trust/test_record.py::test_a_refresh_to_the_digest_the_record_holds_writes_nothing",
-  "tests/memory/test_commands.py::test_an_index_that_changes_nothing_writes_no_record_from_a_sandboxed_shell",
 ]
 
 # --- the report readers under `stayfixed.prove` ---
@@ -6447,3 +6285,27 @@ file = "src/stayfixed/binding.py"
 before = "    origin = without_userinfo(origin) if origin is not None else None"
 after = "    pass"
 reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]
+
+# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
+# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
+# a line separator inside a name.
+[[mutation]]
+name = "attach splits git's worktree listing at a carriage return inside a path"
+file = "src/stayfixed/binding.py"
+before = '    lines = answer_lines(out.split("\n\n")[0])'
+after = '    lines = out.split("\n\n")[0].splitlines()'
+reddens = [
+  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
+]
+
+# A bare repository's main worktree is the repository itself, and the common directory's parent is
+# no checkout: the plugin would be installed, and the main checkout's settings file asked about, in
+# a directory that is not one. Refused while nothing is written.
+[[mutation]]
+name = "attach takes a bare repository's parent directory for its main checkout"
+file = "src/stayfixed/binding.py"
+before = '    if "bare" in lines:'
+after = "    if False:"
+reddens = [
+  "tests/attach/test_write.py::test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing",
+]

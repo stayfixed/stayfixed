@@ -27,7 +27,6 @@ from stayfixed.config.session import (
 from stayfixed.guards.hooks import register as guards_handlers
 from stayfixed.hooks.api import DIAGNOSTICS, DIRECTORY, Handler, HookEvent, HookResult
 from stayfixed.hooks.commands import CONFIG_FALLBACK
-from stayfixed.memory.hooks import register as memory_handlers
 from tests.config.test_session import densest_file, long_file_of_gates_that_run
 from tests.gitfixture import git
 from tests.hooks.test_hook_command import (
@@ -64,7 +63,7 @@ def unparseable(root: Path, home: Path) -> None:
 def newer_release(root: Path, home: Path) -> None:
     # A file a newer release wrote: an unknown section, an unknown key and an unknown enum value
     # together.
-    text = LATER + '\n[newer]\nx = 1\n[memory]\nmode = "harness"\nfuture = 1\n'
+    text = LATER + '\n[newer]\nx = 1\n[memory]\nmode = "cloud"\nfuture = 1\n'
     (root / "stayfixed.toml").write_text(text, encoding="utf-8")
 
 
@@ -264,12 +263,6 @@ def test_pre_tool_use_prints_no_warning_and_logs_it_once(tmp_path: Path) -> None
 
 
 # A real file under which each handler about the project speaks, and the handler.
-def _worktree_link(root: Path) -> tuple[Handler, HookEvent]:
-    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
-    handler = next(h for h in memory_handlers() if h.name == "worktree-link")
-    return handler, _event("SessionStart", root)
-
-
 def _overlay_status(root: Path) -> tuple[Handler, HookEvent]:
     text = CONFIG + '\n[memory]\nmode = "overlay"\n'
     (root / "stayfixed.toml").write_text(text, encoding="utf-8")
@@ -304,18 +297,15 @@ def run_handler(handler: Handler, event: HookEvent, session: SessionConfig) -> H
     return handler.run(event, session)
 
 
-@pytest.mark.parametrize(
-    "speaks", [_worktree_link, _overlay_status, _test_hygiene], ids=lambda f: f.__name__[1:]
-)
+@pytest.mark.parametrize("speaks", [_overlay_status, _test_hygiene], ids=lambda f: f.__name__[1:])
 def test_project_handlers_speak_on_a_file_and_stay_silent_without_one(
     tmp_path: Path, speaks: Callable[[Path], tuple[Handler, HookEvent]]
 ) -> None:
     # A handler about the project answers nothing without its configuration, and something with
     # it: the first half alone would pass for a handler that never speaks. Mutations
-    # (`mutations/`'s "the worktree link speaks only without a project configuration" ->
-    # `worktree_link` is silent on the file; "the overlay status judges with no project
-    # configuration" -> `overlay_status` raises on `None`; "the hygiene note judges with no
-    # project configuration" -> `test_hygiene` raises on `None`).
+    # (`mutations/`'s "the overlay status judges with no project configuration" ->
+    # `overlay_status` raises on `None`; "the hygiene note judges with no project configuration"
+    # -> `test_hygiene` raises on `None`).
     root = tmp_path / "project"
     root.mkdir()
     handler, event = speaks(root)
@@ -330,19 +320,18 @@ def test_memory_session_context_reads_a_newer_key_with_a_note(
     # starts with came back empty. It reads the file the way a session does now. Mutation
     # (`mutations/`'s "memory session-context refuses what a session reads"): nothing is printed.
     root = tmp_path / "project"
-    notes = root / ".stayfixed" / "local" / "memory" / "developer"
+    notes = root / ".stayfixed" / "local" / "memory" / "project-volatile"
     notes.mkdir(parents=True)
-    meta = "metadata:\n  type: project\n  startup: 1\n"
+    meta = "metadata:\n  type: project\n"
     (notes / "a.md").write_text(NOTE.format(name="a", meta=meta, body="Body."), encoding="utf-8")
     (root / "stayfixed.toml").write_text(MEMORY_CONFIG, encoding="utf-8")
     machine = tmp_path / "machine.toml"
     machine.write_text("", encoding="utf-8")
     common = ["--root", str(root), "--machine", str(machine)]
-    assert invoke(["trust", "approve", "memory", *common]) == 0
     with (root / "stayfixed.toml").open("a", encoding="utf-8") as document:
         document.write("\n[newer]\nx = 1\n")
     capsys.readouterr()
-    argv = ["memory", "session-context", "--bundle", "standing-rules", *common]
+    argv = ["memory", "session-context", "--bundle", "volatile-notes", *common]
     assert invoke(argv) == 0
     assert "Body." in capsys.readouterr().out
 
@@ -351,22 +340,21 @@ def test_memory_session_context_reads_past_a_broken_machine_file(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A machine file that does not load ended `memory session-context` with exit 1 in every memory
-    # mode, so a session lost its standing rules while its `SessionStart` notice said the preset's
+    # mode, so a session lost its notes while its `SessionStart` notice said the preset's
     # values stood in. The store now reads such a file as no overlay recorded, and the notes still
     # arrive. Mutation (`mutations/`'s "the store's overlay read lets a machine file it cannot read
     # end a session's notes"): exit 1 and nothing printed.
     root = tmp_path / "project"
-    notes = root / ".stayfixed" / "local" / "memory" / "developer"
+    notes = root / ".stayfixed" / "local" / "memory" / "project-volatile"
     notes.mkdir(parents=True)
-    meta = "metadata:\n  type: project\n  startup: 1\n"
+    meta = "metadata:\n  type: project\n"
     (notes / "a.md").write_text(NOTE.format(name="a", meta=meta, body="Body."), encoding="utf-8")
     (root / "stayfixed.toml").write_text(MEMORY_CONFIG, encoding="utf-8")
     machine = tmp_path / "machine.toml"
     machine.write_text("", encoding="utf-8")
     common = ["--root", str(root), "--machine", str(machine)]
-    assert invoke(["trust", "approve", "memory", *common]) == 0
     machine.write_text("[overlay\n", encoding="utf-8")
     capsys.readouterr()
-    argv = ["memory", "session-context", "--bundle", "standing-rules", *common]
+    argv = ["memory", "session-context", "--bundle", "volatile-notes", *common]
     assert invoke(argv) == 0
     assert "Body." in capsys.readouterr().out

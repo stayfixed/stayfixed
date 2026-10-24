@@ -2,8 +2,9 @@
 
 Two machines editing one hand-written index is the most contended file in the store; a
 generated one is resolved by regeneration. The curation does not disappear, it moves into each
-note's `index:` line — and because a second writer appends its own lines to the index, the
-generator harvests those before it renders, so nothing a session wrote is lost.
+note's `index:` line, or its `metadata.index`, or its description, read afresh on every render
+and written into no note — and because a second writer appends its own lines to the index, the
+generator harvests those into their notes before it renders, so nothing a session wrote is lost.
 
 Sections come from `[memory] groups`, one per folder, and a note's `group` is rendered as a
 sub-heading *inside* its folder's section. A note's folder is its default group, and read
@@ -32,7 +33,8 @@ from stayfixed.memory.notes import (
     with_index,
     write_note,
 )
-from stayfixed.memory.store import Store, in_repository, permitted_roots
+from stayfixed.memory.reviewed import UNREVIEWED, UNREVIEWED_LABEL, record, status
+from stayfixed.memory.store import Store, in_repository, permitted_roots, shown, stores_holding
 
 INDEX_NAME = "MEMORY.md"
 EXTRA_TITLE = "Elsewhere"
@@ -49,6 +51,10 @@ _BREAKS = r"\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
 # unclosed `[` is an ordinary accident rather than an attack; neither class spans a line.
 _ENTRY = re.compile(rf"^- \[([^\]{_BREAKS}]+)\]\(([^){_BREAKS}]+)\)", re.MULTILINE)
 
+# The marker lines around the region `render_index` writes in `MEMORY.md`: everything between
+# them is the render's, and the harvest reads only what stands outside them (`_outside`).
+REGION_BEGIN = "<!-- stayfixed:index -->"
+REGION_END = "<!-- stayfixed:index:end -->"
 HEADER = (
     "# Memory Index\n\n"
     "> Routing table. Every entry is a pointer, never the answer: when its trigger fires,\n"
@@ -92,28 +98,15 @@ class Reconciliation:
     harvested: list[str]
     provisional: list[str]
     unreadable: list[tuple[Path, str]]
-    # The notes this run actually rewrote, empty when `write=False`. `trust.refresh_if_trusted`
-    # needs to know which files stayfixed itself authored, so that carrying trust across
-    # `memory index` cannot also carry it across whatever else landed on disk.
-    written: list[Path] = field(default_factory=list)
-    # Notes that had a line waiting for them in the index and were not allowed to take it,
-    # because the index is repository data and the note is not (`_harvestable`). They get a
-    # provisional line from their own description instead, so they appear in `provisional` too;
-    # this names the ones where that was a refusal rather than an absence, because a drop the
-    # command cannot mention is a drop nobody reviews.
-    refused_harvest: list[str] = field(default_factory=list)
-    # The write-side mirror of `refused_harvest`. A note whose own file is repository data, or
-    # a `memory.index_extra` entry (always repository data — it lives in `stayfixed.toml`),
-    # whose line would otherwise have been published into an index that reaches outside this
-    # repository (`_publishable`). Named here for the same reason `refused_harvest` is: a drop
-    # `render_index` makes on its own has no other channel back to a person running the command.
-    refused_publish: list[str] = field(default_factory=list)
-    # The `memory.index_extra` entries the same gate refused, kept apart from the note names
-    # above. They were appended to the same list, and `run_index`'s message renders that list as
-    # notes — so a refused pointer read as "`alpha, docs/overview.md` took no line in …",
-    # one note name and one path in a sentence that calls both of them notes. Two kinds
-    # of thing, two lists, two sentences.
+    # The `memory.index_extra` entries held back from an index that reaches outside this
+    # repository (`_to_machine`): `stayfixed.toml` is repository data, and the destination is
+    # machine state. Named here because a drop `render_index` makes on its own has no other
+    # channel back to a person running the command.
     refused_extra: list[str] = field(default_factory=list)
+    # The native writer's pointer lines (`_native`), kept verbatim at the head of the render.
+    native: list[str] = field(default_factory=list)
+    # The note files that are links, which the walk skipped (`notes.walk`).
+    skipped: list[Path] = field(default_factory=list)
 
 
 def _resolved_if_permitted(store: Store, config: Config, target: Path) -> Path | None:
@@ -158,8 +151,8 @@ def index_source(store: Store, config: Config) -> Path | None:
 
     `store.py` does not track the index as a group (it is not a `memory.groups` entry), so no
     per-link target check has ever reached it. Every reader of `store.path / INDEX_NAME` needs
-    this same answer — `worktree.link`, which materialises it into a worktree, the writer and
-    the check (`_destination`), and the harvest (`_appended`) — so it lives here, beside
+    this same answer — the writer and the check (`_destination`), and the harvest
+    (`_appended`) — so it lives here, beside
     `INDEX_NAME`, and is called rather than reimplemented.
 
     `None` has three causes, and this function's callers only ever need to ask the read
@@ -181,57 +174,52 @@ def index_source(store: Store, config: Config) -> Path | None:
     return resolved if resolved is not None and fsops.exists(resolved) else None
 
 
-def _appended(path: Path | None) -> dict[str, str]:
-    """What the second writer appended, from the file `index_source` said the index is.
-
-    Harvesting goes through the same target rule as injection, and for the same reason turned
-    around: `reconcile` writes what it finds here into each note's `index:` frontmatter, so an
-    index symlinked at another project's share would persist that project's text into this
-    one's notes — and in overlay mode from there onto every machine.
-    """
+def _outside(path: Path | None) -> list[str]:
+    """The lines of the index `path` (`index_source`'s, the injection's target rule turned around)
+    outside the region stayfixed renders, where the native writer appends; all of a file with no
+    region. The harvest reads only these: read back out of the region, the last render's line for
+    an edited note was written into it as the native writer's."""
     if path is None or not fsops.is_file(path):
-        return {}
+        return []
     try:
         # To the read cap, as `check_index` reads the same file.
-        text = read_regular_text(path)
+        lines = read_regular_text(path).splitlines()
     except (OSError, UnicodeDecodeError):
-        return {}
-    return {target: title for title, target in entries_in(text)}
+        return []
+    if REGION_BEGIN in lines and REGION_END in lines[lines.index(REGION_BEGIN) :]:
+        start = lines.index(REGION_BEGIN)
+        end = lines.index(REGION_END, start)
+        return lines[:start] + lines[end + 1 :]
+    return lines
 
 
-def _harvestable(store: Store, source: Path | None, note: Note) -> bool:
-    """Whether this note may take its `index:` line from the file `source` names.
+def _native(store: Store, outside: list[str]) -> list[str]:
+    """The native writer's own pointer lines outside the rendered region: each line that links a
+    topic file at the top of the store, outside every group, which the store still holds —
+    verbatim, once each, in the order they stand.
 
-    The target rule `_appended` applies guards one direction — an index symlinked into
-    *another* project's overlay share. The inverse is the natural shape and was ungoverned: in
-    overlay mode the index is legitimately a real file the clone shipped at `paths.memory`
-    (`index_source`: "a real file sources itself, unconditionally") while the notes resolve out
-    into the machine's own overlay. `reconcile(write=True)` then persisted repository-authored
-    titles into `common/memory` — shared with *every project on the machine* and synced across
-    machines — from where another project whose index is `attach`'s symlink injects them raw,
-    unwrapped, with no trust record anywhere in the chain.
-
-    So the rule is one trust domain per harvest: **repository bytes do not become machine
-    state.** A note that is itself repository data may take a repository index's line — nothing
-    crosses — and a machine-owned index may supply anything, because those bytes are already
-    the owner's.
-
-    Deliberately not `trust.may_inject(..., repository_data=True)`, the review's other
-    suggestion. A trust record says "this repository's memory may reach the model, as data". It
-    does not say "this repository's memory may become my machine-level memory, unwrapped, in
-    every other project". Those are different grants and only the first is the one the owner
-    makes, so the gate here is the domain, not the record — which also means the ordinary
-    same-domain cases keep working with no record at all, as they must: requiring one would
-    stop `memory index` dead on a fresh in-repo store.
+    The harness's memory writer keeps its notes as top-level topic files and names each with one
+    line in `MEMORY.md`; a store it wrote into holds them beside stayfixed's groups. They are not
+    notes this area walks, so a render made of the groups alone took every one of those lines out
+    of the index. A line whose file is gone names nothing and is not kept; a line naming a note is
+    harvested into it, and the render carries it from there.
     """
-    if source is None or not in_repository(store, source):
-        return True
-    return in_repository(store, note.path)
+    kept: list[str] = []
+    for line in outside:
+        found = _ENTRY.match(line)
+        if found is None:
+            continue
+        target = found.group(2)
+        if "/" in target or target == INDEX_NAME or not target.endswith(".md"):
+            continue
+        if fsops.is_file(store.path / target) and line not in kept:
+            kept.append(line)
+    return kept
 
 
 def _to_machine(store: Store, config: Config) -> bool:
     """Whether the file `_destination` would write to reaches outside this project's own
-    repository — the write side of the same domain question `_harvestable` asks for reads.
+    repository, where `memory.index_extra`, repository data, may not be published.
 
     Deliberately does not call `_destination`: a refused symlink is not a domain question, it
     is a write that cannot happen at all, and the caller that actually attempts one
@@ -255,24 +243,6 @@ def _to_machine(store: Store, config: Config) -> bool:
     return resolved is not None and not in_repository(store, resolved)
 
 
-def _publishable(store: Store, to_machine: bool, note: Note) -> bool:
-    """Whether this note's own `index:` line may appear in an index that reaches `to_machine`.
-
-    The write-side mirror of `_harvestable`. Harvesting closes index→note: a repository index
-    may not write into a note that is not itself repository data. Nothing closed note→index —
-    a note's *own* `index:` line (curated in its frontmatter, or already harvested) is
-    repository-authored text whenever the note's own file is repository data, and `render_index`
-    put that text into `MEMORY.md` unconditionally, including when this run's destination is
-    machine state (the overlay's `common/memory`, shared across every project on the machine and
-    synced across machines). Same rule as `_harvestable`, same domain: repository bytes do not
-    become machine state.
-
-    `to_machine` is asked once per render, not recomputed per note, so every note in one run is
-    held to the same answer about where the index is actually going.
-    """
-    return not to_machine or not in_repository(store, note.path)
-
-
 def _relative(note: Note) -> str:
     return f"{note.group_name}/{note.path.name}"
 
@@ -286,14 +256,17 @@ def _metadata_index(note: Note) -> str | None:
 
 
 def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
-    """Give every note an `index:` line, harvesting the second writer's before inventing one.
+    """Give every note an `index:` line, harvesting the second writer's before rendering one.
 
     The line, in order: a top-level `index:` (curated, left alone); `metadata.index`
     (provisional, `_metadata_index`); a line harvested from `MEMORY.md` (native); the
     description (provisional). `metadata.index` outranks the harvest because it is the owner's own
-    line, where the harvested one is what the native writer appended. It is provisional because
-    this run writes it into the note, and once written it shadows a later edit to
-    `metadata.index`, as the description's line does an edit to the description.
+    line, where the harvested one is what the native writer appended outside the rendered region
+    (`_outside`). A provisional line is the
+    render's and is written into no note, so it follows a later edit to either source, and a line
+    an earlier release wrote into a note as provisional is read as no line at all. `write` writes
+    only a harvested line into its note: the native writer's text has no other place to live once
+    the index is rendered again, and an edit to a note makes it unreviewed (`memory.reviewed`).
 
     `config` rather than a bare group list: the groups came from it at every call site anyway,
     and the index's target rule needs `project.name` and the recorded overlay, which a
@@ -301,57 +274,46 @@ def reconcile(store: Store, config: Config, *, write: bool) -> Reconciliation:
     a second argument a caller can forget to keep in step with the one that built the store.
     """
     source = index_source(store, config)
-    appended = _appended(source)
+    outside = _outside(source)
+    appended = {target: title for title, target in entries_in("\n".join(outside))}
     to_machine = _to_machine(store, config)
     groups = config.memory.groups
     found = walk(store.path, [g for g in groups if g in store.groups])
     notes: list[Note] = []
     harvested: list[str] = []
     provisional: list[str] = []
-    written: list[Path] = []
-    refused: list[str] = []
-    refused_publish: list[str] = []
     for note in found.notes:
-        if note.index:
-            if not _publishable(store, to_machine, note):
-                refused_publish.append(note.name)
+        if note.index and note.index_provenance is not Provenance.PROVISIONAL:
             notes.append(note)
             continue
         own = _metadata_index(note)
         line = None if own else appended.get(_relative(note))
-        if line and not _harvestable(store, source, note):
-            refused.append(note.name)
-            line = None
         if own:
             note = with_index(note, own, Provenance.PROVISIONAL)
             provisional.append(note.name)
         elif line:
             note = with_index(note, line, Provenance.NATIVE)
             harvested.append(note.name)
+            if write:
+                write_note(note)
         else:
             note = with_index(note, note.description, Provenance.PROVISIONAL)
             provisional.append(note.name)
-        if write:
-            write_note(note)
-            written.append(note.path)
-        if not _publishable(store, to_machine, note):
-            refused_publish.append(note.name)
         notes.append(note)
     refused_extra: list[str] = []
     if to_machine:
         # Always repository data — `stayfixed.toml` is a committed file — so every survivor of
         # `_extra`'s own containment checks is still a contributing entry this destination may
-        # not carry, the same as a repository note's line above.
+        # not carry.
         refused_extra = _extra(config, store)
     return Reconciliation(
         notes,
         harvested,
         provisional,
         found.unreadable,
-        written,
-        refused,
-        refused_publish,
         refused_extra,
+        _native(store, outside),
+        found.skipped,
     )
 
 
@@ -364,16 +326,19 @@ def _order(note: Note) -> tuple[int, int, str]:
     )
 
 
-def _entry(note: Note) -> str:
-    return f"- [{note.index}]({_relative(note)})"
+def _entry(note: Note, unreviewed: set[Path]) -> str:
+    """The note's line, labelled where the owner has not promoted it at its bytes, as the bundles
+    label it: the harness reads `MEMORY.md` natively, beside them."""
+    label = UNREVIEWED_LABEL if note.path in unreviewed else ""
+    return f"- [{note.index}]({_relative(note)}){label}"
 
 
-def _section(group: str, notes: list[Note]) -> list[str]:
+def _section(group: str, notes: list[Note], unreviewed: set[Path]) -> list[str]:
     lines = [f"## {section_title(group)}", ""]
     if is_volatile(group):
         lines += [VOLATILE_LEAD, ""]
     ungrouped = sorted((n for n in notes if not n.group), key=_order)
-    lines += [_entry(note) for note in ungrouped]
+    lines += [_entry(note, unreviewed) for note in ungrouped]
     if ungrouped:
         lines.append("")
     # Grouped notes are collected by their `group` sub-heading first, then each heading is
@@ -386,7 +351,7 @@ def _section(group: str, notes: list[Note]) -> list[str]:
             by_heading.setdefault(note.group, []).append(note)
     for heading in sorted(by_heading, key=lambda h: min(_order(n) for n in by_heading[h])):
         lines += [f"### {heading}", ""]
-        lines += [_entry(note) for note in sorted(by_heading[heading], key=_order)]
+        lines += [_entry(note, unreviewed) for note in sorted(by_heading[heading], key=_order)]
     if by_heading:
         lines.append("")
     return lines
@@ -407,7 +372,7 @@ def _extra(config: Config, store: Store) -> list[str]:
     refuses. Dropped silently, because this function returns a plain list and has no report
     channel of its own; `store.unavailable` is the shape that would carry one. (A *survivor* of
     these checks can still be dropped later, loudly, by `render_index`'s own domain gate —
-    `reconcile` names those in `Reconciliation.refused_publish` — but that is a different
+    `reconcile` names those in `Reconciliation.refused_extra` — but that is a different
     question from the one this function answers, and this function does not need to know it is
     asked.)
 
@@ -437,28 +402,30 @@ def _extra(config: Config, store: Store) -> list[str]:
 
 
 def render_index(reconciled: Reconciliation, config: Config, store: Store) -> str:
-    """The rendered `MEMORY.md` text, holding back whatever `_publishable` refuses.
-
-    `_to_machine` can only be `True` when the destination is a permitted symlink
-    resolving outside this project's repository, which happens only in overlay mode — so every
-    in-repo and local-only store renders exactly what it always has, and only a destination
-    that actually reaches machine state drops anything.
-    """
+    """The rendered `MEMORY.md` text: the render between `REGION_BEGIN` and `REGION_END`, then the
+    native writer's pointer lines, where it appends; `memory.index_extra` held back where the
+    destination reaches outside this repository (`_to_machine`). An unreviewed note is labelled
+    only in a composed store's own index, since the label follows this machine's record."""
     to_machine = _to_machine(store, config)
-    lines = [HEADER.rstrip("\n"), ""]
+    lines = [REGION_BEGIN, HEADER.rstrip("\n"), ""]
     by_group: dict[str, list[Note]] = {}
     for note in reconciled.notes:
-        if _publishable(store, to_machine, note):
-            by_group.setdefault(note.group_name, []).append(note)
+        by_group.setdefault(note.group_name, []).append(note)
+    unreviewed: set[Path] = set()
+    if stores_holding(_destination(store, config)) is not None:
+        held = record(store)
+        unreviewed = {n.path for n in reconciled.notes if status(store, n, held) == UNREVIEWED}
     for group in config.memory.groups:
         if by_group.get(group):
-            lines += _section(group, by_group[group])
+            lines += _section(group, by_group[group], unreviewed)
     extra = [] if to_machine else _extra(config, store)
     if extra:
         lines += [f"## {EXTRA_TITLE}", ""]
         lines += [f"- [{target}]({target})" for target in extra]
         lines.append("")
-    return "\n".join(lines).rstrip("\n") + "\n"
+    text = "\n".join(lines).rstrip("\n") + f"\n{REGION_END}\n"
+    native = "".join(f"{line}\n" for line in reconciled.native)
+    return text + (f"\n{native}" if native else "")
 
 
 @dataclass(frozen=True)
@@ -476,7 +443,7 @@ class IndexCheck:
 def _destination(store: Store, config: Config) -> Path:
     """The one file the writer writes and the check compares against: what the readers source.
 
-    `index_source` is the rule every *reader* applies — `_appended`, `worktree.link`. The writer
+    `index_source` is the rule every *reader* applies — `_appended`. The writer
     did not apply it and neither did the check, and each half of that was its own defect.
     `write_atomically` ends in `os.replace`, which replaces the **link** rather than its target:
     one run stranded the overlay's shared copy on every other machine, turned the index into a
@@ -516,7 +483,7 @@ def _destination(store: Store, config: Config) -> Path:
     resolved = _resolved_if_permitted(store, config, target)
     if resolved is None:
         raise Refusal(
-            f"{target} is a symlink this store may not source ({INDEX_NAME} may link only "
+            f"{shown(target)} is a symlink this store may not source ({INDEX_NAME} may link only "
             f"into this project's share of the recorded overlay, in overlay mode); refusing "
             f"to read or replace it"
         )
@@ -565,11 +532,10 @@ def write_index(store: Store, config: Config, text: str) -> Path:
     `_destination` cannot answer without it, and answering without it was the defect; the
     overlay half comes from `store.machine`. The returned path is the file actually written,
     which in overlay mode is the shared copy in the overlay rather than the link inside the
-    checkout; `trust.refresh_if_trusted` resolves both to the same file, so the record still
-    covers the index it just wrote.
+    checkout.
     """
     if not fsops.is_dir(store.path):
-        raise Failure(f"{store.path} does not exist; the store was not created")
+        raise Failure(f"{shown(store.path)} does not exist; the store was not created")
     path = _destination(store, config)
     write_atomically(path, text)
     return path

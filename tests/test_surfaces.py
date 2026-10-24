@@ -163,7 +163,7 @@ def test_every_type_the_surface_names_in_a_signature_is_on_the_surface(area: str
     # one thing a surface exists to prevent.
     #
     # Only in a *signature*: `raise` is not one, so a class reachable only by writing it down —
-    # `memory.PartialLink`, `memory.UnsafeNote`, `scaffold`'s three — stays on the area's own
+    # `scaffold`'s three — stays on the area's own
     # list with the argument for it, and is not derived here.
     surface = _surface(area)
 

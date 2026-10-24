@@ -21,11 +21,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
+from pathlib import Path
 
 from stayfixed.config.schema import Config
 from stayfixed.memory import trust
 from stayfixed.memory.index import is_volatile
 from stayfixed.memory.notes import Note, walk
+from stayfixed.memory.reviewed import REVIEWED, UNREVIEWED_LABEL, record, status
 from stayfixed.memory.store import Store
 
 
@@ -101,17 +103,17 @@ def _notes(store: Store, config: Config) -> list[Note]:
 
 
 def _flag(note: Note, today: date, ttl: int) -> str:
+    if not is_volatile(note.group_name):
+        return ""
     if note.as_of is None:
         return "  [as_of MISSING — add it or delete the note]"
     age = (today - note.as_of).days
     return f"  [{age} days old — verify or delete before relying on it]" if age > ttl else ""
 
 
-def _standing(store: Store, config: Config) -> list[str]:
+def _standing(notes: list[Note], config: Config) -> list[str]:
     ranked = [
-        note
-        for note in _notes(store, config)
-        if note.startup is not None and not is_volatile(note.group_name)
+        note for note in notes if note.startup is not None and not is_volatile(note.group_name)
     ]
     if not ranked:
         return []
@@ -127,8 +129,14 @@ def _standing(store: Store, config: Config) -> list[str]:
     return blocks
 
 
-def _volatile(store: Store, config: Config) -> list[str]:
-    notes = [note for note in _notes(store, config) if is_volatile(note.group_name)]
+def _volatile(notes: list[Note], reviewed: set[Path], config: Config) -> list[str]:
+    """The volatile notes, and every unreviewed note a standing rank would otherwise have made a
+    standing rule; each unreviewed one labelled and inside the data region."""
+    notes = [
+        note
+        for note in notes
+        if is_volatile(note.group_name) or (note.startup is not None and note.path not in reviewed)
+    ]
     if not notes:
         return []
     today = date.today()
@@ -144,42 +152,55 @@ def _volatile(store: Store, config: Config) -> list[str]:
     # "undated first, then newest first" is not a claim anybody could check against two
     # `reverse=True` passes that partly undo each other.
     notes.sort(key=lambda note: (note.as_of is not None, -(note.as_of or date.min).toordinal()))
+
+    def label(note: Note) -> str:
+        return "" if note.path in reviewed else UNREVIEWED_LABEL
+
+    def data(note: Note, text: str) -> str:
+        return text if note.path in reviewed else trust.wrap(text)
+
     full = [
         f"### {note.name}"
         + (f" (as_of {note.as_of})" if note.as_of else "")
         + _flag(note, today, ttl)
+        + label(note)
         + f"\n\n{note.body}"
         for note in notes
     ]
     if sum(len(block.split()) for block in full) <= config.budgets.effective(
         "volatile_notes_words"
     ):
-        return [VOLATILE_LEAD, *full]
-    short = "\n".join(
-        f"- {note.name}{_flag(note, today, ttl)} — {note.description}" for note in notes
-    )
+        return [
+            VOLATILE_LEAD,
+            *(data(note, block) for note, block in zip(notes, full, strict=True)),
+        ]
+    lines = [
+        (note, f"- {note.name}{_flag(note, today, ttl)}{label(note)} — {note.description}")
+        for note in notes
+    ]
+    owned = "\n".join(line for note, line in lines if note.path in reviewed)
+    others = "\n".join(line for note, line in lines if note.path not in reviewed)
     return [
         VOLATILE_LEAD,
         "Volatile memory has outgrown its budget; listing descriptions only — open any note "
         "that matters:",
-        short,
+        *([owned] if owned else []),
+        *([trust.wrap(others)] if others else []),
     ]
 
 
 def blocks(bundle: Bundle, store: Store, config: Config) -> list[str]:
-    # Every bundle is built from the store's notes, so one question decides both the gate and
-    # the wrap: whether those notes are content the repository shipped.
-    from_repository = trust.is_repository_data(store)
-    if not trust.may_inject(store, config, repository_data=from_repository):
-        return []
-    produced = {
-        Bundle.STANDING_RULES: lambda: _standing(store, config),
-        Bundle.VOLATILE_NOTES: lambda: _volatile(store, config),
-    }[bundle]()
-    if not produced or not from_repository:
-        return produced
-    nonce = trust.new_nonce()
-    return [trust.wrap(block, nonce) for block in produced]
+    # Every bundle is built from the store's notes, and one question decides what each may carry:
+    # whether the owner promoted the note at the bytes it holds now (`memory.reviewed`). A note
+    # that is not reviewed — one the repository shipped, one an agent or the harness's writer
+    # wrote, one edited since it was promoted — reaches a session only as data, inside the region
+    # `trust.wrap` marks, and never as a standing rule, whatever it says about itself.
+    notes = _notes(store, config)
+    held = record(store)
+    reviewed = {note.path for note in notes if status(store, note, held) == REVIEWED}
+    if bundle is Bundle.STANDING_RULES:
+        return _standing([note for note in notes if note.path in reviewed], config)
+    return _volatile(notes, reviewed, config)
 
 
 def split(parts: Sequence[str], cap: int) -> list[str]:

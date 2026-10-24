@@ -350,23 +350,22 @@ def _deduplicated(memory: Memory) -> Memory:
 
     `_build` coerced the list with `tuple(value)` and nothing else, and it is the one
     repository-authored list four places report as a **count** a user is asked to act
-    on. `groups = ["developer", "developer"]` made `attach.binding.unlinked_groups` walk one
+    on. `groups = ["developer", "developer"]` made a walk of the groups, since retired, visit one
     directory twice, so `attach` refused naming two groups that never moved into the overlay,
     `attach --check` printed `real_directories: 2`, and the session line told the model two --
     all about one directory, and with the remedy ("move them into the overlay") already done
     for the only one there is.
 
-    `dict.fromkeys` and not `set`, because the order is the owner's: the link tree is built in
-    it, and a refusal that reorders the list a person is reading is a worse answer than one
-    that does not.
+    `dict.fromkeys` and not `set`, because the order is the owner's, and a refusal that reorders
+    the list a person is reading is a worse answer than one that does not.
 
     **Deduplication only, and the containment stays where it is.** `config/paths.py` names
     `memory.groups` one of four repository-writable fields this loader deliberately does not
     contain, and hands each to the module that first reads it -- because the anchor differs per
-    module: `unlinked_groups` contains a group against the checkout, `attach._check_groups`
-    against the overlay, `memory.store` against the store. A grammar check here would refuse a
-    spelling those three already refuse, one layer above the guard that knows what it is
-    anchored to, and would take the reachable arm of each of them with it. What this function
+    module: `attach._check_groups` contains a group against the overlay, `memory.store` against
+    the store. A grammar check here would refuse a spelling those two already refuse, one layer
+    above the guard that knows what it is anchored to, and would take the reachable arm of each
+    of them with it. What this function
     fixes is the one thing none of them can: a count taken over a list with a duplicate in it.
     """
     return replace(memory, groups=tuple(dict.fromkeys(memory.groups)))

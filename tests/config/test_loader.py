@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from stayfixed.config.classes import LayerName
 from stayfixed.config.loader import CONFIG_FILE, _build, load, loads
 from stayfixed.config.paths import PathEscape
 from stayfixed.config.reading import INTEGER_LIMIT, ConfigError, MachineConfigError
@@ -20,6 +21,7 @@ from stayfixed.config.schema import (
     Config,
     CustomGate,
 )
+from stayfixed.config.session import session_config
 from stayfixed.findings import LISTED_LIMIT
 
 HEAD = '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n'
@@ -40,11 +42,30 @@ def test_preset_defaults_fill_every_section(tmp_path: Path) -> None:
     config = load(tmp_path, machine=tmp_path / "no-machine.toml")
     assert config.stayfixed.state == "initialised"
     assert config.paths.specs == "docs/specs"
-    assert config.memory.mode == "local-only"
+    # No layer chooses a memory mode here, so memory is the harness's own.
+    assert config.memory.mode == "harness"
     assert config.budgets.effective("agents_md_lines") == 300
     assert config.native_caps.hook_output_chars == 10000
     assert config.commit_messages.types[-1] == "guard"
     assert config.personal.preset == "recommended"
+
+
+def test_the_preset_does_not_choose_a_memory_mode(tmp_path: Path) -> None:
+    # The mode is absent from the preset's layer, and not merely labelled `preset`: a preset value
+    # would outrank nothing and still be reported as where the mode came from, and every repository
+    # that never chose one would read as having chosen the preset's store.
+    write(tmp_path, MINIMAL)
+    session = session_config(tmp_path, machine=tmp_path / "no-machine.toml")
+    assert "memory.mode" not in session.resolution.values
+    assert "memory.mode" not in session.resolution.provenance
+    assert session.config is not None and session.config.memory.mode == "harness"
+
+
+def test_an_explicit_memory_mode_is_kept(tmp_path: Path) -> None:
+    write(tmp_path, MINIMAL + '\n[memory]\nmode = "local-only"\n')
+    session = session_config(tmp_path, machine=tmp_path / "no-machine.toml")
+    assert session.config is not None and session.config.memory.mode == "local-only"
+    assert session.resolution.provenance["memory.mode"] == LayerName.REPOSITORY
 
 
 def test_file_values_override_preset_values(tmp_path: Path) -> None:

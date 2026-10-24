@@ -21,12 +21,12 @@ description: Diagnose a stayfixed installation — hooks, memory store, budgets,
    overlay root recorded, `overlay-requires` with no overlay root recorded or no requirement
    declared — and those last two also skip when the overlay root this machine records is not a
    directory any more, which is the one overlay skip that carries a remedy (put the overlay
-   back, or record where it is now), because the note store is broken with it — `bundles` and `store-debris` when the note store does not resolve,
+   back, or record where it is now), because the note store is broken with it — `bundles` when the note store does not resolve,
    `diagnostics` with no harness data root set, and `ci-ref` when the repository records no
    `[ci] ref` — which `stayfixed init` writes once a released stayfixed exists to pin, so that
    row's skip says "nothing recorded here", not "this build cannot answer". With no project
-   configuration to read, `budgets`, `ci-ref`, `attached`, `bundles` and `store-debris` skip
-   saying so; that is one state, not several, and it brings `budgets` to the ten. Each says which
+   configuration to read, `budgets`, `ci-ref`, `attached` and `bundles` skip
+   saying so; that is one state, not several, and it brings `budgets` to the nine. Each says which
    state it is in its own detail. Report each as the state it names, and relay the remedy where
    the row carries one.
 4. **`files` and `wrapper` skipping together is the report's loudest finding, and it is not

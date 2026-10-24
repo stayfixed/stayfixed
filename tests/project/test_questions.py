@@ -103,8 +103,9 @@ def test_the_free_text_patterns_are_anchored_for_ecma_262() -> None:
 
 @needs_git
 def test_the_memory_default_is_the_presets_whatever_the_machine_records(tmp_path: Path) -> None:
-    # `init` takes `[memory] mode` from the preset whatever the machine records; the machine only
-    # changes what the overlay option says. (`overlay_root` does not check the directory exists.)
+    # `init` takes `[memory] mode`'s default whatever the machine records, which is `harness` since
+    # the preset chooses none; the machine only changes what the overlay option says.
+    # (`overlay_root` does not check the directory exists.)
     # Mutation (by hand): default to `overlay` when the machine records one -> the first
     # assertion reddens.
     bare = questions(repository(tmp_path / "a"), machine=tmp_path / "absent.toml")
@@ -112,7 +113,7 @@ def test_the_memory_default_is_the_presets_whatever_the_machine_records(tmp_path
     machine.write_text(f'[overlay]\nroot = "{tmp_path / "overlay"}"\n', encoding="utf-8")
     recorded = questions(repository(tmp_path / "b"), machine=machine)
     modes = [bare["properties"]["memory.mode"], recorded["properties"]["memory.mode"]]
-    assert [m["default"] for m in modes] == ["local-only", "local-only"]
+    assert [m["default"] for m in modes] == ["harness", "harness"]
     assert [[o["const"] for o in m["oneOf"]] for m in modes] == [list(MEMORY_MODES)] * 2
     titles = [{o["const"]: o["title"] for o in m["oneOf"]}["overlay"] for m in modes]
     assert titles[0] != titles[1], titles

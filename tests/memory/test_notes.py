@@ -142,11 +142,18 @@ def test_only_a_changed_key_is_rewritten(tmp_path: Path) -> None:
 
 
 def test_write_note_persists_what_render_produced(tmp_path: Path) -> None:
-    note = with_index(read_note(write(tmp_path, MINIMAL)), "t → a", Provenance.PROVISIONAL)
+    note = with_index(read_note(write(tmp_path, MINIMAL)), "t → a", Provenance.NATIVE)
     write_note(note)
     again = read_note(note.path)
     assert again.index == "t → a"
-    assert again.index_provenance is Provenance.PROVISIONAL
+    assert again.index_provenance is Provenance.NATIVE
+
+
+def test_a_provisional_line_is_never_written_with_its_provenance(tmp_path: Path) -> None:
+    # A provisional line is the index's rendering (`index.reconcile`), so no note says it holds
+    # one: a reader would otherwise take it for a line the note carries.
+    note = with_index(read_note(write(tmp_path, MINIMAL)), "t → a", Provenance.PROVISIONAL)
+    assert "index_provenance" not in render_note(note)
 
 
 @pytest.mark.parametrize(
@@ -419,12 +426,12 @@ def test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group
     tmp_path: Path,
 ) -> None:
     # `read_note` followed a committed link to whatever it named: `/dev/stdin` hung `memory refs`
-    # and `memory inventory`, and `/dev/zero` would read until memory ran out. A link to anything
-    # but a regular file is a note this reader cannot read, so `walk` quarantines it; unguarded,
-    # the `/dev/null` case read as an empty note and was quarantined for having no frontmatter,
-    # which the reason tells apart. The group directory beside it is a link, as `attach` makes
-    # it in overlay mode, and its note is read. Mutation (declared): `read_note` opens with
-    # `path.open` again -> the reason is the frontmatter's.
+    # and `memory inventory`, and `/dev/zero` would read until memory ran out. `walk` skips a note
+    # file that is a link, and `read_note` itself reads a regular file only; unguarded, the
+    # `/dev/null` case read as an empty note and was refused for having no frontmatter, which the
+    # reason tells apart. The group directory beside it is a link, as `attach` makes it in overlay
+    # mode, and its note is read. Mutation (declared): `read_note` opens with `path.open` again ->
+    # the reason is the frontmatter's.
     elsewhere = tmp_path / "overlay" / "developer"
     elsewhere.mkdir(parents=True)
     write(tmp_path / "overlay", MINIMAL, "developer/a.md")
@@ -434,5 +441,6 @@ def test_a_note_linked_to_a_device_is_quarantined_and_one_through_a_linked_group
     (elsewhere / "null.md").symlink_to("/dev/null")
     found = walk(store, ["developer"])
     assert [note.name for note in found.notes] == ["bare"]
-    assert [path.name for path, _ in found.unreadable] == ["null.md"]
-    assert "not a regular file" in found.unreadable[0][1]
+    assert [path.name for path in found.skipped] == ["null.md"]
+    with pytest.raises(NoteError, match="not a regular file"):
+        read_note(elsewhere / "null.md")

@@ -128,7 +128,7 @@ def test_a_newer_release_keeps_every_other_setting(tmp_path: Path) -> None:
     # answers no configuration for a file that loads with notes"): the budget goes with the file.
     write(
         tmp_path,
-        HEAD_LATER + '[project]\nname = "p"\n[newer]\n[memory]\nmode = "harness"\n'
+        HEAD_LATER + '[project]\nname = "p"\n[newer]\n[memory]\nmode = "cloud"\n'
         "[budgets]\nagents_md_lines = 900\n",
     )
     got = session_config(tmp_path, machine=none(tmp_path))
@@ -142,7 +142,7 @@ def test_a_newer_release_keeps_every_other_setting(tmp_path: Path) -> None:
 def test_a_file_from_this_release_with_notes_is_not_called_newer(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "the session warns of a newer release for every file with notes"):
     # this one is called newer too.
-    write(tmp_path, MINIMAL + '[memory]\nmode = "harness"\n')
+    write(tmp_path, MINIMAL + '[memory]\nmode = "cloud"\n')
     got = session_config(tmp_path, machine=none(tmp_path))
     assert got.config is not None
     assert got.warnings == (NOTED_WARNING.format(count=1),)

@@ -220,9 +220,7 @@ class Note:
         `"team/project-stable"` and `walk` finds the notes under it, but the folder's name is
         then `"project-stable"` while `render_index` looks each group up by its configured
         string: the section matched nothing and vanished from `MEMORY.md` entirely, with
-        `memory index --check` reporting "index is current" and exiting 0. The routing keys
-        disagreed too — `trust._files` keys on the configured group and `index._relative` on
-        this — so a nested group's digest entry and its index line named two different files.
+        `memory index --check` reporting "index is current" and exiting 0.
         """
         return self.store_group or self.path.parent.name
 
@@ -339,8 +337,10 @@ def _wanted(note: Note) -> dict[str, str | None]:
         "name": note.name,
         "description": note.description,
         "index": note.index,
+        # Only a harvested line is ever written with its provenance: a provisional one is the
+        # index's rendering and is written into no note (`index.reconcile`).
         "index_provenance": (
-            None if note.index_provenance is Provenance.CURATED else note.index_provenance.value
+            note.index_provenance.value if note.index_provenance is Provenance.NATIVE else None
         ),
         "group": note.group,
         "group_order": None if note.group_order is None else str(note.group_order),
@@ -416,10 +416,12 @@ def write_note(note: Note) -> None:
 
 @dataclass(frozen=True)
 class Walk:
-    """Notes that parsed, and the files that did not — never one at the cost of the other."""
+    """Notes that parsed, the files that did not — never one at the cost of the other — and the
+    note files that are links, which are skipped."""
 
     notes: list[Note]
     unreadable: list[tuple[Path, str]]
+    skipped: list[Path] = field(default_factory=list)
 
 
 def walk(store: Path, groups: Sequence[str]) -> Walk:
@@ -428,15 +430,26 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
     A non-note file in a store is ignored here and flagged by `doctor`, and a store is a place
     humans put things: one superseded design document with no frontmatter must not cost the
     whole store, which is exactly what a raising walk does inside a handler's `except`.
+
+    **A note file that is a link is skipped, in every store**: neither read into a bundle nor
+    digested for the reviewed record, only counted. A repository chooses its memory mode and
+    commits its notes, so a linked note is a read it aims — at a file outside the repository, or
+    at a note the owner promoted elsewhere, whose digest would make it a standing rule here. A
+    group directory that is a link, as each of the composed store's is, is still followed: only
+    the last component is asked.
     """
     found: list[Note] = []
     unreadable: list[tuple[Path, str]] = []
+    skipped: list[Path] = []
     for group in groups:
         directory = store / group
         if not fsops.is_dir(directory):
             continue
         for path in sorted(directory.glob("*.md")):
             if path.name.startswith((".", "_")):
+                continue
+            if fsops.is_symlink(path):
+                skipped.append(path)
                 continue
             # The index names a note by its file's name, and `MEMORY.md` is UTF-8: a name the
             # disk holds in other bytes cannot be written into it, so the note is unreadable.
@@ -447,4 +460,4 @@ def walk(store: Path, groups: Sequence[str]) -> Walk:
                 found.append(replace(read_note(path), store_group=group))
             except NoteError as exc:
                 unreadable.append((path, str(exc)))
-    return Walk(notes=found, unreadable=unreadable)
+    return Walk(notes=found, unreadable=unreadable, skipped=skipped)

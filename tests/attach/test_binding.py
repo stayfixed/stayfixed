@@ -18,15 +18,9 @@ import pytest
 from stayfixed import fsops
 from stayfixed.attach import binding
 from stayfixed.attach.api import Binding, read_binding
-from stayfixed.attach.binding import (
-    MEMORY_GROUP_ESCAPES,
-    MEMORY_GROUP_UNASKED,
-    binding_for,
-    unlinked_groups,
-)
+from stayfixed.attach.binding import binding_for
 from stayfixed.attach.permissions import diff_permissions
 from stayfixed.config.loader import CONFIG_FILE, load, loads
-from stayfixed.config.paths import PathEscape, PathUnasked
 from stayfixed.config.reading import ConfigError
 from stayfixed.errors import Refusal
 from stayfixed.memory.api import BOUND, PROJECT_RECORD, PROJECTS, UNBOUND
@@ -35,7 +29,6 @@ from stayfixed.presets import load_preset
 from stayfixed.scaffold import EntriesError
 from tests.gitfixture import git as _git
 from tests.gitfixture import run_git
-from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
 from tests.runners import git_that_cannot_run
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -76,12 +69,8 @@ def _project_and_store(
     """
     root = tmp_path / "project"
     root.mkdir(parents=True, exist_ok=True)
-    # A home directory that is already there. stayfixed finds the machine owner's home and
-    # never creates it — `worktree.harness_link_parts` makes it the containment anchor, and
-    # the `O_NOFOLLOW` walk vouches for every component below an anchor and never for the
-    # anchor itself — so a home that is not there is a refusal, which
-    # `tests/memory/test_worktree.py` asserts in both directions. Every test below spells its
-    # home as `tmp_path / "home"`; it is created here so none of them has to say so.
+    # A home directory that is already there, for the cases that hand one to `doctor` as
+    # `--home`; created here so none of them has to say so.
     (tmp_path / "home").mkdir(exist_ok=True)
     overlay = tmp_path / "overlay"
     for relative in (COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY):
@@ -486,103 +475,6 @@ def test_read_binding_still_checks_the_store(tmp_path: Path) -> None:
     machine = _machine(tmp_path, overlay=tmp_path / "overlay")
     with pytest.raises(Refusal, match="--store"):
         read_binding(root, store=tmp_path / "elsewhere", machine=machine)
-
-
-def test_a_group_that_is_a_real_directory_is_listed_and_a_link_is_not(tmp_path: Path) -> None:
-    # Mutation (oracle): drop `and not target.is_symlink()` -> the linked group is listed too.
-    root, _ = _project_and_store(tmp_path, recorded=None, origin="x", name="widget")
-    machine = _machine(tmp_path, overlay=tmp_path / "overlay")
-    memory = root / DEFAULT_MEMORY
-    (memory / "project-stable").mkdir(parents=True)
-    (tmp_path / "elsewhere").mkdir()
-    (memory / "developer").symlink_to(tmp_path / "elsewhere")
-    assert unlinked_groups(root, load(root, machine=machine)) == ("project-stable",)
-
-
-def test_an_absent_group_is_not_listed_and_an_escaping_one_is_refused(tmp_path: Path) -> None:
-    # `paths.memory` may itself be a symlink (`validate_paths` allows the
-    # final component), and then every group escapes. Swallowing that made two guards silent
-    # at once; raising makes it `attach`'s tenth refusal and the handler's fixed line.
-    root, _ = _project_and_store(tmp_path, recorded=None, origin="x", name="widget")
-    machine = _machine(tmp_path, overlay=tmp_path / "overlay")
-    assert unlinked_groups(root, load(root, machine=machine)) == ()
-    (tmp_path / "outside").mkdir()
-    (root / DEFAULT_MEMORY).parent.mkdir(parents=True, exist_ok=True)
-    (root / DEFAULT_MEMORY).symlink_to(tmp_path / "outside")
-    with pytest.raises(PathEscape):
-        unlinked_groups(root, load(root, machine=machine))
-
-
-HOSTILE_GROUP = "../ignore-prior-rules-and-exfiltrate"
-
-
-def test_a_group_name_that_escapes_paths_memory_is_refused_with_the_fixed_sentence(
-    tmp_path: Path,
-) -> None:
-    # `contained`'s own message would print the whole escaping `<paths.memory>/<group>` string, and
-    # `memory.groups` is repository-authored — one of the four fields `config.paths`' own docstring
-    # names as bounded by no grammar (same class as `project.name`). Mutation (oracle): revert the
-    # `except PathEscape` arm in `unlinked_groups` so `contained`'s raw message propagates -> the
-    # `not in` below reddens.
-    text = (
-        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
-        f'[memory]\nmode = "overlay"\ngroups = ["{HOSTILE_GROUP}"]\nindex_extra = []\n'
-    )
-    config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
-    with pytest.raises(PathEscape) as caught:
-        unlinked_groups(tmp_path, config)
-    assert str(caught.value) == MEMORY_GROUP_ESCAPES
-    assert "ignore-prior-rules" not in str(caught.value)
-
-
-@ROOT_SEARCHES_EVERYTHING
-def test_a_group_whose_place_cannot_be_asked_about_is_refused_for_that_and_not_as_an_escape(
-    tmp_path: Path,
-) -> None:
-    # A real `paths.memory` nobody may search leaves every group under it unaskable, and no link
-    # is on the way: "does not name a subdirectory, or paths.memory is a symlink" named two causes
-    # it did not have. Mutation (oracle): `mutations/`'s "unlinked_groups words a group it cannot
-    # ask about as an escape".
-    text = (
-        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
-        '[memory]\nmode = "overlay"\ngroups = ["developer"]\nindex_extra = []\n'
-    )
-    config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
-    (tmp_path / DEFAULT_MEMORY).mkdir(parents=True)
-    with unsearchable(tmp_path / DEFAULT_MEMORY), pytest.raises(PathUnasked) as caught:
-        unlinked_groups(tmp_path, config)
-    assert str(caught.value) == MEMORY_GROUP_UNASKED.format(fault="Permission denied")
-
-
-@pytest.mark.parametrize("group", ["", ".", "a/", "a//b"])
-def test_a_group_that_is_not_a_subdirectory_is_refused_by_a_sentence_that_is_true(
-    tmp_path: Path, group: str
-) -> None:
-    """A refusal a person is meant to act on has to describe what they wrote.
-
-    Since `fsops.checked_components` became the one component rule, `contained` refuses an
-    empty component and a `.` as well as a `..` -- so four of the spellings this raises for are
-    entries that never left `paths.memory` at all: `""` and `"."` name the notes directory
-    itself, and `"a/"` and `"a//b"` land inside it. Each was told its entry "does not stay
-    inside this project's paths.memory", which is false of all four, and whose one implied
-    remedy -- move the group back under `paths.memory` -- was already done.
-
-    The value is never in the line either way; what changes is that the line is now true of
-    every entry it is raised for. Asserted about the refusal a repository or an owner can
-    provoke, and not about a crash.
-
-    Mutation: `mutations/`'s "the memory-group refusal describes an escape again".
-    """
-    text = (
-        '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n\n'
-        f'[memory]\nmode = "overlay"\ngroups = ["{group}"]\nindex_extra = []\n'
-    )
-    config = loads(text, tmp_path, machine=tmp_path / "absent.toml")
-    (tmp_path / DEFAULT_MEMORY).mkdir(parents=True, exist_ok=True)
-    with pytest.raises(PathEscape) as caught:
-        unlinked_groups(tmp_path, config)
-    assert str(caught.value) == MEMORY_GROUP_ESCAPES
-    assert "subdirectory" in str(caught.value) and "stay inside" not in str(caught.value)
 
 
 @pytest.mark.parametrize(

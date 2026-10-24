@@ -39,7 +39,6 @@ from stayfixed import fsops
 from stayfixed.binding import bound_project
 from stayfixed.config.loader import load
 from stayfixed.config.overlay import overlay_root
-from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.reading import UNPARSEABLE, toml_position
 from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
@@ -66,37 +65,6 @@ NO_OVERLAY = (
     "no overlay root is recorded in the machine configuration, so there is nothing to bind "
     "this repository to; run `stayfixed setup` first"
 )
-# `memory.groups` is one of the four fields `config.paths`' own docstring names as bounded by no
-# grammar, so a group name is repository-authored bytes the same way `project.name` is —
-# refused rather than quoted back. Fixed text, naming the two keys and never the value.
-# Distinct from `attach.write.GROUP_ESCAPES`, which is the same shape for a different escape (a
-# group leaving the *overlay's* share, at write time); this one is `unlinked_groups`' own, so
-# the session-start handler this seam exists for and `unlinked_groups`' own caller cannot spell
-# it twice between them.
-#
-# **"does not name a subdirectory of" and not "does not stay inside".** The rule `contained`
-# reads off the combined `<paths.memory>/<group>` is `fsops.checked_components`, and since that
-# rule started refusing an empty component and `.` there are four refusable spellings the old
-# sentence was simply false about: `""` and `"."` resolve to `paths.memory` itself, and `"a/"`
-# and `"a//b"` land squarely inside it. Each of those is an entry an owner mistypes, and each
-# was told its entry had left a directory it had not left -- so the one action the sentence
-# suggested, moving the group back inside `paths.memory`, was already done. What every refusable
-# spelling does have in common is that it is not the name of a directory under `paths.memory`:
-# not the escaping ones, not the odd ones, and not `paths.memory` itself, which is where the
-# notes live rather than a group in them.
-MEMORY_GROUP_ESCAPES = (
-    "a memory.groups entry does not name a subdirectory of this project's paths.memory, or "
-    "paths.memory is itself a symlink, so the entry is refused rather than counted"
-)
-# Said instead when no symlink is on the way and a directory on it cannot be asked whether it is
-# one: the sentence above would name a cause the entry does not have. `{fault}` is the system's
-# words for what stopped the question, never a path.
-MEMORY_GROUP_UNASKED = (
-    "a memory.groups entry's place under this project's paths.memory cannot be checked for a "
-    "symlink ({fault}), so the entry is refused rather than counted"
-)
-
-
 # The refusal for a `project.name` no directory under the overlay can carry. The overlay root is
 # the owner's and prints; the name is the repository's (see `_recorded`), so it is the shape.
 SHARE_CANNOT_EXIST = (
@@ -112,7 +80,7 @@ SHARE_CANNOT_EXIST = (
 PATH_CANNOT_EXIST = (
     "{projects}/<this project's name>/ would hold a path, or a name in one, longer than this "
     "machine allows -- the binding record " + PROJECT_RECORD + ", the notes index or a memory "
-    "group's directory -- so attach could not record the binding or link the notes there; "
+    "group's directory -- so attach could not record the binding or compose the notes there; "
     "choose a shorter `name` under [project] in stayfixed.toml, or shorter memory.groups entries"
 )
 
@@ -187,17 +155,17 @@ def refuse_unless_share_can_exist(binding: Binding, config: Config) -> None:
     and in `--check` as well. A share that is absent is fine: `attach` creates it.
 
     **Nor a name whose directory fits under the longest path while a path `attach` makes inside it
-    does not** -- the binding record, and every path the link tree points at there
+    does not** -- the binding record, and every path the composed store links point at there
     (`link_sources`: the index, which the first attach writes, and each group's directory, which
     it creates). Each is written or created through descriptors, which no path length bounds, so
     the write succeeds; but every reader names it by its whole path. `_recorded` answers a record
     past the longest one with "no record", so the binding would be written and then read as
     unbound for ever; and the system refuses a link whose target is that long, so building the
-    link tree ended in an internal error (`PartialLink`, "File name too long") after the ignore
-    region, the settings merge, the ledger and the record -- with `--check` answering 0 before it,
-    because the overlay's sources it reads are shorter than a long group's directory. The paths
-    are the ones the tree is built from, and not suffix lengths counted here, so a group added to
-    the tree is asked about without a second list to keep. Each is asked with `lstat`, whether or
+    store would end in a failure after the ignore region, the settings merge, the ledger and the
+    record -- with `--check` answering 0 before it, because the overlay's sources it reads are
+    shorter than a long group's directory. The paths are the ones the store is built from, and not
+    suffix lengths counted here, so a group added to it is asked about without a second list to
+    keep. Each is asked with `lstat`, whether or
     not the share is there yet: the system refuses a path past the longest one before it looks
     anything up, so the answer is about the spelling and never about what the overlay holds.
     `common/memory` is outside the share and its length is not the name's, so it is not asked.
@@ -391,7 +359,7 @@ def _bound(root: Path, config: Config, overlay: Path) -> Binding:
 
 
 def read_binding(
-    root: Path, *, store: Path, machine: Path | None, config: Config | None = None
+    root: Path, *, store: Path | None, machine: Path | None, config: Config | None = None
 ) -> Binding:
     """The binding this repository would attach under, or a refusal that it may not.
 
@@ -400,18 +368,21 @@ def read_binding(
     protects against here, and the name becomes a directory under the overlay's `projects/`).
 
     `config` is loaded here only when the caller does not already hold one. `attach.check`
-    does -- it needs the same `Config` for `unlinked_groups` -- and a second load would read
+    does -- it needs the same `Config` for the run's gates -- and a second load would read
     `stayfixed.toml` and the machine file twice per `--check`, with the two halves free to
     disagree if the file changed in between. `binding_for` is the seam for a caller that has a
     `Config` and no `--store` to check; this is the seam for one that has both. For the same
     reason the overlay root is read once, and `--store` is checked against the root the binding
-    is then made under (`_bound`).
+    is then made under (`_bound`). `store` is `None` where the caller named none, and is then this
+    project's own directory in that overlay, derived and never read.
     """
     config = load(root, machine=machine) if config is None else config
     overlay = overlay_root(machine)
     if overlay is None:
         raise Refusal(NO_OVERLAY)
     expected = permitted_roots(overlay, config.project.name)[1]
+    if store is None:
+        return _bound(root, config, overlay)
     try:
         resolved: Path | None = fsops.resolved(store)
     except OSError:
@@ -428,39 +399,3 @@ def read_binding(
             f"from an argument"
         )
     return _bound(root, config, overlay)
-
-
-def unlinked_groups(root: Path, config: Config) -> tuple[str, ...]:
-    """The `memory.groups` entries that are real directories under `paths.memory`.
-
-    The anchor is `root` — the checkout the command was pointed at or the hook was handed,
-    never a value the repository chose — and a group `contained` refuses against it is raised,
-    not skipped: `paths.memory` may itself be a symlink (`validate_paths` allows the final
-    component), and then every group escapes at once. `attach` turns that into a refusal above
-    its first write; the handler turns it into one fixed line. `PathEscape` propagates as the
-    refusal it is, and both of those callers catch it by that type, but its message does not:
-    `group` and `paths.memory` are repository-authored, one of the four fields `config.paths`
-    names as bounded by no grammar, so `contained`'s own message — which would print the whole
-    escaping path — is replaced with `MEMORY_GROUP_ESCAPES` before it propagates.
-    """
-    resolved = root.resolve()
-    found: list[str] = []
-    for group in config.memory.groups:
-        try:
-            target = contained(
-                root,
-                f"{config.paths.memory}/{group}",
-                allow_final_symlink=True,
-                resolved_root=resolved,
-            )
-        except PathUnasked as exc:
-            raise PathUnasked(
-                MEMORY_GROUP_UNASKED.format(fault=exc.fault), fault=exc.fault
-            ) from exc
-        except PathEscape as exc:
-            # `group` and `config.paths.memory` are repository-authored, so the combined path
-            # `contained` refuses is refused again, fixed text and never quoted back.
-            raise PathEscape(MEMORY_GROUP_ESCAPES) from exc
-        if fsops.is_dir(target) and not fsops.is_symlink(target):
-            found.append(group)
-    return tuple(found)

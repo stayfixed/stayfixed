@@ -7,8 +7,7 @@ from the repository's configuration, and say nothing for an unbound checkout. Th
 docstring is about `overlay-status`.
 
 This area registers it because the question is this area's: `binding_for` says whether a
-repository is bound, and `unlinked_groups` whether its notes ever moved. `memory/hooks.py`
-keeps its single `SessionStart` handler and the test that pins it.
+repository is bound.
 
 Every line is fixed text with at most a count interpolated, but two: the overlay's declared floor
 is the one owner-authored string that prints, normalised the way it was validated, and a bound
@@ -17,18 +16,14 @@ checkout whose `origin` moved hears both remotes, each through `printed.quoted`
 `paths.memory`, and none of the three appears here — a repository is untrusted input (principle
 5), which is also why
 `memory.store.refusal_reason` is not used: its text is built out of those same fields.
-`MEMORY_PATH_REFUSED` is this module's own line and not `binding.MEMORY_GROUP_ESCAPES` relayed:
-the refusal's text is bounded too, but a line that reaches the model is written where it is
-read, and the two agree because both are fixed.
 
 **At most once per session (`once_key`), and what it actually costs.** The matcher fires on
-`startup`, `resume`, `clear`, `compact` and `fork`, and this handler runs ahead of
-`worktree-link` in area-name order inside an entry whose `timeout` is ten seconds for both of
-them.
+`startup`, `resume`, `clear`, `compact` and `fork`, inside an entry whose `timeout` is ten
+seconds.
 
 `hooks/dispatch.py` banks a `once_key` only for a result with a context, so the marker is laid
 down exactly when this handler had something to say. A session that hears a line hears it once;
-a **healthy** repository -- bound, linked, pushed, satisfied -- returns an empty result, banks
+a **healthy** repository -- bound, pushed, satisfied -- returns an empty result, banks
 nothing, and is asked again on every one of those events.
 
 And it is the healthy path that pays for the `git`, which is the opposite of what this docstring
@@ -59,8 +54,7 @@ The cost, stated rather than hidden: an overlay that becomes unpushed *during* a
 `startup` found nothing to say is not reported on that session's later `compact`; the next
 `resume` or `startup` reports it.
 `stayfixed doctor` answers on demand, and the alternative is a pair of `git` calls re-run on every
-compaction of a repository with nothing wrong with it, inside a budget shared with the handler
-that links the note store.
+compaction of a repository with nothing wrong with it.
 
 Every import below the vocabulary is inside the handler body: `tests/boundaries/test_discovery.py`
 asserts that discovery in a clean interpreter leaves `stayfixed.config`, `stayfixed.presets` and
@@ -71,7 +65,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from stayfixed.attach import ATTACH_STORE
+from stayfixed.attach import ATTACH_COMMAND
 from stayfixed.hooks.api import Handler, HookEvent, HookResult
 
 if TYPE_CHECKING:
@@ -110,20 +104,11 @@ NO_OVERLAY = (
 NOT_ASKABLE = "stayfixed: the overlay binding could not be checked on this machine"
 NOT_ATTACHED = (
     "stayfixed: this repository is not attached to the overlay this machine records; "
-    f"run `{ATTACH_STORE} --check`"
+    f"run `{ATTACH_COMMAND} --check`"
 )
 # What prefixes a bound checkout's moved-`origin` note (`memory.api.origin_note`), the one line
 # here that names repository-authored bytes, each through `printed.quoted`.
 PREFIX = "stayfixed: "
-MEMORY_PATH_REFUSED = (
-    "stayfixed: a memory path was refused for this repository, so its notes were not checked; "
-    "`stayfixed doctor` says which"
-)
-REAL_DIRECTORIES = (
-    "stayfixed: {count} memory group(s) are real directories rather than links into the overlay, "
-    "so this session reads the repository's own copy; move them into the overlay and run "
-    "`stayfixed attach`"
-)
 REQUIRES_UNREADABLE = (
     "stayfixed: the overlay's stayfixed.requires is not a form this stayfixed reads; "
     "`stayfixed doctor` says which"
@@ -173,9 +158,8 @@ def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
         return HookResult()
     try:
         import stayfixed
-        from stayfixed.attach.binding import binding_for, unlinked_groups
+        from stayfixed.attach.binding import binding_for
         from stayfixed.config.overlay import overlay_root
-        from stayfixed.config.paths import PathEscape
         from stayfixed.errors import Failure, Refusal
         from stayfixed.memory.api import UNBOUND
         from stayfixed.overlay.api import overlay_sync, requires_of, satisfies
@@ -196,13 +180,6 @@ def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
             lines.append(NOT_ATTACHED)
         elif binding.note is not None:
             lines.append(PREFIX + binding.note)
-        try:
-            real = unlinked_groups(root, config)
-        except PathEscape:
-            real = ()
-            lines.append(MEMORY_PATH_REFUSED)
-        if real:
-            lines.append(REAL_DIRECTORIES.format(count=len(real)))
         spec = requires_of(overlay)
         if spec is not None:
             verdict = satisfies(spec, stayfixed.__version__)
@@ -218,7 +195,7 @@ def _overlay_status(event: HookEvent, session: SessionConfig) -> HookResult:
                 elif sync.dirty > 0 or sync.ahead > 0:
                     lines.append(UNPUSHED.format(ahead=sync.ahead, dirty=sync.dirty))
         return HookResult(context="\n".join(lines)) if lines else HookResult()
-    # An open handler never costs a session; `memory/hooks.py` keeps the same backstop.
+    # An open handler never costs a session.
     except Exception:
         return HookResult()
 

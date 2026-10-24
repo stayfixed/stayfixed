@@ -3,16 +3,16 @@
 
     python3 scripts/smoke_exfiltration.py --plugin-root R --fixture F --scratch S
 
-The clone commits its own notes as standing rules, names ANOTHER project, and ships a
+The clone commits a note claiming to be a standing rule, names ANOTHER project, and ships a
 `.claude/settings.json` `env` block pointing stayfixed at a machine configuration inside itself.
 This script materialises that `env` block the way a harness would — the relative value becomes
 an absolute path inside the scratch clone — and then asks each boundary the scenario is about,
 one printed row each.
 
 **Every negative row has its positive control.** "The canary is absent" is also what a broken
-pipeline prints, so the first three rows show the note reaching a session when the owner has
-trusted it, then not reaching one after the record lapses, then not reaching one after the
-record is deleted. A row that could only ever have been green is not evidence.
+pipeline prints, so the first row shows the clone's volatile note reaching a session, as data,
+beside the standing rule it claims never reaching one. A row that could only ever have been green
+is not evidence.
 
 The scenario's MCP arm — `memory_search` under an explicit `project=` — is not run: stayfixed
 ships no MCP server yet (the README lists the memory MCP server under "Not yet"), and the run
@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -31,20 +32,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ptyrun import run_in_pty
 from smoke_hooks import developer_free_env, fixture_repository
 
 CANARY = "CANARY-IN-REPO-RULE"
+# What the clone's volatile note carries: it reaches a session, inside a delimited region.
+CARRIED = "CANARY-AS-DATA"
 DELIMITER = "<<<stayfixed:repository-data"
+# The one line the session-start hook may say for a store none of whose notes the owner promoted,
+# `stayfixed.memory.hooks.UNREVIEWED_COUNT`, spelled out because this script runs without
+# `stayfixed` importable: fixed words and a count, nothing the clone wrote.
+UNREVIEWED_COUNT = re.compile(
+    r"stayfixed: [0-9]+ notes are unreviewed; promoting them is the owner's call "
+    r"\(`stayfixed memory promote`\)"
+)
 # The remote the overlay records for `smoke`, and the one the clone has instead. The clone chooses
 # its own `project.name` and its own `origin`; what it cannot choose is a binding id in its git
 # common directory that this machine records, which is the whole of why `attach` can tell it from
 # the owner's checkout.
 RECORDED_REMOTE = "git@example.com:the-owner/smoke.git"
 CLONES_REMOTE = "git@example.com:somebody-else/smoke.git"
-# How many rows this scenario declares. Asserted at the end, because five of the seven assert an
+# How many rows this scenario declares. Asserted at the end, because four of the five assert an
 # ABSENCE and a run that executed one of them prints an identically green last line.
-EXPECTED_ROWS = 7
+EXPECTED_ROWS = 5
 
 
 @dataclass
@@ -70,8 +79,7 @@ class Planted:
 
 
 def _run(argv: list[str], env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Every subprocess this runs reads stdin from a pipe, which is what a hook's stdin is; the
-    owner's approvals alone run elsewhere, under a pseudo-terminal (`approve`).
+    """Every subprocess this runs reads stdin from a pipe, which is what a hook's stdin is.
 
     It is also the gate: nothing stayfixed honours only from an interactive terminal, `attach`'s
     `--machine` among it, is honoured on a pipe, the state the clone's `env` block actually meets.
@@ -167,23 +175,20 @@ def stayfixed(
     return _run([sys.executable, str(plugin_root / "scripts" / "stayfixed"), *args], env, cwd)
 
 
-def approve(plugin_root: Path, clone: Path, env: dict[str, str]) -> int:
-    """The owner's approval of the clone's store, at a terminal: `trust approve` asks it of a
-    person, so it alone runs under a pseudo-terminal (`ptyrun`), and every other command here
-    reads its stdin from a pipe (`_run`). Its exit code."""
-    argv = [sys.executable, str(plugin_root / "scripts" / "stayfixed"), "trust", "approve"]
-    code, _ = run_in_pty([*argv, "memory", "--root", str(clone)], env=env, cwd=clone)
-    return code
+def delimited(text: str, needle: str) -> bool:
+    """Whether `needle` stands inside a region the repository-data markers open: the last marker
+    before it is an opening one, never an end."""
+    if needle not in text:
+        return False
+    head = text[: text.index(needle)]
+    opened = head.rfind(DELIMITER + ":")
+    return opened != -1 and not head.startswith(DELIMITER + ":end:", opened)
 
 
 def through_wrapper(
     wrapper: Path, args: list[str], env: dict[str, str], cwd: Path
 ) -> subprocess.CompletedProcess[str]:
     return _run([str(wrapper), *args], env, cwd)
-
-
-def trust_record(planted: Planted) -> Path:
-    return planted.home / ".config" / "stayfixed" / "trust.json"
 
 
 def main(argv: list[str]) -> int:
@@ -196,86 +201,50 @@ def main(argv: list[str]) -> int:
     planted = plant(args.fixture, args.scratch, plugin_root)
     env = hostile_env(planted, plugin_root)
     wrapper = plugin_root / "hooks" / "run-hook.sh"
-    bundle = ["memory", "session-context", "--bundle", "standing-rules", "--part", "1"]
+    standing = ["memory", "session-context", "--bundle", "standing-rules", "--part", "1"]
+    volatile = ["memory", "session-context", "--bundle", "volatile-notes", "--part", "1"]
 
-    # --- the positive control, first: the pipeline can emit the note when it is trusted ------
-    recorded = approve(plugin_root, planted.clone, env)
-    emitted = through_wrapper(wrapper, bundle, env, planted.clone)
+    # --- the positive control and its negative, side by side: the clone's notes reach a session
+    # as data, and the one claiming to be a standing rule never reaches one as a rule ----------
+    carried = through_wrapper(wrapper, volatile, env, planted.clone)
+    ruled = through_wrapper(wrapper, standing, env, planted.clone)
     report.row(
-        recorded == 0
-        and emitted.returncode == 0
-        and CANARY in emitted.stdout
-        and DELIMITER in emitted.stdout,
-        "the owner's own trust record lets the note through, inside a delimited region",
-        f"trust rc={recorded}, bundle rc={emitted.returncode}, "
-        f"canary={CANARY in emitted.stdout}, delimited={DELIMITER in emitted.stdout}",
+        carried.returncode == 0
+        and delimited(carried.stdout, CARRIED)
+        and delimited(carried.stdout, CANARY)
+        and ruled.returncode == 0
+        and CANARY not in ruled.stdout
+        and not ruled.stdout.strip(),
+        "the clone's notes reach a session as data and never as a standing rule",
+        f"volatile rc={carried.returncode}, carried={CARRIED in carried.stdout}, "
+        f"delimited={delimited(carried.stdout, CARRIED)}, "
+        f"rule delimited={delimited(carried.stdout, CANARY)}, standing rc={ruled.returncode}, "
+        f"canary={CANARY in ruled.stdout}, standing emitted {len(ruled.stdout.strip())}",
     )
 
-    # --- and the record lapses the moment the clone changes what it committed ---------------
-    note = planted.clone / "docs" / "memory" / "developer" / "canary.md"
-    committed = note.read_text(encoding="utf-8")
-    note.write_text(committed + "\nAnd one more line.\n", encoding="utf-8")
-    lapsed = through_wrapper(wrapper, bundle, env, planted.clone)
-    report.row(
-        lapsed.returncode == 0 and CANARY not in lapsed.stdout,
-        "a lapsed record withdraws the note",
-        f"rc={lapsed.returncode}, canary={CANARY in lapsed.stdout}",
-    )
-
-    # The dispatcher's own SessionStart entry, under the lapsed record. Measured rather than
-    # predicted: the expectation was a `worktree-link` line reporting the store as not linked,
-    # and this clone never produces one — `memory.hooks._link_worktree` speaks for a LINKED
-    # WORKTREE, and the clone is a main checkout with no link ever created, so the handler's
-    # own answer is "nothing to do" and the envelope carries no context at all. That is the
-    # right answer and it is what is asserted: a well-formed envelope naming the event, with
-    # no `additionalContext` and neither the canary nor the repository-data marker anywhere in
-    # it. The row's positive control is the first row above — the same store, trusted, does
-    # reach a session through the bundle entries — so "nothing came out" cannot be a crash.
+    # The dispatcher's own SessionStart entry. The overlay's status line and rules speak only in
+    # `overlay` mode, so for an `in-repo` store the one thing the envelope may carry is the count
+    # of its unreviewed notes, fixed words and a number. That is what is asserted: a well-formed
+    # envelope naming the event, whose `additionalContext` is absent or that line alone, and
+    # neither the canary nor the repository-data marker anywhere in it. The row's positive control
+    # is the first row above — the same store does reach a session through the bundle entries —
+    # so "nothing came out" cannot be a crash.
     started = through_wrapper(wrapper, ["hook", "SessionStart"], env, planted.clone)
     try:
         envelope = json.loads(started.stdout)
     except json.JSONDecodeError:
         envelope = {}
     specific = envelope.get("hookSpecificOutput", {})
+    context = specific.get("additionalContext")
     report.row(
         started.returncode == 0
         and specific.get("hookEventName") == "SessionStart"
-        and "additionalContext" not in specific
+        and (context is None or UNREVIEWED_COUNT.fullmatch(str(context)) is not None)
         and CANARY not in started.stdout
         and DELIMITER not in started.stdout,
         "the session-start hook answers its envelope and injects nothing from the clone",
         f"rc={started.returncode}, event={specific.get('hookEventName')!r}, "
-        f"context={'additionalContext' in specific}, canary={CANARY in started.stdout}",
-    )
-
-    # --- and with no record at all --------------------------------------------------------
-    # **The note is put back and the owner trusts it again first, and that is the whole of this
-    # row.** Row 2 changed `canary.md` and never restored it, so by this line the record had
-    # already lapsed and the unlink below could not change anything the next bundle would
-    # notice: the row printed the same absence row 2 had just printed, for row 2's reason.
-    # Measured: pointing `trust_record()` at a path that does not exist made the unlink a no-op
-    # and left `trust.json` 240 bytes on disk — and the row still reported ok. So the record is
-    # made real again, its presence is asserted before the unlink and its absence after, and
-    # the re-trusted store is shown to emit — this row's own positive control, because "the
-    # canary did not arrive" is also what a store that was never re-trusted prints.
-    note.write_text(committed, encoding="utf-8")
-    again = approve(plugin_root, planted.clone, env)
-    restored = through_wrapper(wrapper, bundle, env, planted.clone)
-    had_record = trust_record(planted).exists()
-    trust_record(planted).unlink(missing_ok=True)
-    without = through_wrapper(wrapper, bundle, env, planted.clone)
-    report.row(
-        again == 0
-        and had_record
-        and not trust_record(planted).exists()
-        and CANARY in restored.stdout
-        and without.returncode == 0
-        and CANARY not in without.stdout,
-        "with no record at all the note is never injected",
-        f"re-trusted rc={again}, record before={had_record}, "
-        f"after={trust_record(planted).exists()}, canary while recorded="
-        f"{CANARY in restored.stdout}, rc={without.returncode}, "
-        f"canary={CANARY in without.stdout}",
+        f"context={context!r}, canary={CANARY in started.stdout}",
     )
 
     # --- what the clone's machine configuration bought it: a line of information, nothing else -
@@ -342,8 +311,8 @@ def main(argv: list[str]) -> int:
     )
 
     print("skip  memory_search under an explicit project= — stayfixed does not depend on mcp")
-    # The floor this script had none of. Five of its seven rows assert an ABSENCE, and a run
-    # that executed one row prints the same green last line as a run that executed all seven —
+    # The floor this script had none of. Four of its five rows assert an ABSENCE, and a run
+    # that executed one row prints the same green last line as a run that executed all five —
     # measured, with `report.rows[:1]` immediately before this print and the whole suite still
     # green. The sibling script states its own count for the same reason.
     ran = len(report.rows)

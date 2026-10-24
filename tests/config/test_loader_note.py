@@ -33,6 +33,7 @@ from stayfixed.config.loader import (
 from stayfixed.config.owner import resolve_owner
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.reading import ConfigError, toml_position
+from stayfixed.config.schema import HARNESS_MODE
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
@@ -95,15 +96,15 @@ def test_the_rest_of_a_newer_file_survives(tmp_path: Path) -> None:
     # path its whole section"): the budget goes with the unknown key beside it.
     text = (
         MINIMAL
-        + '[newer]\nx = 1\n[memory]\nmode = "harness"\n'
+        + '[newer]\nx = 1\n[memory]\nmode = "cloud"\n'
         + '[budgets]\nagents_md_lines = 900\nfuture = 1\n[paths]\nspecs = "design/specs"\n'
     )
     assert load_preset("recommended")["budgets"]["agents_md_lines"] < 900  # raised, not lowered
     got = loads_noting(text, tmp_path, owner=OWNER)
-    assert got.config.memory.mode == preset_defaults("memory")["mode"]
+    assert got.config.memory.mode == HARNESS_MODE
     assert got.config.budgets.configured["agents_md_lines"] == 900
     assert got.config.paths.specs == "design/specs"
-    held = MINIMAL + '[memory]\nmode = "harness"\n'
+    held = MINIMAL + '[memory]\nmode = "cloud"\n'
     assert got.notes == (
         UNKNOWN_NOTE.format(name="newer"),
         UNKNOWN_NOTE.format(name="budgets.future"),
@@ -114,9 +115,9 @@ def test_the_rest_of_a_newer_file_survives(tmp_path: Path) -> None:
 def test_an_invalid_value_resets_only_its_key(tmp_path: Path) -> None:
     # Mutation (`mutations/`'s "the NOTE path drops the whole document on a keyed refusal"): the
     # budget the document also set is lost with the bad mode.
-    text = MINIMAL + '[memory]\nmode = "harness"\n[budgets]\nagents_md_lines = 900\n'
+    text = MINIMAL + '[memory]\nmode = "cloud"\n[budgets]\nagents_md_lines = 900\n'
     got = loads_noting(text, tmp_path, owner=OWNER)
-    assert got.config.memory.mode == preset_defaults("memory")["mode"]
+    assert got.config.memory.mode == HARNESS_MODE
     assert got.config.budgets.configured["agents_md_lines"] == 900
     assert got.notes == (reset("memory.mode", text, tmp_path),)
 
@@ -300,7 +301,7 @@ REFUSED = [
         r"\[gates\.custom\.g\] has unknown key\(s\): future",
         id="gate-key",
     ),
-    pytest.param('[memory]\nmode = "harness"\n', r"memory\.mode must be one of", id="enum"),
+    pytest.param('[memory]\nmode = "cloud"\n', r"memory\.mode must be one of", id="enum"),
     pytest.param(
         '[paths]\nbugs = "../x"\n', r"paths\.bugs is not a plain relative path", id="path"
     ),
@@ -414,7 +415,7 @@ def test_a_section_that_is_not_a_table_is_the_presets(tmp_path: Path) -> None:
     # refusal is the whole document's and the session loses every setting.
     text = "memory = 1\n" + MINIMAL  # before any header, so a top-level key
     got = loads_noting(text, tmp_path, owner=OWNER)
-    assert got.config.memory.mode == preset_defaults("memory")["mode"]
+    assert got.config.memory.mode == HARNESS_MODE
     assert got.notes == (reset("memory", text, tmp_path),)
 
 
@@ -543,6 +544,6 @@ def test_each_note_names_the_key_it_is_about(tmp_path: Path) -> None:
     # `doctor` lists a session's notes by key alone, never the sentence. Mutations
     # (`mutations/`'s "a reset key is not recorded beside its note" -> `memory.mode` goes
     # missing; "an unknown key is not recorded beside its note" -> `memory.future` does).
-    text = MINIMAL + '[newer]\n[memory]\nfuture = 1\nmode = "harness"\n[personal]\npreset = "x"\n'
+    text = MINIMAL + '[newer]\n[memory]\nfuture = 1\nmode = "cloud"\n[personal]\npreset = "x"\n'
     got = loads_noting(text, tmp_path, owner=OWNER)
     assert got.keys == ("newer", "memory.future", "personal.preset", "memory.mode")

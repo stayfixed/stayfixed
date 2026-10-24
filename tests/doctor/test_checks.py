@@ -66,8 +66,7 @@ from stayfixed.doctor.checks import (
 from stayfixed.doctor.entries import SETTINGS_FILES
 from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
-from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
-from stayfixed.memory.index import INDEX_NAME
+from stayfixed.memory.api import PROJECT_RECORD, PROJECTS, build_composed
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from stayfixed.printed import quoted
 from stayfixed.release.api import HASHED_FILES
@@ -143,7 +142,7 @@ def _checks(
     cannot reach. On any machine that has run `stayfixed setup --overlay`, and this project's own
     developers are exactly those machines, every case that omitted `machine` read the developer's
     real overlay: the overlay root those rows read was theirs, `overlay-requires` read its real
-    manifest, and `bundles`, `store-debris` and `attached` resolved against their real note
+    manifest, and `bundles`, `memory` and `attached` resolved against their real note
     store. Those cases passed here and in CI
     only because neither machine happens to have a machine configuration. A path under
     `tmp_path` that does not exist is what `None` was meant to mean, and now says it.
@@ -234,17 +233,14 @@ def _machine(tmp_path: Path) -> Path:
 
 
 # Every path `attach` places in the fixture's checkout, as `attach.write.placed_paths` names them
-# for an overlay-mode project with one group: the ledger, the link tree and the settings file.
-PLACED = (
-    LEDGER,
-    *((Path("docs") / "memory" / name).as_posix() for name in (INDEX_NAME, "developer")),
-    LOCAL_SETTINGS,
-)
+# for a project the overlay grants no standing rule: the ledger and the settings file.
+PLACED = (LEDGER, LOCAL_SETTINGS)
 
 
 def _attached(tmp_path: Path) -> Path:
-    """A project bound to an overlay and delivered to: the binding, the settings file, the render,
-    the ledger, the exclude block and the link tree.
+    """A project bound to an overlay and delivered to: the binding, the settings file pointing the
+    harness at the composed store, the render, the ledger, the exclude block and the composed
+    store.
 
     Built by hand rather than by running `attach`, so that what `doctor` reads is stated here
     in one place and a change to either command shows up as a disagreement rather than as two
@@ -257,9 +253,16 @@ def _attached(tmp_path: Path) -> Path:
     _git(root, "init", "-q", "-b", "main")
     _git(root, "remote", "add", "origin", ORIGIN)
     binding.record(root, "p", ORIGIN)
+    id = binding.read_id(root)
+    assert id is not None
+    composed = build_composed(overlay, "p", id)
+    # The index `attach` renders behind the store's `MEMORY.md` link where the overlay has none.
+    index = overlay / PROJECTS / "p" / "memory" / "MEMORY.md"
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.touch()
     settings = root / LOCAL_SETTINGS
     settings.parent.mkdir(parents=True, exist_ok=True)
-    settings.write_text("{}\n", encoding="utf-8")
+    settings.write_text(json.dumps({"autoMemoryDirectory": str(composed)}) + "\n", encoding="utf-8")
     rendered = _rendered(root, overlay)
     recorded = root / LEDGER
     recorded.parent.mkdir(parents=True, exist_ok=True)
@@ -271,7 +274,7 @@ def _attached(tmp_path: Path) -> Path:
                 "allow": [],
                 "entries": {},
                 "rules": [],
-                "settings_keys": [],
+                "settings_keys": ["autoMemoryDirectory"],
                 "render": {"digest": rendered.digest},
             }
         ),
@@ -280,9 +283,6 @@ def _attached(tmp_path: Path) -> Path:
     hidden = exclude.planned_block(root, PLACED)
     assert hidden is not None
     exclude.write(hidden)
-    tree = root / "docs" / "memory"
-    tree.mkdir(parents=True, exist_ok=True)
-    (tree / "developer").symlink_to(overlay / PROJECTS / "p" / "memory" / "developer")
     return root
 
 
@@ -308,7 +308,6 @@ def test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one(
         "ci-ref",
         "attached",
         "bundles",
-        "store-debris",
     ]
 
 
@@ -377,7 +376,7 @@ REPORT = (
     "retired-deny",
     "attached",
     "bundles",
-    "store-debris",
+    "memory",
     "pre-commit",
     "overlay-requires",
 )
@@ -407,9 +406,11 @@ def test_a_project_with_no_overlay_gets_skips_from_delivery_checks(tmp_path: Pat
     root = _attached(tmp_path)
     rows = _checks(tmp_path, root, machine=_no_overlay_machine(tmp_path))
     delivery = REPORT[REPORT.index("attached") :]
-    assert {row.name: row.status for row in rows if row.name in delivery} == dict.fromkeys(
-        delivery, SKIP
-    )
+    # `memory` asks nothing of the overlay: it says the store does not resolve, as information.
+    assert {row.name: row.status for row in rows if row.name in delivery} == {
+        **dict.fromkeys(delivery, SKIP),
+        "memory": OK,
+    }
     assert [(row.name, row.detail) for row in rows if row.status == RED] == []
 
 
@@ -3192,7 +3193,7 @@ def test_no_case_here_can_read_the_developers_own_machine_configuration(
     and this project's own intended users are exactly those machines, every case that omitted
     `machine` read the developer's real overlay: the overlay root those rows read was theirs,
     `overlay-requires` read its real manifest — the shipped template declares a floor — and
-    `bundles`, `store-debris` and `attached` resolved against their real note store. Those cases
+    `bundles`, `memory` and `attached` resolved against their real note store. Those cases
     passed here and in CI only because neither machine happens to have a machine configuration.
 
     Asserted so that the default coming back would redden it: a real machine configuration is

@@ -2,61 +2,6 @@
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
-# The digest framing. Removing it left all 617 tests green: what they proved was that
-# `_content_digest` is fixed-width, never the key hashing the docstring argues for. The
-# key is repository-controlled from both ends — a `memory.groups` entry may name a nested
-# directory and a note's filename is whatever the clone commits — so one note's key can
-# carry another entry's whole key and digest inside it.
-[[mutation]]
-name = "a digest entry is unframed again, so a routing key can splice two into one"
-file = "src/stayfixed/memory/trust.py"
-before = '    return (hashlib.sha256(key_bytes).hexdigest() + content).encode("ascii")'
-after = '    return (key + content).encode("utf-8")'
-reddens = [
-  "tests/memory/test_trust.py::test_a_routing_key_cannot_splice_two_entries_into_one",
-  "tests/memory/test_trust.py::test_every_digest_entry_is_the_same_width_whatever_its_key",
-]
-
-# The harness link asks the trust gate about the store directory it exposes, so a committed index
-# reaches no harness link before trust.
-[[mutation]]
-name = "the harness link asks the gate about the notes rather than the directory"
-file = "src/stayfixed/memory/worktree.py"
-before = '    return trust.may_inject(store, config, repository_data=in_repository(store, store.path))'
-after = '    return trust.may_inject(store, config)'
-reddens = [
-  "tests/memory/test_worktree.py::test_a_committed_index_reaches_no_harness_link_before_trust",
-  "tests/memory/test_worktree.py::test_an_overlay_store_gates_the_harness_link_on_the_directory_it_exposes",
-]
-
-# The mirror of `mutations/`'s "the harness link asks the gate about the notes rather than the
-# directory", and the direction the gate did not run in. Creation was gated and revocation was not,
-# so an approved link outlived the record that authorised it: one `git pull` lapses the record,
-# every channel `memory` controls shuts, and the one it does not control kept pointing at the new
-# bytes.
-[[mutation]]
-name = "the harness link outlives the trust record that authorised it again"
-file = "src/stayfixed/memory/worktree.py"
-before = '    elif _unlink(root, relative, store.path.resolve()):'
-after = '    elif False:'
-reddens = [
-  "tests/memory/test_worktree.py::test_the_harness_link_is_withdrawn_once_the_trust_record_lapses",
-  "tests/memory/test_worktree.py::test_a_dangling_harness_link_of_ours_is_still_withdrawn",
-]
-
-# Withdrawing a link is not licence to delete a directory: the two shapes `_link` declines to
-# clobber on the way in are the two `_unlink` must decline to remove on the way out. Re-anchored
-# when the pair moved onto the contained walk: `NotASymlink` still keeps a real directory
-# standing, so what this drops is the half that says whose link it is.
-[[mutation]]
-name = "the withdrawal stops checking what the link it removes points at"
-file = "src/stayfixed/memory/worktree.py"
-before = "        return fsops.unlink_within(root, relative, pointing_at=source)"
-after = "        return fsops.unlink_within(root, relative)"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_withdrawal_never_touches_a_real_directory_or_somebody_elses_link",
-]
-
 # Two specified rules that no assertion discriminated: both mutations, `mutations/`'s
 # "group_order outranks the startup rank in the index order" and "the volatile budget excludes the
 # set that is exactly the budget", left all 617 tests green. The first decides which note leads a
@@ -103,7 +48,6 @@ before = '        return self.store_group or self.path.parent.name'
 after = '        return self.path.parent.name'
 reddens = [
   "tests/memory/test_index.py::test_a_nested_group_still_gets_its_section",
-  "tests/memory/test_index.py::test_a_nested_groups_routing_key_is_the_configured_one",
 ]
 
 # A note whose body did not change is written back byte for byte, never renormalised.
@@ -115,12 +59,12 @@ after = '    if False:'
 reddens = ["tests/memory/test_notes.py::test_an_unchanged_note_round_trips_byte_for_byte"]
 
 # Two other tests redden with this one — `tests/memory/test_surface.py`'s `required` names
-# `Links`, and the export list is compared against the imports — and that is the point rather
-# than a weakness: those two are the ones that *missed* the original omission, because both are
-# the surface restating itself. What no mutation of this file can express is the change that
-# actually happened: a signature in `worktree.py` growing a type this list does not carry. The
-# derived test is what covers that direction, and this entry is what proves the derived test is
-# load-bearing at all.
+# `Store`, the type `resolve` returns, and the export list is compared against the imports — and
+# that is the point rather than a weakness: those two are the ones that *missed* the original
+# omission, because both are the surface restating itself. What no mutation of this file can
+# express is the change that actually happened: a signature in a module of this area growing a
+# type this list does not carry. The derived test is what covers that direction, and this entry is
+# what proves the derived test is load-bearing at all.
 #
 # The derived test is `tests/test_surfaces.py`'s now, parametrised over every area rather than
 # copied into six of the ten. The entry follows it: an unfiltered run is what caught this one,
@@ -128,7 +72,7 @@ reddens = ["tests/memory/test_notes.py::test_an_unchanged_note_round_trips_byte_
 [[mutation]]
 name = "a type the surface names in a signature drops off the surface"
 file = "src/stayfixed/memory/api.py"
-before = '    "Links",'
+before = '    "Store",'
 after = ''
 reddens = [
   "tests/test_surfaces.py::test_every_type_the_surface_names_in_a_signature_is_on_the_surface[memory]",
@@ -143,18 +87,6 @@ before = '    toplevel = out.removesuffix("\n")'
 after = '    toplevel = out.strip()'
 reddens = [
   "tests/test_git_answers.py::test_the_ledger_sweep_asks_git_for_a_root_whose_name_ends_in_a_space",
-]
-
-# A trust routing key is a note's file name. One the disk holds in bytes that are not UTF-8
-# raised `UnicodeEncodeError` out of `store_digest`, and `may_inject`, every session-start bundle,
-# `memory trust` and `memory index` failed together on one committed file.
-[[mutation]]
-name = "the trust digest encodes a note name strictly again"
-file = "src/stayfixed/memory/trust.py"
-before = '    key_bytes = key.encode("utf-8", "surrogateescape")'
-after = '    key_bytes = key.encode("utf-8")'
-reddens = [
-  "tests/memory/test_trust.py::test_a_note_named_in_bytes_that_are_not_utf_8_still_has_a_digest_entry",
 ]
 
 # A bare `#412 in the tracker` reads as a comment to a real YAML reader and the key as null;
@@ -1252,22 +1184,6 @@ reddens = [
   "tests/memory/test_store.py::test_a_checkout_bound_to_another_project_reads_none_of_this_ones_notes",
 ]
 
-# `detach_main`'s own docstring: "only a symlink whose own target is this store is removed,
-# because a real directory at one of these names is unmerged work or a store the harness made,
-# and withdrawing a link is not licence to delete a directory". The loop applied the directory
-# half of that rule and not the target half, one screen below the docstring that states it and
-# two functions below an `attach_main` that has always compared.
-[[mutation]]
-name = "the main checkout's withdrawal stops checking what it removes points at"
-file = "src/stayfixed/memory/worktree.py"
-before = '''        if reached != source.resolve():
-            continue'''
-after = '''        if False:
-            continue'''
-reddens = [
-  "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_symlink_at_a_group_name_that_points_somewhere_else",
-]
-
 # The overlay's `common/memory/` is a note store, and its documentation is `_README.md` only
 # because the walk skips a name that starts with `_`. Without the skip that file is a note with no
 # frontmatter, and `memory index --check` fails in every project attached to a fresh overlay.
@@ -1278,136 +1194,6 @@ before = '''            if path.name.startswith((".", "_")):'''
 after = '''            if path.name.startswith("."):'''
 reddens = [
   "tests/overlay/test_template.py::test_nothing_in_a_fresh_common_memory_fails_the_note_reader",
-]
-
-# In the block led by `mutations/`'s "a link is created by path, outside the walk": a link is
-# created through the contained walk, never by path.
-[[mutation]]
-name = "the link tree creates a link by path again"
-file = "src/stayfixed/memory/worktree.py"
-before = "    fsops.symlink_within(root, relative, source)\n    return True"
-after = "    (root / relative).symlink_to(source)\n    return True"
-reddens = [
-  "tests/memory/test_worktree.py::test_the_worktree_module_writes_links_only_through_fsops",
-]
-
-# The anchor is found and never created, and a refusal is the whole of what that decision buys.
-# Without the check the create direction raised a bare `FileNotFoundError` the hook rendered as "0
-# links made", and the withdraw direction answered `False` and exited 0 — an anchor that is not
-# there reading as success.
-[[mutation]]
-name = "a home that is not there stops being a refusal"
-file = "src/stayfixed/memory/worktree.py"
-before = "    if not fsops.is_dir(root):\n        raise Refusal("
-after = "    if False:\n        raise Refusal("
-reddens = [
-  "tests/memory/test_worktree.py::test_a_home_that_is_not_there_is_reported_naming_it_and_never_a_partial_link",
-  "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
-]
-
-# The withdrawal call site on its own: the check exists and `detach_main` stops asking for it.
-[[mutation]]
-name = "the withdrawal takes the anchor without asking whether it is there"
-file = "src/stayfixed/memory/worktree.py"
-before = "    home_root, harness_relative = harness_anchor(root, home)"
-after = "    home_root, harness_relative = harness_link_parts(root, home)"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_withdrawal_against_a_home_that_is_not_there_refuses_rather_than_reporting_nothing",
-]
-
-# The source pin used to read three dot-methods and nothing else, so the path-based link creation it
-# exists to forbid — spelled `os.symlink` — walked straight through it.
-[[mutation]]
-name = "the link tree creates a link by path without a dot-method"
-file = "src/stayfixed/memory/worktree.py"
-before = "    fsops.symlink_within(root, relative, source)\n    return True"
-after = "    os.symlink(str(source), root / relative)\n    return True"
-reddens = [
-  "tests/memory/test_worktree.py::test_the_worktree_module_writes_links_only_through_fsops",
-]
-
-# `link`'s docstring says the base is created by the first link that goes into it and not before;
-# this is the line that used to create it whatever happened.
-[[mutation]]
-name = "the worktree tree's base directory is created again whether or not anything links"
-file = "src/stayfixed/memory/worktree.py"
-before = "            sources: dict[str, Path] = dict(store.groups)"
-after = "            (worktree / base).mkdir(parents=True, exist_ok=True)\n            sources: dict[str, Path] = dict(store.groups)"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_tree_with_nothing_to_link_leaves_no_base_directory_behind",
-]
-
-# `~/.claude` is followed and nothing below it, and a `.claude` the walk cannot open is refused at
-# the anchor, above every write.
-[[mutation]]
-name = "the harness anchor stops asking whether the walk can reach it"
-file = "src/stayfixed/memory/worktree.py"
-before = "        fsops.check_within(root, relative)\n"
-after = "        pass\n"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[claude-unsearchable]",
-  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[projects-linked]",
-]
-
-[[mutation]]
-name = "the harness anchor walks a root that is not there"
-file = "src/stayfixed/memory/worktree.py"
-before = "        if not fsops.is_dir(root):\n            raise NotADirectoryError"
-after = "        if False:\n            raise NotADirectoryError"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_claude_directory_the_walk_cannot_go_through_is_refused_at_the_anchor[claude-dangling]",
-]
-
-[[mutation]]
-name = "the harness anchor walks a linked ~/.claude without resolving it"
-file = "src/stayfixed/memory/worktree.py"
-before = "            root, relative = fsops.resolved(claude), below"
-after = "            root, relative = claude, below"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_symlinked_claude_directory_is_followed_in_both_directions",
-  "tests/memory/test_worktree.py::test_a_home_or_claude_under_a_directory_nobody_may_read_gets_the_harness_link[claude]",
-]
-
-# A note link that fails after the anchor refused still carries the refusal out of `link`, and
-# the hook still says it, beside the count of what was made.
-[[mutation]]
-name = "a half-built tree drops the harness refusal"
-file = "src/stayfixed/memory/worktree.py"
-before = "        raise PartialLink(created, exc, harness_refused=unreachable) from exc"
-after = "        raise PartialLink(created, exc) from exc"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_half_built_tree_under_a_refused_home_still_carries_the_refusal",
-]
-
-[[mutation]]
-name = "the hook drops the harness refusal of a half-built tree"
-file = "src/stayfixed/memory/hooks.py"
-before = "            return _with_harness_line(lines, partial.harness_refused)"
-after = "            return _with_harness_line(lines, None)"
-reddens = [
-  "tests/memory/test_hooks.py::test_a_half_built_tree_under_a_refused_home_still_tells_the_model",
-]
-
-[[mutation]]
-name = "a withdrawal whose walk refuses a component fails the command"
-file = "src/stayfixed/memory/worktree.py"
-before = "        return False  # a component that became a symlink after `harness_anchor` walked it"
-after = "        raise"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_withdrawal_whose_walk_refuses_a_component_leaves_it_standing",
-]
-
-# The note links are inside the worktree, so a home the anchor refuses costs the harness link
-# alone; raised, the refusal ended the session's link step before its first note link.
-[[mutation]]
-name = "a home-side refusal costs the worktree its note links again"
-file = "src/stayfixed/memory/worktree.py"
-before = "    except Refusal as refused:\n        unreachable = str(refused)"
-after = "    except LookupError as refused:\n        unreachable = str(refused)"
-reddens = [
-  "tests/memory/test_worktree.py::test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone[claude-dangling]",
-  "tests/memory/test_worktree.py::test_a_home_the_anchor_refuses_costs_the_worktree_its_harness_link_alone[projects-linked]",
-  "tests/memory/test_hooks.py::test_a_home_whose_claude_cannot_be_used_still_links_the_worktree_and_tells_the_model[claude-dangling]",
 ]
 
 # The rows and floors that report on quantities they never looked at.
@@ -1787,25 +1573,6 @@ after = "    return listed(names)"
 reddens = [
   "tests/memory/test_commands.py::test_an_unparseable_note_with_a_crafted_name_is_counted_and_never_printed_raw",
   "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
-  "tests/memory/test_commands.py::test_a_note_refused_a_harvested_line_is_named_without_its_crafted_bytes",
-]
-
-[[mutation]]
-name = "memory index names the harvest's refusals raw"
-file = "src/stayfixed/memory/commands.py"
-before = "    names = _printed(reconciled.refused_harvest)"
-after = "    names = \", \".join(reconciled.refused_harvest)"
-reddens = [
-  "tests/memory/test_commands.py::test_a_note_refused_a_harvested_line_is_named_without_its_crafted_bytes",
-]
-
-[[mutation]]
-name = "memory index names the publish refusals raw"
-file = "src/stayfixed/memory/commands.py"
-before = "_NOT_PUBLISHED.format(names=_printed(reconciled.refused_publish), index=index)"
-after = "_NOT_PUBLISHED.format(names=\", \".join(reconciled.refused_publish), index=index)"
-reddens = [
-  "tests/memory/test_commands.py::test_a_refused_note_or_pointer_is_named_without_its_crafted_bytes",
 ]
 
 [[mutation]]
@@ -1921,33 +1688,6 @@ reddens = [
   "tests/ledger/test_commands.py::test_renumber_names_a_file_it_could_not_read_without_this_machine_s_paths",
 ]
 
-[[mutation]]
-name = "a store with no group resolved names every group"
-file = "src/stayfixed/memory/store.py"
-before = "return None, Unresolved(head, listed(reasons))"
-after = "return None, Unresolved(head, '; '.join(reasons))"
-reddens = [
-  "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_counts_them_and_names_at_most_the_listed_limit",
-]
-
-[[mutation]]
-name = "the unresolved groups are named in declared order"
-file = "src/stayfixed/memory/store.py"
-before = "for k in sorted(unavailable)]"
-after = "for k in unavailable]"
-reddens = [
-  "tests/memory/test_refs.py::test_a_store_with_no_group_resolved_names_the_first_groups_in_sorted_order",
-]
-
-[[mutation]]
-name = "an unresolved group is named unclipped"
-file = "src/stayfixed/memory/store.py"
-before = "f\"{clipped(group)} is not in the store\""
-after = "f\"{group!r} is not in the store\""
-reddens = [
-  "tests/memory/test_refs.py::test_a_long_group_is_named_clipped_on_the_unresolved_groups_line",
-]
-
 # In the block led by `mutations/`'s "init's custom-gate note keeps a limit of its own": every list
 # of names nothing bounds in number takes `findings.listed`.
 [[mutation]]
@@ -1994,16 +1734,7 @@ file = "src/stayfixed/memory/commands.py"
 before = "f\"{quoted(group)}: {unavailable[group]}\""
 after = "f\"{group}: {unavailable[group]}\""
 reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
-]
-
-[[mutation]]
-name = "the store names a missing group unescaped in its reason"
-file = "src/stayfixed/memory/store.py"
-before = "f\"{clipped(group)} is not in the store\""
-after = "f\"{group} is not in the store\""
-reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
+  "tests/memory/test_refs.py::test_a_linked_group_with_no_overlay_is_named_escaped_never_raw",
 ]
 
 [[mutation]]
@@ -2022,16 +1753,6 @@ before = "f\"{clipped(group)} links outside this project's share of the overlay 
 after = "f\"{group} links outside this project's share of the overlay \""
 reddens = [
   "tests/memory/test_commands.py::test_a_group_linking_outside_the_share_is_named_escaped_never_raw",
-]
-
-[[mutation]]
-name = "a store with no resolving group names each group unescaped"
-file = "src/stayfixed/memory/store.py"
-before = "reasons = [f\"{clipped(k)}: {unavailable[k]}\" for k in sorted(unavailable)]"
-after = "reasons = [f\"{k}: {unavailable[k]}\" for k in sorted(unavailable)]"
-reddens = [
-  "tests/memory/test_refs.py::test_a_crafted_group_name_reaches_the_refusal_escaped_never_raw",
-  "tests/memory/test_refs.py::test_a_long_group_is_named_clipped_on_the_unresolved_groups_line",
 ]
 
 # A gate that cannot answer must say so in its exit code; this one ran green for its whole
@@ -2180,16 +1901,15 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_linked_roadmap_git_does_not_track_is_read_by_both_gates",
 ]
 
-# `--store <overlay>/projects/<name>/memory` names the far end of the link tree, and resolved as a
-# store of its own it had no `developer` group -- that lives in `common/memory`, beside it -- so the
-# index it rendered dropped the developer notes and `--check` called that index current.
+# Overlay mode reads the composed store the binding names and nothing else: a `--store` naming a
+# directory the repository chose never stands in for the store that reaches the overlay's notes.
 [[mutation]]
-name = "an override naming this project's share resolves a smaller store"
+name = "overlay mode reads a named store"
 file = "src/stayfixed/memory/store.py"
-before = "    if _names_own_share(override, config, overlay):"
-after = "    if False:"
+before = "    if composed is not None:\n        # Overlay mode reads"
+after = "    if composed is not None and override is None:\n        # Overlay mode reads"
 reddens = [
-  "tests/memory/test_commands.py::test_the_store_named_by_its_overlay_path_is_the_store_the_link_tree_names",
+  "tests/memory/test_commands.py::test_overlay_mode_reads_the_composed_store_whatever_store_is_named",
 ]
 
 # A command with no store to walk says why in the resolver's own sentence, and a missing store
@@ -2198,8 +1918,8 @@ reddens = [
 [[mutation]]
 name = "a missing store directory is reported with no reason of its own"
 file = "src/stayfixed/memory/store.py"
-before = "        return None, Unresolved(said, str(base))"
-after = '        return None, Unresolved("", str(base))'
+before = "        return None, Unresolved(said, shown(base))"
+after = '        return None, Unresolved("", shown(base))'
 reddens = [
   "tests/memory/test_refs.py::test_a_missing_store_directory_is_said_in_the_resolvers_own_words",
 ]
@@ -2226,28 +1946,6 @@ before = "        if not fsops.is_dir(overlay):"
 after = "        if False:"
 reddens = [
   "tests/memory/test_commands.py::test_a_binding_refusal_names_its_own_cause_and_the_way_out_that_fits_it[overlay-gone]",
-]
-
-# The index `attach` renders rewrites a file the store's approval covers; without carrying the
-# approval across it, the re-attach of a store approved at 0.1.x revoked it and withheld the
-# harness link.
-[[mutation]]
-name = "attach's index render drops the store's approval"
-file = "src/stayfixed/memory/worktree.py"
-before = "    trust.refresh_if_trusted(store, config, before, [written])"
-after = "    pass"
-reddens = [
-  "tests/attach/test_write.py::test_a_trusted_store_keeps_its_approval_when_attach_renders_its_missing_index",
-]
-
-# Outside overlay mode a `--store` naming the overlay's share is an override like any other.
-[[mutation]]
-name = "an override naming the share is dropped in every mode"
-file = "src/stayfixed/memory/store.py"
-before = '    if override is None or overlay is None or config.memory.mode != OVERLAY_MODE:'
-after = "    if override is None or overlay is None:"
-reddens = [
-  "tests/memory/test_commands.py::test_the_share_named_outside_overlay_mode_is_the_store_it_names",
 ]
 
 # The recorded overlay root is the owner's machine configuration, and was printed inside the
@@ -2651,39 +2349,6 @@ reddens = [
   "tests/ledger/test_register.py::test_a_boundary_level_that_names_no_severity_is_refused_and_never_quoted[levels0-1]",
 ]
 
-# `memory index --check` and `memory fit` asked whether the notes or a committed index are
-# repository data, a narrower question than the harness memory link's, so an overlay store with no
-# record read as trusted and said nothing while its link waited. Both ask the link's question,
-# and the words say whether the whole gate is shut or only the link waits.
-[[mutation]]
-name = "memory index and fit ask a narrower question than the harness link"
-file = "src/stayfixed/memory/commands.py"
-before = """    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = harness_link_needed(store, config)"""
-after = """    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = trust.may_inject(store, config, repository_data=_holds_repository_data(store, config))"""
-reddens = [
-  "tests/memory/test_commands.py::test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_still_flow",
-]
-
-[[mutation]]
-name = "an overlay store with no record is told none of its notes reach a session"
-file = "src/stayfixed/memory/commands.py"
-before = "    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS"
-after = "    return _UNTRUSTED"
-reddens = [
-  "tests/memory/test_commands.py::test_an_overlay_store_with_no_record_says_its_link_waits_while_its_notes_still_flow",
-]
-
-[[mutation]]
-name = "a committed index is told only the harness link waits"
-file = "src/stayfixed/memory/commands.py"
-before = "    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS"
-after = "    return _LINK_WAITS"
-reddens = [
-  "tests/memory/test_commands.py::test_a_committed_index_is_reported_untrusted",
-]
-
 # In the block led by `mutations/`'s "the regular-file reader opens whatever a path names": each
 # reader of a committed file a glob found reads it through that reader, so a link to a device or a
 # FIFO is one more file it cannot read, in that reader's own words.
@@ -2710,8 +2375,8 @@ reddens = [
 [[mutation]]
 name = "the harvest reads the index with no bound"
 file = "src/stayfixed/memory/index.py"
-before = "        text = read_regular_text(path)\n    except (OSError, UnicodeDecodeError):\n        return {}"
-after = "        text = path.read_text(encoding=\"utf-8\")\n    except (OSError, UnicodeDecodeError):\n        return {}"
+before = "        lines = read_regular_text(path).splitlines()"
+after = "        lines = path.read_text(encoding=\"utf-8\").splitlines()"
 reddens = [
   "tests/memory/test_index.py::test_an_index_past_the_read_cap_hands_the_harvest_nothing",
 ]
@@ -2823,30 +2488,12 @@ reddens = [
 ]
 
 [[mutation]]
-name = "the trust digest follows a note or index linked to a device"
-file = "src/stayfixed/memory/trust.py"
-before = "        content, over = fsops.read_bounded(path, fsops.REGULAR_READ_LIMIT)"
-after = "        content, over = path.read_bytes(), False"
-reddens = [
-  "tests/memory/test_trust.py::test_a_note_or_index_linked_to_a_device_is_unreadable_and_a_linked_file_is_its_target",
-]
-
-[[mutation]]
 name = "the document reader follows a link to a device"
 file = "src/stayfixed/docs/hygiene.py"
 before = "        return read_regular_text(path)"
 after = '        return path.read_text(encoding="utf-8")'
 reddens = [
   "tests/docs/test_hygiene.py::test_a_document_linked_to_a_device_is_a_failure_naming_it",
-]
-
-[[mutation]]
-name = "a file past the cap digests as the unreadable marker"
-file = "src/stayfixed/memory/trust.py"
-before = "            content = _TOO_LARGE + content"
-after = "            content = _UNREADABLE"
-reddens = [
-  "tests/memory/test_trust.py::test_a_file_past_the_read_cap_digests_what_was_read_not_a_constant",
 ]
 
 # CONTRIBUTING makes `api.py` the only cross-area import surface, and before this guard nothing
@@ -2864,13 +2511,6 @@ after = 'from stayfixed.ledger.register import bug_register'
 reddens = [
   "tests/boundaries/test_api_surface.py::test_no_module_reaches_into_another_packages_private_module",
 ]
-
-[[mutation]]
-name = "the harness link has an anchor where HOME names no home"
-file = "src/stayfixed/memory/worktree.py"
-before = "    if base is None:"
-after = "    if False:"
-reddens = ["tests/memory/test_worktree.py::test_an_empty_home_is_a_refusal"]
 
 # What an error says about a file is spelt once, `fsops.said`; a reader spelling it from the
 # error's own fields again is a private copy of it, and the four there were each said less.
@@ -2903,18 +2543,6 @@ before = '            "a directory on the way to paths.memory cannot be checked 
 after = '            "paths.memory does not stay inside the project",'
 reddens = [
   "tests/memory/test_store.py::test_a_paths_memory_that_cannot_be_asked_about_is_refused_for_that",
-]
-
-# `attach` asks which checkout owns each worktree, 65 of them in the repository that found this,
-# so a refusal that names none leaves the owner to find the one by hand.
-[[mutation]]
-name = "the refusal about which checkout owns a worktree names none"
-file = "src/stayfixed/memory/store.py"
-before = """        f"`git` could not answer which checkout {quoted(str(root))} belongs to, so stayfixed """"
-after = """        "`git` could not answer which checkout this belongs to, so stayfixed """"
-reddens = [
-  "tests/attach/test_write.py::test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_broken_git",
-  "tests/memory/test_store.py::test_a_worktree_removed_before_it_is_asked_about_is_gone_not_a_broken_git",
 ]
 
 # In the block led by `mutations/`'s "fsops.resolved answers a loop with a path where the
@@ -2954,87 +2582,6 @@ reddens = [
   "tests/memory/test_index.py::test_a_metadata_index_of_nothing_falls_through_to_the_description[only-spaces]",
 ]
 
-# What `memory index` wrote into notes as a provisional line is said on its line, not only in
-# `--json`, so the owner knows which notes to curate.
-[[mutation]]
-name = "memory index does not name the notes it gave a provisional line"
-file = "src/stayfixed/memory/commands.py"
-before = "    wrote = _with(wrote, _provisional(reconciled))\n"
-after = "    wrote = _with(wrote, None)\n"
-reddens = [
-  "tests/memory/test_index.py::test_the_summary_names_the_provisional_lines",
-]
-
-# Asking where a harness memory link may point resolves a `paths.memory` a checkout chose, and up to
-# Python 3.12 a symlink loop there raised `RuntimeError` out of `.resolve()`: `detach` ended in an
-# internal error and `doctor` in "this check could not run". Every fault is one `PathEscape`, and a
-# loop, `fsops.resolved`'s `ELOOP` on every interpreter, is named as one.
-[[mutation]]
-name = "harness_targets words a symlink loop as a path it cannot resolve"
-file = "src/stayfixed/memory/worktree.py"
-before = """        if exc.errno == errno.ELOOP:
-            raise PathEscape(f"{asked}: {value!r} is a symlink loop") from exc
-"""
-after = ""
-reddens = [
-  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[main-loop]",
-  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[worktree-loop]",
-]
-
-[[mutation]]
-name = "harness_targets lets an OSError out of resolving a target"
-file = "src/stayfixed/memory/worktree.py"
-before = """        raise PathEscape(f"{asked}: {value!r} cannot be resolved ({fsops.said(exc)})") from exc
-"""
-after = """        raise
-"""
-reddens = [
-  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[main-os-error]",
-  "tests/memory/test_worktree.py::test_every_fault_of_asking_where_a_harness_link_may_point_is_one_refusal_naming_the_checkout[worktree-os-error]",
-]
-
-# The refusal names whose `paths.memory` it could not ask: from a linked worktree, the raw
-# `PathEscape` about the main checkout's read as the worktree's own.
-[[mutation]]
-name = "harness_targets names no checkout in its refusal"
-file = "src/stayfixed/memory/worktree.py"
-before = '        raise PathEscape(f"{asked}: {exc}") from exc'
-after = "        raise PathEscape(str(exc)) from exc"
-reddens = [
-  "tests/attach/test_detach.py::test_a_main_checkout_tree_reached_through_a_symlink_refuses_before_anything_is_withdrawn[worktree]",
-]
-
-# A harness link is stayfixed's when it points at the owning checkout's `paths.memory`, where
-# `attach` points it, or at the checkout's own, where the `SessionStart` re-link points a
-# worktree's. Without the second, `detach` left a re-linked worktree's link dangling and `doctor`
-# called it red.
-[[mutation]]
-name = "harness_targets names the owning checkout's tree alone"
-file = "src/stayfixed/memory/worktree.py"
-before = "    for checkout in (owner, root):\n"
-after = "    for checkout in (owner,):\n"
-reddens = [
-  "tests/attach/test_detach.py::test_detach_withdraws_a_worktree_harness_link_the_session_start_relink_made",
-  "tests/attach/test_doctor.py::test_a_worktree_harness_link_the_session_start_relink_made_is_ok",
-]
-
-# A clone can commit a symlink loop under `paths.memory`, and `.resolve()` of one raises
-# `RuntimeError` on Python 3.11 and 3.12: `detach` ended in an internal error after its first
-# withdrawal, and `memory index` before it wrote anything.
-[[mutation]]
-name = "the main checkout's withdrawal lets a symlink loop at a group name out"
-file = "src/stayfixed/memory/worktree.py"
-before = """        try:
-            reached = fsops.resolved(pointed)
-        except OSError:
-"""
-after = """        reached = fsops.resolved(pointed)
-        if False:
-"""
-reddens = [
-  "tests/memory/test_worktree.py::test_a_withdrawal_leaves_a_group_link_that_is_a_symlink_loop",
-]
-
 [[mutation]]
 name = "the index link rule lets a symlink loop out"
 file = "src/stayfixed/memory/index.py"
@@ -3049,49 +2596,6 @@ reddens = [
   "tests/memory/test_index.py::test_an_index_link_that_is_a_symlink_loop_is_refused_and_sources_nothing",
 ]
 
-# `attach` and `doctor`'s `attached` row both tell a lapsed approval from one never given, since
-# only the first withdraws links an earlier run made.
-[[mutation]]
-name = "the harness gate reads a lapsed approval as one never given"
-file = "src/stayfixed/memory/worktree.py"
-before = "    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED"
-after = "    return GATE_UNAPPROVED"
-reddens = [
-  "tests/memory/test_worktree.py::test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given",
-]
-
-# The two used to be two questions, each digesting every note in the store; a closed gate with a
-# record behind it is a lapse, so the second digest told nothing the first had not.
-[[mutation]]
-name = "the harness gate digests the store a second time to tell a lapse"
-file = "src/stayfixed/memory/worktree.py"
-before = "    return GATE_LAPSED if trust.approval_recorded(store.path, store.machine) else GATE_UNAPPROVED"
-after = "    return GATE_LAPSED if trust.changed(trust.state(store, config)) else GATE_UNAPPROVED"
-reddens = [
-  "tests/memory/test_worktree.py::test_the_harness_gate_tells_an_approval_that_lapsed_from_one_never_given",
-]
-
-# A worktree's harness link is stayfixed's when it points at the main checkout's tree or at the
-# worktree's own, under a second home a harness may read as under the first.
-[[mutation]]
-name = "the withdrawal compares with the first target alone"
-file = "src/stayfixed/memory/worktree.py"
-before = "    if any(_unlink(home_root, harness_relative, target) for target in targets):"
-after = "    if any(_unlink(home_root, harness_relative, target) for target in targets[:1]):"
-reddens = ["tests/memory/test_worktree.py::test_a_harness_link_to_either_target_is_withdrawn"]
-
-# The worktree link is about the project. Its broad backstop answers nothing for an exception, so a
-# check dropped for `None` stays silent all the same; what a test can catch is the check turned
-# round, which silences the link on a real file.
-[[mutation]]
-name = "the worktree link speaks only without a project configuration"
-file = "src/stayfixed/memory/hooks.py"
-before = "    config = session.config\n    if config is None or event.project_root is None:"
-after = "    config = session.config\n    if config is not None or event.project_root is None:"
-reddens = [
-  "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[worktree_link]",
-]
-
 # `memory session-context` reads `stayfixed.toml` the way the session it feeds does.
 [[mutation]]
 name = "memory session-context refuses what a session reads"
@@ -3100,8 +2604,8 @@ before = "    config = session_config(root, machine=machine).config"
 after = "    config = load(root, machine=machine)"
 reddens = ["tests/hooks/test_floor.py::test_memory_session_context_reads_a_newer_key_with_a_note"]
 
-# The note store's rows skip in the core's words with no project configuration: the store, its
-# bundles and the harness link's remedy are the project's file's to say.
+# The `bundles` row skips in the core's words with no project configuration: the store and its
+# bundles are the project's file's to say.
 [[mutation]]
 name = "the bundles row reads a configuration that is not there"
 file = "src/stayfixed/memory/doctor.py"
@@ -3109,172 +2613,6 @@ before = "            (\"bundles\", configured(lambda context, config: _bundles(
 after = "            (\"bundles\", lambda context: _bundles(context, context.config, answers)),"
 reddens = [
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
-]
-
-[[mutation]]
-name = "the store-debris row reads a configuration that is not there"
-file = "src/stayfixed/memory/doctor.py"
-before = "            (\"store-debris\", configured(lambda context, _: _store_debris(context, answers))),"
-after = "            (\"store-debris\", lambda context: _store_debris(context, answers)),"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
-]
-
-# A store's approval is kept under the kind `0.3.0`'s flat record reads as, so every store it
-# approved stays approved.
-[[mutation]]
-name = "the memory area keeps its approvals under another kind"
-file = "src/stayfixed/memory/trust.py"
-before = 'MEMORY = "memory"'
-after = 'MEMORY = "store"'
-reddens = ["tests/memory/test_trust.py::test_a_store_0_3_0_approved_is_still_approved"]
-
-# A stayfixed-authored write carries the store's approval forward only while the record still holds
-# the digest the command read before writing: a revoke made before the refresh re-reads the
-# record stays, and is said.
-[[mutation]]
-name = "a stayfixed write approves the store again whatever the record holds now"
-file = "src/stayfixed/memory/trust.py"
-before = "    return refresh(\n        store.machine,\n        MEMORY,"
-after = "    _approve(store, _digest_of(expected))\n    return True\n    return refresh(\n        store.machine,\n        MEMORY,"
-reddens = [
-  "tests/memory/test_trust.py::test_a_refresh_never_undoes_a_revoke_made_while_the_command_ran",
-  "tests/memory/test_trust.py::test_a_refresh_keeps_when_the_person_approved",
-  "tests/memory/test_commands.py::test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so",
-]
-
-[[mutation]]
-name = "memory index says nothing when it could not carry an approval over"
-file = "src/stayfixed/memory/commands.py"
-before = "    elif before.trusted and not carried:\n        note = _DROPPED"
-after = "    elif False:\n        note = _DROPPED"
-reddens = [
-  "tests/memory/test_commands.py::test_index_never_undoes_a_revoke_made_while_it_ran_and_says_so",
-]
-
-# A refresh refuses whatever it cannot vouch for: a store whose approval had already lapsed, a file
-# that appeared while the command ran, and an approved file that went.
-[[mutation]]
-name = "a refresh carries a lapsed approval forward"
-file = "src/stayfixed/memory/trust.py"
-before = "    if not before.trusted or before.recorded is None:"
-after = "    if before.recorded is None:"
-reddens = [
-  "tests/memory/test_commands.py::test_a_change_stayfixed_did_not_write_is_not_blessed_by_indexing",
-]
-
-[[mutation]]
-name = "a refresh carries past a file that appeared while the command ran"
-file = "src/stayfixed/memory/trust.py"
-before = "            return False  # it appeared while the command ran, and stayfixed did not write it"
-after = "            continue"
-reddens = ["tests/memory/test_trust.py::test_a_refresh_carries_only_the_file_stayfixed_wrote"]
-
-[[mutation]]
-name = "a refresh carries past an approved file that vanished"
-file = "src/stayfixed/memory/trust.py"
-before = "    if not set(before.entries) <= {key for key, _ in expected}:"
-after = "    if False:"
-reddens = ["tests/memory/test_trust.py::test_a_refresh_stops_when_an_approved_file_vanished"]
-
-# A note body that carries the repository-data marker is refused, never wrapped.
-[[mutation]]
-name = "a note that forges the repository-data marker is wrapped anyway"
-file = "src/stayfixed/memory/trust.py"
-before = "    if DELIMITER in text:\n        raise UnsafeNote("
-after = "    if False:\n        raise UnsafeNote("
-reddens = ["tests/memory/test_trust.py::test_a_body_that_forges_the_marker_is_refused"]
-
-# The old spelling runs the same approve path, and never records on its own.
-[[mutation]]
-name = "the memory trust alias records without the approve path"
-file = "src/stayfixed/memory/commands.py"
-before = "    approved = approve_kind(trust.MEMORY, context)"
-after = '    trust.record(*_store(args))\n    return Result("recorded")'
-reddens = ["tests/trust/test_commands.py::test_an_approval_with_no_terminal_records_and_prints_what_it_recorded[memory-trust]"]
-
-# For as long as the old spelling lives, its `--json` keeps its old keys, each read off the new run.
-[[mutation]]
-name = "the memory trust alias drops its old JSON keys"
-file = "src/stayfixed/memory/commands.py"
-before = '    return Result(f"{approved.summary}\n{ALIAS_NOTE}", {**approved.data, **old}, approved.exit_code)'
-after = '    return Result(f"{approved.summary}\n{ALIAS_NOTE}", approved.data, approved.exit_code)'
-reddens = ["tests/trust/test_commands.py::test_the_alias_keeps_its_old_json_keys"]
-
-[[mutation]]
-name = "the memory trust alias says the store was trusted before it approved it"
-file = "src/stayfixed/memory/commands.py"
-before = '        "was_trusted": store["was"] == State.APPROVED,'
-after = '        "was_trusted": after is State.APPROVED,'
-reddens = ["tests/trust/test_commands.py::test_the_alias_keeps_its_old_json_keys"]
-
-# The sentences that name the store's approval ask for the person at the machine and tell an agent
-# to stop; none tells its reader to run the approval in a terminal.
-[[mutation]]
-name = "the revoked link line tells its reader to approve in a terminal"
-file = "src/stayfixed/memory/hooks.py"
-before = '    "changed has been reviewed, ask the person at this machine to run `stayfixed trust approve "'
-after = '    "changed has been reviewed, run `stayfixed trust approve "'
-reddens = [
-  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
-]
-
-[[mutation]]
-name = "memory asks no person for the store's approval"
-file = "src/stayfixed/memory/commands.py"
-before = '_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")'
-after = '_APPROVE = "run `stayfixed trust approve memory` in a terminal"'
-reddens = [
-  "tests/trust/test_commands.py::test_every_sentence_that_names_the_memory_approval_asks_for_the_person",
-]
-
-# A body that forges the repository-data marker is refused in a fixed sentence that quotes nothing
-# of the body.
-[[mutation]]
-name = "a forged marker's refusal quotes the body it refused"
-file = "src/stayfixed/memory/trust.py"
-before = "        raise UnsafeNote(UNSAFE_NOTE)"
-after = '        raise UnsafeNote(f"{UNSAFE_NOTE}: {text}")'
-reddens = ["tests/memory/test_trust.py::test_a_body_that_forges_the_marker_is_refused"]
-
-# A refresh of the store's approval that an agent's sandbox refused: the files stayfixed wrote stay
-# written, the approval stays as the person gave it, and the command says so rather than ending in
-# the record's refusal.
-
-[[mutation]]
-name = "memory index ends in the record's refusal when a sandbox refuses its refresh"
-file = "src/stayfixed/memory/commands.py"
-before = "    except SandboxedWrite:\n        # The index is written;"
-after = "    except LookupError:\n        # The index is written;"
-reddens = [
-  "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
-]
-
-[[mutation]]
-name = "memory index says the store changed when a sandbox refused its refresh"
-file = "src/stayfixed/memory/commands.py"
-before = "    if sandboxed:\n        note = _NOT_REFRESHED"
-after = "    if False:\n        note = _NOT_REFRESHED"
-reddens = [
-  "tests/memory/test_commands.py::test_index_whose_refresh_a_sandbox_refused_leaves_the_approval_and_says_so",
-]
-
-[[mutation]]
-name = "attach stops at a refresh the sandbox refused"
-file = "src/stayfixed/memory/worktree.py"
-before = "    except SandboxedWrite:\n        return True"
-after = "    except LookupError:\n        return True"
-reddens = [
-  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
-]
-
-[[mutation]]
-name = "attach's render forgets the refresh the sandbox refused"
-file = "src/stayfixed/memory/worktree.py"
-before = "    except SandboxedWrite:\n        return True"
-after = "    except SandboxedWrite:\n        return False"
-reddens = [
-  "tests/attach/test_write.py::test_an_approval_attach_could_not_carry_is_said_as_what_happened[sandboxed]",
 ]
 
 # A session reads past a machine file it cannot use (`config.session`), so the store's own read of
@@ -3845,3 +3183,79 @@ file = "src/stayfixed/memory/store.py"
 before = "        origin=NO_REMOTE_SAID if origin is None else quoted(without_userinfo(origin)),"
 after = "        origin=NO_REMOTE_SAID if origin is None else quoted(origin),"
 reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]
+
+# A note that already holds the nonce `wrap` drew could close its own region with it, so the draw
+# is repeated until the nonce is one the note does not contain.
+[[mutation]]
+name = "wrap keeps a nonce the note already holds"
+file = "src/stayfixed/memory/trust.py"
+before = "    while nonce in text:\n        nonce = new_nonce()"
+after = "    while False:\n        nonce = new_nonce()"
+reddens = [
+  "tests/memory/test_trust.py::test_wrap_draws_another_nonce_when_the_note_already_holds_the_first",
+]
+
+# A note counts as the owner's only at the bytes promoted: the note's digest now must be one the
+# record holds, so an edit after promoting is a note to review again.
+[[mutation]]
+name = "a stale digest still reads as reviewed"
+file = "src/stayfixed/memory/reviewed.py"
+before = "    return REVIEWED if current in held else UNREVIEWED"
+after = "    return REVIEWED if held else UNREVIEWED"
+reddens = [
+  "tests/memory/test_reviewed.py::test_an_edit_after_promotion_makes_that_note_unreviewed_and_moves_no_other",
+]
+
+# The composed store's path ends in the whole binding id, a secret: every message names a store
+# path through `store.shown`, which cuts the id to its short form.
+[[mutation]]
+name = "a store path is printed with the whole binding id"
+file = "src/stayfixed/memory/store.py"
+before = '    return "/".join([str(base), f"{short(id)}…", *rest])'
+after = "    return str(path)"
+reddens = [
+  "tests/memory/test_composed.py::test_no_memory_command_prints_the_whole_binding_id_through_a_store_path",
+]
+
+# The harvest reads only the lines outside the region `render_index` writes: read back out of the
+# region, the last render's line for an edited note was written into it as the native writer's.
+[[mutation]]
+name = "the harvest reads the rendered region"
+file = "src/stayfixed/memory/index.py"
+before = "        return lines[:start] + lines[end + 1 :]"
+after = "        return lines"
+reddens = [
+  "tests/memory/test_index.py::test_an_edited_description_leaves_every_note_as_it_was_over_two_runs",
+]
+
+# An unreviewed note's label follows this machine's record, so it is written only into a composed
+# store's own index, never one a repository commits or the overlay shares.
+[[mutation]]
+name = "the index labels an unreviewed note outside a composed store"
+file = "src/stayfixed/memory/index.py"
+before = "    if stores_holding(_destination(store, config)) is not None:"
+after = "    if True:"
+reddens = [
+  "tests/memory/test_index.py::test_an_in_repo_index_carries_no_label_another_machines_record_would_change",
+]
+
+# A note file that is a link is skipped in every store: the repository would choose what is read
+# through it, a file outside it or a note promoted elsewhere.
+[[mutation]]
+name = "a symlinked note is walked"
+file = "src/stayfixed/memory/notes.py"
+before = "            if fsops.is_symlink(path):\n                skipped.append(path)"
+after = "            if False:\n                skipped.append(path)"
+reddens = [
+  "tests/memory/test_reviewed.py::test_a_symlinked_note_is_neither_delivered_nor_digested_and_is_counted_skipped",
+]
+
+# Only a reviewed note is a standing rule, whatever `startup` rank a note claims about itself.
+[[mutation]]
+name = "the standing rules admit an unreviewed note"
+file = "src/stayfixed/memory/bundles.py"
+before = "        return _standing([note for note in notes if note.path in reviewed], config)"
+after = "        return _standing(notes, config)"
+reddens = [
+  "tests/memory/test_reviewed.py::test_a_note_with_no_record_is_unreviewed_and_no_standing_rule_whatever_it_ranks",
+]

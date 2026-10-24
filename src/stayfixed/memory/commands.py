@@ -1,27 +1,27 @@
 """The `memory` group. Every command takes `--store PATH`.
 
-`--store` is an override of *where the notes are*, not of the rules about them: it is held to
-the same target rule as a link the resolver found, so passing a path is not a way around the
-overlay binding. `--machine` exists for the same reason the resolver takes one — a test that
-did not thread it would read the developer's real configuration and, worse, write a trust
-record into their home directory.
+`--store` is an override of *where the notes are*, not of the rules about them, and overlay mode
+does not read it: there the store is the composed one the binding names. `--machine` exists for
+the same reason the resolver takes one — a test that did not thread it would read the developer's
+real configuration.
 
 It is threaded exactly twice, into `command_config` (`session_config` for `session-context`,
 which reads the file the way a session does) and into `resolve`, and never again: `resolve` puts
 it on the `Store` it builds, so every later call takes it from there. It used to be an optional
-keyword on about twenty functions, and the only thing keeping a command's overlay, its index
-destination and its trust record in agreement was that each of those call sites remembered to
-pass it.
+keyword on about twenty functions, and the only thing keeping a command's overlay and its index
+destination in agreement was that each of those call sites remembered to pass it.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 from pathlib import Path
 
+from stayfixed import fsops
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, command_owner, common_flags
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import HARNESS_MODE, Config
 from stayfixed.config.session import command_config, session_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
@@ -32,26 +32,24 @@ from stayfixed.memory.index import (
     IndexCheck,
     Reconciliation,
     check_index,
-    index_source,
     reconcile,
     render_index,
     write_index,
 )
 from stayfixed.memory.inventory import inventory, totals
-from stayfixed.memory.store import Store, Unresolved, in_repository, resolved
-from stayfixed.memory.worktree import harness_link_needed
+from stayfixed.memory.notes import Note, walk
+from stayfixed.memory.reviewed import promote, unreviewed
+from stayfixed.memory.store import (
+    BUILT_BY_ATTACH,
+    NO_RECORD,
+    STORE_MISSING,
+    Store,
+    Unresolved,
+    resolved,
+    shown,
+)
 from stayfixed.printed import printable, quoted
 from stayfixed.result import Result
-from stayfixed.trust.api import (
-    ONLY_OUTSIDE,
-    PERSON_RUNS,
-    SANDBOX_REFUSED,
-    SandboxedWrite,
-    State,
-    approve_kind,
-    kind_context,
-    state,
-)
 
 
 def _machine(args: argparse.Namespace) -> Path | None:
@@ -70,8 +68,7 @@ def _machine(args: argparse.Namespace) -> Path | None:
 # So the detail is kept and wrapped, rather than dropped. A person running `memory index` by
 # hand needs to know *which* group entry was refused; a model reading the same bytes needs the
 # region markers that say the text is data. `trust.wrap` is what `refusal_reason` names as the
-# way to have both, and `UnsafeNote` — a `Refusal`, exit 2 — is the right answer to a value
-# that tries to forge the markers.
+# way to have both: the region's nonce is one the text does not hold, so no value can close it.
 #
 # A reason that has words of stayfixed's own — which cause, and the way out — says them *before*
 # the region: inside it they are data a model is told not to act on, and the way out is the one
@@ -83,132 +80,30 @@ def _no_store(reason: Unresolved) -> Failure:
     if reason.detail is None:
         return Failure(f"no memory store: {reason.said}")
     lead = _SAID.format(said=reason.said)
-    return Failure(f"{lead}\n{trust.wrap(reason.detail, trust.new_nonce())}")
+    return Failure(f"{lead}\n{trust.wrap(reason.detail)}")
 
 
 def _store(args: argparse.Namespace) -> tuple[Store, Config]:
+    """The store the configuration names in `--root`, or the refusal that says why there is none."""
     root = Path(args.root).resolve()
     machine = _machine(args)
     config = command_config(root, machine=machine, owner=command_owner(machine))
-    return _store_of(args, root, config, machine), config
-
-
-def _store_of(args: argparse.Namespace, root: Path, config: Config, machine: Path | None) -> Store:
-    """The store `config` names in `root`, or the refusal that says why there is none."""
-    return store_at(root, config, machine, args.store)
-
-
-def store_at(root: Path, config: Config, machine: Path | None, override: str | None) -> Store:
-    """`_store_of` for a caller holding `--store`'s value rather than the parsed arguments: the
-    `memory` approval kind (`memory.approvals`) resolves the store as `memory trust` did."""
     # `resolved` and not `resolve` + `refusal_reason`: the pair walked the whole resolution
     # twice, four `git` queries with a five-second timeout apiece each time, so a hanging `git`
-    # cost a refused `memory session-context` up to forty seconds — once per `SessionStart`
-    # bundle entry.
-    found = resolved(root, config, override=override, machine=machine)
+    # cost a refused command up to forty seconds.
+    found = resolved(root, config, override=args.store, machine=machine)
     if found[0] is None:
         raise _no_store(found[1])
-    return found[0]
+    return found[0], config
 
 
-# How each sentence below asks for the store's approval: of the person at the machine, never of an
-# agent (`trust.api.PERSON_RUNS`).
-_APPROVE = PERSON_RUNS.format(command="stayfixed trust approve memory")
-# What the trust gate withholds until there is a record, said where a person will read it:
-# `bundles.blocks` returns `[]` for repository-data notes, and `worktree.harness_link_needed`
-# withholds the harness memory link from a store whose directory is inside the repository.
-# `harness_link_needed` decides when one of these is said — the link's question, which is the
-# wider one: whenever the notes or a committed index are withheld, so is the link — and
-# `_holds_repository_data` which. The failure
-# this closes was silent in both directions: `memory index` rewrites every note and `MEMORY.md`,
-# so it used to revoke the very record it depends on, and nothing in any summary said why the
-# model had stopped receiving standing rules.
-_UNTRUSTED = (
-    "this store holds repository data with no trust record, so none of it reaches a session — "
-    "not through the standing-rules and volatile-notes bundles, nor through the harness memory "
-    "link; " + _APPROVE
-)
-# The overlay store whose notes are all the machine owner's: the bundles deliver them with no
-# record, and only the link to the store's directory, which is inside the repository, waits.
-# Said in its own words because `_UNTRUSTED`'s "none of it reaches a session" is false here.
-_LINK_WAITS = (
-    "the harness memory link to this store waits for a trust record, because the store's "
-    "directory is inside the repository; its notes still reach a session through the "
-    "standing-rules and volatile-notes bundles; to link it, " + _APPROVE
-)
-# The narrow case where a stayfixed-authored write cannot carry trust forward: the store changed
-# under it, so re-recording would bless bytes the owner has never looked at, or the record did —
-# the owner revoked the approval, or gave a new one, while the command ran — so re-recording would
-# undo the owner's own word. `refresh_if_trusted` refuses rather than guess, which is right, and
-# the human has to be told which it was.
-_DROPPED = (
-    "the store or its trust record changed while this command ran, so the approval was not "
-    "carried over; review the change, and if the store should reach a session, " + _APPROVE
-)
-# The refresh's write refused as an agent's sandbox refuses one (`trust.boundary`): the files were
-# written and the approval was left at the digest the person gave, which they no longer match, so
-# a later run cannot carry it either and only a new approval brings the store back.
-_NOT_REFRESHED = SANDBOX_REFUSED.format(
-    outcome="the store's approval could not be refreshed and was left as it was",
-    directory="the trust record's directory",
-    remedy=f"{ONLY_OUTSIDE}; the approval no longer matches the files this command wrote, so "
-    "review them, and if the store should reach a session, " + _APPROVE,
-)
-# What the write path put into notes that nobody curated: an `index:` line taken from a note's
-# `metadata.index` or, failing that, its description. Said on the line and not only in `--json`'s
-# `provisional`, because the run rewrote those notes and a person running it is who curates them.
-_PROVISIONAL = "wrote a provisional index line into {count} note(s): {names}"
-# `index._harvestable` refused to persist repository-authored titles into notes that are not
-# themselves repository data. Said out loud because the alternative is a silent drop: the notes
-# keep their own descriptions and nothing else in the output would differ.
-_NOT_HARVESTED = (
-    "{names} took no index line from {index}: it is committed to this repository and they are "
-    "not, so its text was not written into memory the machine owns"
-)
-# `index._publishable` refused to write a repository-authored line into {index} because this
-# run's destination reaches outside this project's own repository — the write-side mirror of
-# `_NOT_HARVESTED`, said out loud for the same reason: a drop `render_index` makes on its own
-# has no channel back to a person running the command, and a silent one is how repository text
-# reaches every other project sharing that destination.
-_NOT_PUBLISHED = (
-    "{names} took no line in {index}: committed to this repository, while this run's "
-    "destination reaches outside it, so none of it was published into memory the machine shares"
-)
-# The same gate, the other kind of thing. `memory.index_extra` entries are pointers in
-# `stayfixed.toml`, not notes, and they used to be appended to the same list the notes above are
-# named from — so one sentence called a note name and a document path both notes.
+# `memory.index_extra` entries are pointers in `stayfixed.toml`, repository data, held back from an
+# index whose destination reaches outside this repository (`index._to_machine`). Said out loud: a
+# drop `render_index` makes on its own has no channel back to a person running the command.
 _EXTRA_NOT_PUBLISHED = (
     "{names} took no pointer in {index}: `memory.index_extra` lives in this repository's "
     "stayfixed.toml, while this run's destination reaches outside it"
 )
-
-
-def _holds_repository_data(store: Store, config: Config) -> bool:
-    """Whether the notes or a committed index are repository data, which the bundles withhold
-    too, rather than only the directory the harness link exposes.
-
-    `trust.is_repository_data` answers about the store's *notes*, through `inside_project`,
-    which in overlay mode is False by design — every group resolves out into the overlay —
-    while `store.path` is a real directory inside the repository, so a committed `MEMORY.md`
-    there is repository data that answer cannot see. So the index is asked about by file,
-    through its own `in_repository`, beside the notes.
-    """
-    index = index_source(store, config)
-    return trust.is_repository_data(store) or (index is not None and in_repository(store, index))
-
-
-def _gate(store: Store, config: Config, trusted: bool) -> str | None:
-    """Whether the trust gate is what a person should be told about, after a command ran;
-    `trusted` is the caller's own answer to `harness_link_needed`, asked once per command.
-
-    Deliberately not wired into `session-context`: that command's `Result.summary` *is* the
-    text the `SessionStart` entry emits, so a diagnostic there would be injected into the model
-    rather than read by anyone. Nor into the handler, which stays quiet. The
-    commands a person runs by hand are where this belongs.
-    """
-    if trusted:
-        return None
-    return _UNTRUSTED if _holds_repository_data(store, config) else _LINK_WAITS
 
 
 def _with(summary: str, note: str | None) -> str:
@@ -224,33 +119,12 @@ def _printed(names: list[str]) -> str:
     return listed([printable(name) for name in names])
 
 
-def _provisional(reconciled: Reconciliation) -> str | None:
-    """The notes this run wrote a provisional `index:` line into, named through `_printed`."""
-    if not reconciled.provisional:
-        return None
-    names = _printed(reconciled.provisional)
-    return _PROVISIONAL.format(count=len(reconciled.provisional), names=names)
-
-
-def _harvest(reconciled: Reconciliation, store: Store) -> str | None:
-    """What `index._harvestable` declined to persist, named where a person will read it."""
-    if not reconciled.refused_harvest:
-        return None
-    names = _printed(reconciled.refused_harvest)
-    return _NOT_HARVESTED.format(names=names, index=store.path / INDEX_NAME)
-
-
 def _publish(reconciled: Reconciliation, store: Store) -> str | None:
-    """What `index._publishable` declined to write, named where a person will read it."""
-    index = store.path / INDEX_NAME
-    said = []
-    if reconciled.refused_publish:
-        said.append(_NOT_PUBLISHED.format(names=_printed(reconciled.refused_publish), index=index))
-    if reconciled.refused_extra:
-        said.append(
-            _EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)
-        )
-    return "; ".join(said) or None
+    """The `memory.index_extra` entries held back, named where a person will read it."""
+    if not reconciled.refused_extra:
+        return None
+    index = shown(store.path / INDEX_NAME)
+    return _EXTRA_NOT_PUBLISHED.format(names=_printed(reconciled.refused_extra), index=index)
 
 
 # A note the store holds and cannot parse is the one failure this store cannot recover from by
@@ -296,8 +170,6 @@ def _findings(report: IndexCheck, config: Config) -> list[str]:
 
 def run_index(args: argparse.Namespace) -> Result:
     store, config = _store(args)
-    # Taken before anything is written, so it records the bytes the owner actually approved.
-    before = trust.snapshot(store, config)
     reconciled = reconcile(store, config, write=not args.check)
     report = check_index(store, config, reconciled)
     findings = _findings(report, config)
@@ -309,10 +181,9 @@ def run_index(args: argparse.Namespace) -> Result:
             if findings
             else f"index is current: {report.words} words, {report.lines} lines"
         )
-        summary = _with(_with(summary, _harvest(reconciled, store)), _publish(reconciled, store))
-        trusted = harness_link_needed(store, config)
+        summary = _with(summary, _publish(reconciled, store))
         return Result(
-            _with(summary, _gate(store, config, trusted)),
+            summary,
             {
                 "drifted": report.drifted,
                 "words": report.words,
@@ -321,56 +192,42 @@ def run_index(args: argparse.Namespace) -> Result:
                 "over_budget": report.over_budget,
                 "over_caps": report.over_caps,
                 "provisional": report.provisional,
-                "refused_harvest": reconciled.refused_harvest,
-                "refused_publish": reconciled.refused_publish,
                 "refused_extra": reconciled.refused_extra,
                 "unreadable": report.unreadable,
-                "trusted": trusted,
             },
             # The same list the summary is built from, so the two can no longer disagree.
             exit_code=1 if findings else 0,
         )
     text = render_index(reconciled, config, store)
     path = write_index(store, config, text)
-    try:
-        carried = trust.refresh_if_trusted(store, config, before, [*reconciled.written, path])
-        sandboxed = False
-    except SandboxedWrite:
-        # The index is written; the refresh alone was refused, and nothing reached the record.
-        carried, sandboxed = False, True
-    # Asked after the write and its refresh, which is the state the next session meets.
-    trusted = harness_link_needed(store, config)
-    note: str | None
-    if sandboxed:
-        note = _NOT_REFRESHED
-    elif before.trusted and not carried:
-        note = _DROPPED
-    else:
-        note = _gate(store, config, trusted)
     # Exit 0: the write succeeded, and `--check` is the mode that fails a build. The findings
     # are still said, because a person running this by hand is who can act on them.
     wrote = "; ".join(
-        [f"wrote {path} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
+        [f"wrote {shown(path)} ({report.words} words, {len(reconciled.notes)} notes)", *findings]
     )
-    wrote = _with(wrote, _provisional(reconciled))
-    wrote = _with(_with(wrote, _harvest(reconciled, store)), _publish(reconciled, store))
+    wrote = _with(wrote, _publish(reconciled, store))
     return Result(
-        _with(wrote, note),
+        wrote,
         {
-            "path": str(path),
+            "path": shown(path),
             "words": report.words,
             "lines": report.lines,
             "harvested": reconciled.harvested,
             "provisional": reconciled.provisional,
-            "refused_harvest": reconciled.refused_harvest,
-            "refused_publish": reconciled.refused_publish,
             "refused_extra": reconciled.refused_extra,
             "unreadable": report.unreadable,
             "over_budget": report.over_budget,
             "over_caps": report.over_caps,
-            "trusted": trusted,
         },
     )
+
+
+# What the standing-rules entry says of a bound checkout whose composed store is gone.
+STORE_GONE = (
+    "stayfixed: this checkout's memory store {store} is gone, so no note reaches this session; "
+    "run `stayfixed attach` to build it"
+)
+_NOTHING_TO_DELIVER = (STORE_MISSING, STORE_MISSING + BUILT_BY_ATTACH, NO_RECORD)
 
 
 def run_session_context(args: argparse.Namespace) -> Result:
@@ -386,48 +243,38 @@ def run_session_context(args: argparse.Namespace) -> Result:
     root = Path(args.root).resolve()
     machine = _machine(args)
     config = session_config(root, machine=machine).config
-    if config is None:
+    # No project configuration, or memory left to the harness: no store, and nothing to say.
+    if config is None or config.memory.mode == HARNESS_MODE:
         return Result("")
-    text = render(bundle, _store_of(args, root, config, machine), config, part=args.part)
+    found = resolved(root, config, override=args.store, machine=machine)
+    if found[0] is None:
+        # A store whose directory nobody has made yet — a `local-only` repository before its
+        # first note, an overlay checkout `attach` has not composed — and a checkout this machine
+        # has not bound have nothing to deliver, and a session is no place to say so: `doctor`
+        # reports the binding and the store, and `hook SessionStart` says the binding once.
+        missing = found[1].said == STORE_MISSING + BUILT_BY_ATTACH
+        if missing and bundle is Bundle.STANDING_RULES and args.part == 1:
+            return Result(STORE_GONE.format(store=quoted(found[1].detail or "")))
+        if found[1].said in _NOTHING_TO_DELIVER:
+            return Result("")
+        raise _no_store(found[1])
+    text = render(bundle, found[0], config, part=args.part)
     return Result(text if text is not None else "")
-
-
-# What the old spelling says after it ran, so a person learns the new one before it goes.
-ALIAS_NOTE = (
-    "`stayfixed memory trust --in-repo-memory` is now `stayfixed trust approve memory`; the old "
-    "spelling is removed in 0.5.0"
-)
-
-
-def run_trust(args: argparse.Namespace) -> Result:
-    """The old spelling of `stayfixed trust approve memory`: the same approve path.
-
-    Its `--json` keeps the old spelling's keys for as long as the spelling lives, beside the new
-    ones, each read off the new run: `was_trusted`, whether the store was approved at its digest
-    before the run; `trusted`, whether the record holds that digest after it; `digest`, the
-    store's digest."""
-    context, _ = kind_context(args)
-    approved = approve_kind(trust.MEMORY, context)
-    # The memory kind describes one store per checkout, or refuses before anything is approved.
-    (store,) = approved.data["approved"]
-    after = state(context.machine, trust.MEMORY, store["subject"], store["digest"])
-    old = {
-        "was_trusted": store["was"] == State.APPROVED,
-        "trusted": after is State.APPROVED,
-        "digest": store["digest"],
-    }
-    return Result(f"{approved.summary}\n{ALIAS_NOTE}", {**approved.data, **old}, approved.exit_code)
 
 
 def run_inventory(args: argparse.Namespace) -> Result:
     store, config = _store(args)
     reconciled = reconcile(store, config, write=False)
-    entries = inventory(reconciled, config)
+    entries = inventory(reconciled, config, store)
     counts = totals(entries)
+    # A note file that is a link is read nowhere (`notes.walk`), and counted here, where a sweep
+    # reads what the store holds.
+    skipped = len(reconciled.skipped)
     return Result(
         f"{counts['notes']} notes, {counts['words']} words, "
-        f"{counts['provisional']} provisional, {counts['stale']} stale",
-        {"entries": [entry.as_dict() for entry in entries], **counts},
+        f"{counts['provisional']} provisional, {counts['stale']} stale"
+        + (f", {skipped} linked note(s) skipped" if skipped else ""),
+        {"entries": [entry.as_dict() for entry in entries], **counts, "skipped": skipped},
     )
 
 
@@ -445,13 +292,7 @@ def run_doctor_bundles(args: argparse.Namespace) -> Result:
     }
     bad = [name for name, row in report.items() if row["overflow"] or row["oversized"]]
     summary = "every bundle fits its slots" if not bad else f"does not fit: {', '.join(bad)}"
-    # A bundle that fits because it is empty is not a bundle that fits. `doctor` reads this.
-    trusted = harness_link_needed(store, config)
-    return Result(
-        _with(summary, _gate(store, config, trusted)),
-        {"bundles": report, "trusted": trusted},
-        exit_code=1 if bad else 0,
-    )
+    return Result(summary, {"bundles": report}, exit_code=1 if bad else 0)
 
 
 # The refusal carries the resolver's reasons rather than naming a command that would report
@@ -484,7 +325,7 @@ def _unavailable(unavailable: dict[str, str]) -> Refusal:
     # harness, which keeps at most `[native_caps] hook_output_chars` of a hook's output.
     reasons = "\n".join(f"{quoted(group)}: {unavailable[group]}" for group in sorted(unavailable))
     head = _UNAVAILABLE_GROUPS.format(count=len(unavailable))
-    return Refusal(f"{head}\n{trust.wrap(reasons, trust.new_nonce())}")
+    return Refusal(f"{head}\n{trust.wrap(reasons)}")
 
 
 def run_refs(args: argparse.Namespace) -> Result:
@@ -519,6 +360,56 @@ def run_refs(args: argparse.Namespace) -> Result:
     return Result("; ".join([*parts, *advice]), data, exit_code=1)
 
 
+# What `memory promote` refuses, with nothing recorded: a name that is no note the store walks,
+# and a command line that names notes and asks for every unreviewed one at once, or neither.
+NOT_A_NOTE = (
+    "is not a note of this store, so nothing was promoted; name a note by its path in the store, "
+    "<group>/<file>.md, as `stayfixed memory index` links it"
+)
+NOTHING_NAMED = (
+    "name the notes to promote, or pass --changed for every unreviewed note, and not both; "
+    "nothing was promoted"
+)
+
+
+def _relative(note: Note) -> str:
+    return f"{note.group_name}/{note.path.name}"
+
+
+def _named(notes: list[Note], names: list[str]) -> list[Note]:
+    """The notes `names` name, by their path in the store or by a path to the file, in order and
+    once each; a name that is none of them refuses before anything is recorded."""
+    by_name = {_relative(note): note for note in notes}
+    by_path: dict[Path, Note] = {}
+    for each in notes:
+        with contextlib.suppress(OSError):
+            by_path[fsops.resolved(each.path)] = each
+    chosen: dict[Path, Note] = {}
+    for name in names:
+        found = by_name.get(name)
+        if found is None:
+            with contextlib.suppress(OSError):
+                found = by_path.get(fsops.resolved(Path(name).expanduser()))
+        if found is None:
+            raise Refusal(f"{quoted(name)} {NOT_A_NOTE}")
+        chosen.setdefault(found.path, found)
+    return list(chosen.values())
+
+
+def run_promote(args: argparse.Namespace) -> Result:
+    if bool(args.notes) == args.changed:
+        raise Refusal(NOTHING_NAMED)
+    store, config = _store(args)
+    notes = walk(store.path, [g for g in config.memory.groups if g in store.groups]).notes
+    chosen = unreviewed(store, notes) if args.changed else _named(notes, args.notes)
+    recorded = promote(store, chosen) if chosen else {}
+    rows = [{"path": _relative(note), "digest": recorded[note.path]} for note in chosen]
+    lines = [f"promoted {printable(row['path'])} {row['digest']}" for row in rows]
+    return Result(
+        "\n".join(lines) or "every note is reviewed; nothing was promoted", {"promoted": rows}
+    )
+
+
 def register(groups: SubParsers) -> None:
     group = groups.add_parser("memory", help="the working-memory store")
     sub = group.add_subparsers(dest="command", metavar="<command>")
@@ -535,29 +426,6 @@ def register(groups: SubParsers) -> None:
     context.add_argument("--bundle", required=True, help=", ".join(b.value for b in Bundle))
     context.add_argument("--part", type=int, default=1, help="which numbered slot to render")
     context.set_defaults(func=run_session_context)
-
-    trusted = common_flags(
-        sub.add_parser(
-            "trust",
-            help="the old spelling of `stayfixed trust approve memory`, removed in 0.5.0",
-        ),
-        store=True,
-    )
-    trusted.add_argument(
-        "--in-repo-memory",
-        action="store_true",
-        required=True,
-        # Required and never read by `run_trust`: the old spelling required it, and an alias keeps
-        # its spelling whole until it is removed. It stops nothing, and there is nothing here to
-        # branch on: trust is only ever *consulted* for content that
-        # lives in the repository — the notes, when `inside_project(store)`, and `MEMORY.md`
-        # whenever it resolves inside the repository, which it does in overlay mode too, since
-        # `store.path` is a real directory there. For a store holding neither,
-        # `trust.may_inject` short-circuits to `True`, so recording a hash for it is inert
-        # rather than dangerous.
-        help="the only kind of store trust applies to",
-    )
-    trusted.set_defaults(func=run_trust)
 
     listing = common_flags(
         sub.add_parser("inventory", help="what a memory sweep reads"), store=True
@@ -577,3 +445,16 @@ def register(groups: SubParsers) -> None:
         store=True,
     )
     refs.set_defaults(func=run_refs)
+
+    promoting = common_flags(
+        sub.add_parser("promote", help="count notes as the owner's, at the bytes they hold now"),
+        store=True,
+    )
+    promoting.add_argument(
+        "notes",
+        nargs="*",
+        metavar="NOTE",
+        help="a note by its path in the store, <group>/<file>.md",
+    )
+    promoting.add_argument("--changed", action="store_true", help="every unreviewed note")
+    promoting.set_defaults(func=run_promote)

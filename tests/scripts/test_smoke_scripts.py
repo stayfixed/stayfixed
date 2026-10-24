@@ -41,14 +41,11 @@ def _copy_hooks(hooks: Path, planted: Path) -> None:
     shutil.copytree(hooks, planted / "hooks")
 
 
-# A launcher that performs the owner's trust act for real and answers everything else the way
-# a broken plugin does: something on stderr, exit 1, which the wrapper turns into exit 0 and a
-# line on stderr. Trust is delegated so that the run reaches its rows at all.
-FAULTY = f"""
-import runpy, sys
+# A launcher that answers everything the way a broken plugin does: something on stderr, exit 1,
+# which the wrapper turns into exit 0 and a line on stderr.
+FAULTY = """
+import sys
 
-if sys.argv[1:3] == ["trust", "approve"]:
-    runpy.run_path({str(ROOT / "scripts" / "stayfixed")!r}, run_name="__main__")
 sys.stderr.write("boom\\n")
 sys.exit(1)
 """
@@ -65,8 +62,7 @@ def test_every_hook_entry_answers_its_sample_event_through_the_checkout(
     # The summary line and not only the exit code: `main` returns 0 over a report with one row
     # exactly as it does over a report with fourteen, and the sibling files in this same tree
     # state their own count for that reason (`test_check_artifacts.py`, `test_mutation_oracle`).
-    # Mutations (declared): blind the entries-and-rows floor; stop recording the owner's trust,
-    # which empties every injection row.
+    # Mutation (declared): blind the entries-and-rows floor.
     smoke = _load("smoke_hooks")
     code = smoke.main(
         [
@@ -290,13 +286,14 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
 ) -> None:
     # The clone-to-exfiltration scenario: a hostile clone with in-repo memory at `startup: -1`,
     # a `project.name` naming another project, and a committed settings `env` block naming a
-    # machine configuration inside the clone. Asserted separately: nothing untrusted reaches the
-    # session-start output, the hook ignored the clone's STAYFIXED_CONFIG, and `attach` refuses.
+    # machine configuration inside the clone. Asserted separately: the clone's notes reach a
+    # session only as data and never as a standing rule, the hook ignored the clone's
+    # STAYFIXED_CONFIG, and `attach` refuses.
     # The MCP arm is
     # not run: stayfixed ships no MCP server yet (the README lists the memory MCP server under
     # "Not yet"), and the script says so in its own output.
     #
-    # The count as well as the exit code, because five of the seven rows assert an ABSENCE and a
+    # The count as well as the exit code, because four of the five rows assert an ABSENCE and a
     # report holding one row satisfies `failures == 0` identically. Measured: with
     # `report.rows = report.rows[:1]` before the summary, this file was still five green.
     # Mutation (declared, `mutations/`'s "the exfiltration scenario stops recording the rows that
@@ -315,33 +312,31 @@ def test_the_exfiltration_scenario_holds_against_the_checkout(
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "7 row(s), 0 failure(s)" in out, out
+    assert "5 row(s), 0 failure(s)" in out, out
 
 
 @needs_git
 def test_the_exfiltration_scenario_reports_a_row_that_went_the_wrong_way(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The same oracle for the other script, and the reason the scenario's first row is a
+    # The same oracle for the other script, and the reason the scenario's first row carries a
     # positive control: every other row asserts an ABSENCE, and a scenario whose pipeline is
-    # broken prints the same absences. Here the canary note is emptied before the run, so the
-    # control — the note reaching a session that has trusted it — is the row that goes red.
-    # Row 4 goes red with it now that it carries its own control (the note restored and
-    # re-trusted must arrive before the record is deleted); the other four negative rows stay
-    # green on a store with nothing in it, which is the point.
+    # broken prints the same absences. Here the volatile note is emptied before the run, so the
+    # control — the clone's note reaching a session as data — is what turns the row red; the
+    # other four negative rows stay green on a store with nothing in it, which is the point.
     exfil = _load("smoke_exfiltration")
     fixture = tmp_path / "fixture"
     shutil.copytree(ROOT / "tests" / "fixtures" / "hostile-project", fixture)
-    note = fixture / "docs" / "memory" / "developer" / "canary.md"
-    note.write_text(
-        note.read_text(encoding="utf-8").replace("CANARY-IN-REPO-RULE", "nothing"), "utf-8"
-    )
+    note = fixture / "docs" / "memory" / "volatile" / "carried.md"
+    note.write_text(note.read_text(encoding="utf-8").replace("CANARY-AS-DATA", "nothing"), "utf-8")
     code = exfil.main(
         ["--plugin-root", str(ROOT), "--fixture", str(fixture), "--scratch", str(tmp_path / "s")]
     )
     assert code == 1
     out = capsys.readouterr().out
-    assert "FAIL  the owner's own trust record lets the note through" in out, out
+    assert "FAIL  the clone's notes reach a session as data and never as a standing rule" in out, (
+        out
+    )
 
 
 def test_the_hook_smoke_asks_for_the_red_run_note_in_the_words_the_note_opens_with() -> None:

@@ -20,16 +20,8 @@ from tests.scriptload import SCRIPTS
 # The scripts allowed to import a sibling, as (the importing file's name, the module it imports).
 # Both are CI smoke drivers run from the checkout, never from the tag's objects, so each sibling
 # is always beside them: `smoke_exfiltration.py` reuses `smoke_hooks`'s fixture repository and
-# developer-free environment rather than keep a second copy of each, and both run the
-# owner's approval under `ptyrun`'s pseudo-terminal, which the tests that approve through a
-# subprocess run too.
-EXEMPT: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("smoke_exfiltration.py", "smoke_hooks"),
-        ("smoke_exfiltration.py", "ptyrun"),
-        ("smoke_hooks.py", "ptyrun"),
-    }
-)
+# developer-free environment rather than keep a second copy of each.
+EXEMPT: frozenset[tuple[str, str]] = frozenset({("smoke_exfiltration.py", "smoke_hooks")})
 
 
 def _script_files() -> list[Path]:

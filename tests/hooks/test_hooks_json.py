@@ -116,8 +116,7 @@ def test_every_dispatched_event_has_at_least_one_handler() -> None:
 
 def test_every_registered_handler_has_an_entry() -> None:
     # The other direction, and the more expensive one to get wrong: a handler with no entry
-    # never runs. If `worktree-link` were the one left out, every bundle in every worktree
-    # would be empty and `scripts/smoke_hooks.py` could not see it.
+    # never runs, and `scripts/smoke_hooks.py` could not see it.
     dispatched = {
         words[2]
         for _, _matcher, entry in _entries()

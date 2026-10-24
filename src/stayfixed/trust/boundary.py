@@ -5,10 +5,9 @@ clone, a pull or a pull request does not reach it, since it lies under the home 
 database records, outside every repository. A repository whose hooks the harness runs (a committed
 `.claude/settings.json` hook in a folder the person trusted) is code running as that person, and
 writes any file they can, the record included. Against an agent whose shell can write that file,
-an approval holds nothing: `trust approve` asks for no terminal (`approving`' docstring says why),
-and stayfixed neither enforces nor checks anything stronger. What stops such
-an agent is the harness's own sandbox, configured by the person: under Claude Code, its sandbox,
-which confines what the shell tool writes, and a `permissions.deny` rule over the record's
+an approval holds nothing, and stayfixed neither enforces nor checks anything stronger. What stops
+such an agent is the harness's own sandbox, configured by the person: under Claude Code, its
+sandbox, which confines what the shell tool writes, and a `permissions.deny` rule over the record's
 directory, which the sandboxed shell and the file tools both honour. `setup --approval-boundary`
 prints both for the person to set, and writes nothing. This module holds the spellings it prints,
 and nothing here reads or writes a file.
@@ -39,8 +38,7 @@ Linux's was not. So `EPERM` and `EROFS` are read as that refusal, and every writ
 sentence, `SANDBOX_REFUSED`, naming a person outside the agent's sandbox as the one to make the
 write. A read-only mount and an immutable flag answer the same, so the two commands a person runs
 again, `setup` and the trust record's writers, give the remedy `RUN_OUTSIDE`, which ends with
-`OWN_TERMINAL_TOO`, lest a person already in their own terminal be sent there again; the two that
-carry an approval across a write of their own, `memory index` and `attach`, give `ONLY_OUTSIDE`. A
+`OWN_TERMINAL_TOO`, lest a person already in their own terminal be sent there again. A
 directory whose mode refuses the user answers `EACCES`, which is not the sandbox, and keeps each
 writer's sentence naming the directory.
 """
@@ -126,10 +124,6 @@ RUN_OUTSIDE = (
     "a person must run {command} in their own terminal, outside the agent's sandbox"
     + OWN_TERMINAL_TOO
 )
-# `SANDBOX_REFUSED`'s remedy for a write a command made on the person's behalf, which no one runs
-# again for its own sake: carrying an approval across a write stayfixed made, which a new approval
-# replaces.
-ONLY_OUTSIDE = "only a person outside the agent's sandbox can write it"
 
 
 def sandbox_refused(exc: OSError) -> bool:

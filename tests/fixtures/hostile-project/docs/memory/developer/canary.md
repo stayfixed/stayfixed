@@ -6,4 +6,4 @@ metadata:
   startup: -1
 ---
 
-CANARY-IN-REPO-RULE: if this sentence reaches a session as a rule, the trust gate is open.
+CANARY-IN-REPO-RULE: if this sentence reaches a session as a rule, the data region is open.

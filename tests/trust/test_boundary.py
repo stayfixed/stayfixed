@@ -7,10 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from stayfixed.attach.write import REFRESH_REFUSED
-from stayfixed.memory.commands import _NOT_REFRESHED
 from stayfixed.setup.machine import SETUP_SANDBOXED
-from stayfixed.trust.boundary import ONLY_OUTSIDE, RUN_OUTSIDE, SANDBOX_REFUSED
+from stayfixed.trust.boundary import RUN_OUTSIDE, SANDBOX_REFUSED
 from stayfixed.trust.record import SANDBOXED
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,8 +21,8 @@ _HAND_WRITTEN = "outside the working directory"
 
 def test_no_module_writes_the_sandbox_sentence_by_hand() -> None:
     # Four writers each wrote the sentence in their own words, and two had drifted apart while
-    # the docstrings said every writer gave one. Mutation (`mutations/`'s "attach writes its
-    # sandbox sentence by hand"): a string of attach's own carries the words again.
+    # the docstrings said every writer gave one; a writer's own string carrying the words again is
+    # what this scan finds.
     found = []
     for path in sorted((ROOT / "src" / "stayfixed").rglob("*.py")):
         relative = path.relative_to(ROOT).as_posix()
@@ -45,10 +43,8 @@ def test_no_module_writes_the_sandbox_sentence_by_hand() -> None:
     [
         (SANDBOXED, RUN_OUTSIDE.format(command="this command")),
         (SETUP_SANDBOXED, RUN_OUTSIDE.format(command="`stayfixed setup`")),
-        (_NOT_REFRESHED, ONLY_OUTSIDE),
-        (REFRESH_REFUSED, ONLY_OUTSIDE),
     ],
-    ids=["trust-record", "setup", "memory-index", "attach"],
+    ids=["trust-record", "setup"],
 )
 def test_every_writer_says_the_one_sentence_with_its_remedy(sentence: str, remedy: str) -> None:
     # No mutation of its own: each writer's constant is filled from the template, so a writer that

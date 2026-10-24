@@ -1,9 +1,9 @@
 """The block `attach` keeps in the repository's `info/exclude`, and the questions it is built on.
 
-`attach` puts machine-local files into a checkout: the link tree under `paths.memory`, the Codex
-rule copies under `.codex/rules/` and `.claude/settings.local.json`. None of them is anything a
-collaborator should see, and none was ignored, so every `git status` listed them and a
-`git add -A` committed the owner's personal links and rules. `.gitignore` is the wrong place to
+`attach` puts machine-local files into the main checkout: the Codex rule copies under
+`.codex/rules/` and `.claude/settings.local.json`. None of them is anything a collaborator should
+see, and none was ignored, so every `git status` listed them and a `git add -A` committed the
+owner's personal rules. `.gitignore` is the wrong place to
 hide them: it is committed, so the hiding would itself be a change every collaborator gets, and
 `attach` writes nothing there (`init`'s own region is `init`'s). `info/exclude` is the
 repository's own exclude file, which no clone carries, and git resolves it in the common
@@ -73,7 +73,7 @@ from stayfixed.scaffold import RegionError, Style, drop, extract, upsert
 # `# stayfixed:attach:begin` ... `# stayfixed:attach:end`.
 EXCLUDE = "info/exclude"
 EXCLUDE_REGION = "attach"
-EXCLUDE_NOTE = "# stayfixed attach: this machine's links, rules and settings, not a collaborator's."
+EXCLUDE_NOTE = "# stayfixed attach: this machine's rules and settings, not a collaborator's."
 # Two facts about the file around the block, recorded inside the block because the file is shared
 # by every checkout while each ledger is one checkout's: whichever checkout's `detach` takes the
 # block last reads them there and gives the file back byte for byte. `EXCLUDE_CREATED`: there was
@@ -322,7 +322,7 @@ def planned_block(root: Path, relatives: Sequence[str]) -> ExcludeWrite | None:
     it and show it again.
     """
     for relative in relatives:
-        # `allow_final_symlink`: the link tree's entries are symlinks by design.
+        # `allow_final_symlink`: a rule copy left as a link is replaced, never followed.
         contained(root, relative, allow_final_symlink=True)
     lines = [line for line in map(pattern, unhidden_by_owner(root, relatives)) if line is not None]
     if not lines:
@@ -392,7 +392,7 @@ def withdrawn_block(root: Path) -> ExcludeWrite | None:
         return None
     # Asked here, above `detach`'s first withdrawal, as `planned_block` asks it above `attach`'s
     # first write: the block's withdrawal replaces or removes the file in its directory, and found
-    # out by doing it, after the settings, the rule copies and the link tree, the run stopped half
+    # out by doing it, after the settings and the rule copies, the run stopped half
     # detached with the ledger still on disk.
     if not fsops.creatable(path):
         raise Refusal(UNWRITABLE.format(path=quoted(str(path))))

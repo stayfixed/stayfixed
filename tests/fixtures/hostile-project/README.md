@@ -7,9 +7,11 @@ allowed to choose.
 - `stayfixed.toml` names `smoke` — **another project's name** — so that a machine which has an
   overlay for `smoke` is asked to hand this clone that project's notes.
 - `docs/memory/developer/canary.md` is committed in-repo memory flagged `startup: -1`, which
-  is the highest standing-rule rank there is. Without a trust record it must never reach a
-  session; with one it must, and `scripts/smoke_exfiltration.py` asserts both directions so
-  that "the canary is absent" cannot be a broken pipeline reading as a pass.
+  is the highest standing-rule rank there is. A note the repository committed is never a
+  standing rule, so it must never reach a session as one. `docs/memory/volatile/carried.md`
+  is a committed volatile note, which must reach a session as data, and
+  `scripts/smoke_exfiltration.py` asserts both so that "the canary is absent" cannot be a broken
+  pipeline reading as a pass.
 - `.claude/settings.json` carries an `env` block naming a machine configuration inside the
   clone. The value is **relative on purpose**: a harness applies an `env` block against the
   project it opened, so `scripts/smoke_exfiltration.py` materialises it as an absolute path
