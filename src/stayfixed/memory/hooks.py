@@ -21,7 +21,12 @@ from stayfixed.hooks.api import Handler, HookEvent, HookResult
 if TYPE_CHECKING:
     from stayfixed.config.session import SessionConfig
 
-UNREVIEWED_COUNT = "stayfixed: {count} notes are unreviewed; `stayfixed memory promote --changed`"
+# Read by the model as well as the person, so it names the owner as the one who promotes: a line
+# telling a session to run `promote` would have the agent turn unreviewed notes into standing rules.
+UNREVIEWED_COUNT = (
+    "stayfixed: {count} notes are unreviewed; promoting them is the owner's call "
+    "(`stayfixed memory promote`)"
+)
 # Under the machine's data directory: the digest of the unreviewed set each store last announced.
 SEEN = "unreviewed"
 

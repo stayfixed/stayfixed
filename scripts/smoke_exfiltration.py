@@ -42,7 +42,8 @@ DELIMITER = "<<<stayfixed:repository-data"
 # `stayfixed.memory.hooks.UNREVIEWED_COUNT`, spelled out because this script runs without
 # `stayfixed` importable: fixed words and a count, nothing the clone wrote.
 UNREVIEWED_COUNT = re.compile(
-    r"stayfixed: [0-9]+ notes are unreviewed; `stayfixed memory promote --changed`"
+    r"stayfixed: [0-9]+ notes are unreviewed; promoting them is the owner's call "
+    r"\(`stayfixed memory promote`\)"
 )
 # The remote the overlay records for `smoke`, and the one the clone has instead. The clone chooses
 # its own `project.name` and its own `origin`; what it cannot choose is a binding id in its git
