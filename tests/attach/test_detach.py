@@ -76,7 +76,7 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
     before = snapshot(root)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert_snapshot_changed(root, before)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, before)
@@ -95,7 +95,7 @@ def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) 
     initialised = snapshot(root)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert_snapshot_changed(root, initialised)
     _detach(root, machine, home)
     assert_snapshot_unchanged(root, initialised)
@@ -116,7 +116,7 @@ def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:
         json.dumps({"permissions": {"allow": ["Bash(rm:*)"]}}), encoding="utf-8"
     )
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     assert document["permissions"]["allow"] == ["Bash(rm:*)"]
@@ -134,7 +134,7 @@ def test_detach_leaves_a_hook_entry_that_was_never_marked(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     commands = [e["command"] for g in document["hooks"]["SessionStart"] for e in g["hooks"]]
@@ -148,7 +148,7 @@ def test_detach_without_a_ledger_says_so_and_changes_nothing(tmp_path: Path) -> 
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     (root / LEDGER).unlink()
     before = snapshot(root)
     # As in `test_a_mismatched_remote_refuses_and_writes_nothing`: `snapshot` is a walk and an
@@ -659,7 +659,7 @@ def test_a_git_that_cannot_run_is_answered_before_anything_is_withdrawn(
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     before = snapshot(root)
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
@@ -677,7 +677,7 @@ def test_the_git_failure_is_reached_on_a_run_that_would_have_withdrawn(tmp_path:
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     before = snapshot(root)
     assert before
     removed = _detach(root, machine, home)
@@ -716,7 +716,7 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
     before = _directories(root)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # The walk the comparison below rests on, asserted non-empty before it is trusted: an
     # `rglob` that finds nothing would satisfy every equality in this case on its own.
     assert _directories(root) > before
@@ -737,7 +737,7 @@ def test_detach_removes_the_directories_the_attach_created(tmp_path: Path) -> No
 
 
 def _detach_after_attach(root: Path, store: Path, machine: Path, home: Path) -> Detached:
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     return _detach(root, machine, home)
 
 
@@ -749,7 +749,7 @@ def test_detach_keeps_a_directory_that_still_holds_something(tmp_path: Path) -> 
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     mine = root / ".codex" / "rules" / "zz-my-own.md"
     mine.write_text("# mine\n", encoding="utf-8")
     removed = _detach(root, machine, home)
@@ -786,7 +786,7 @@ def test_a_ledger_naming_a_directory_no_attach_creates_is_refused(tmp_path: Path
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     recorded = json.loads((root / LEDGER).read_text(encoding="utf-8"))
     recorded["directories"] = ["src"]
     (root / LEDGER).write_text(json.dumps(recorded), encoding="utf-8")
@@ -806,7 +806,7 @@ def test_a_home_that_is_not_there_refuses_above_every_withdrawal(tmp_path: Path)
     # `assert_snapshot_unchanged` reddens with the rule files already removed.
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
-    _attach(root, store, machine, tmp_path / "home", confirmed=True)
+    _attach(root, store, machine, tmp_path / "home")
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal, match="never creates the home directory itself"):
@@ -828,11 +828,11 @@ def test_detach_takes_back_the_exclude_block_the_empty_directories_and_the_harne
     home = tmp_path / "home"
     before = _directories(root)
     assert not (root / "docs").exists()
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     resolved = resolve(root, _config(root, machine), machine=machine)
     assert resolved is not None
     record(resolved, _config(root, machine))
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     harness = harness_memory_path(root, home)
     exclude = root / ".git" / "info" / "exclude"
     # Non-vacuous: each of the three exists before the detach.
@@ -936,8 +936,8 @@ def test_detaching_one_checkout_keeps_the_block_another_attached_checkout_needs(
     home = tmp_path / "home"
     side = tmp_path / "side"
     git(root, "worktree", "add", "-q", str(side), "-b", "side")
-    _attach(root, store, machine, home, confirmed=True)
-    _attach(side, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
+    _attach(side, store, machine, home)
     # Non-vacuous: the worktree is attached, with files of its own for the block to hide.
     assert (side / LEDGER).is_file()
     assert (side / SETTINGS).is_file() and (side / ".codex" / "rules" / "common.rules").is_file()
@@ -964,7 +964,7 @@ def test_an_exclude_file_attach_created_is_removed_by_detach(tmp_path: Path) -> 
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     _exclude_file(root).unlink(missing_ok=True)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach did create the file for its block.
     assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
     _detach(root, machine, home)
@@ -977,7 +977,7 @@ def test_an_exclude_file_that_was_there_and_empty_stays_there_and_empty(tmp_path
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     _exclude_file(root).write_bytes(b"")
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert extract(_exclude_file(root).read_text(encoding="utf-8"), "attach", Style.HASH)
     _detach(root, machine, home)
     assert _exclude_file(root).read_bytes() == b""
@@ -997,7 +997,7 @@ def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
     home = tmp_path / "home"
     held = f"# the owner's{ending}/owner-only".encode()
     _exclude_file(root).write_bytes(held)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach wrote its block after a line it had to end.
     assert (
         _exclude_file(root)
@@ -1006,7 +1006,7 @@ def test_an_exclude_file_with_no_final_line_ending_comes_back_without_one(
     )
     # A second attach that rewrites the block carries the record along.
     _grant(store.parents[2], allow=(RULE, "Bash(ls:*)"))
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     assert _exclude_file(root).read_bytes() == held
 
@@ -1018,7 +1018,7 @@ def test_a_line_the_owner_added_after_the_block_keeps_its_line_ending(tmp_path: 
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     _exclude_file(root).write_bytes(b"/owner-only")
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     with _exclude_file(root).open("a", encoding="utf-8") as stream:
         stream.write("/added-later\n")
     _detach(root, machine, home)
@@ -1038,7 +1038,7 @@ def test_an_exclude_file_that_is_not_utf8_neither_blocks_attach_nor_detach(
     home = tmp_path / "home"
     held = "# propriété de l'équipe\n/owner-only\n".encode("latin-1")
     _exclude_file(root).write_bytes(held)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     written = _exclude_file(root).read_bytes()
     assert written.startswith(held)
     assert b"# stayfixed:attach:begin" in written
@@ -1082,7 +1082,7 @@ def test_an_empty_docs_directory_the_owner_had_survives_the_round_trip(tmp_path:
     home = tmp_path / "home"
     parent = root / PurePosixPath(DEFAULT_MEMORY).parts[0]
     parent.mkdir()
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach built its tree below it, so the detach had an empty `docs/` to take.
     assert (root / DEFAULT_MEMORY).is_dir()
     _detach(root, machine, home)
@@ -1100,9 +1100,9 @@ def test_an_empty_memory_directory_the_owner_had_survives_the_round_trip(tmp_pat
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     (root / DEFAULT_MEMORY).mkdir(parents=True)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # A second attach finds the directory there, and must not forget whose it is.
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert (root / DEFAULT_MEMORY / "MEMORY.md").is_symlink()
     _detach(root, machine, home)
     assert (root / DEFAULT_MEMORY).is_dir()
@@ -1116,7 +1116,7 @@ def _withdrawable(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     root, store, machine = _bound(tmp_path)
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     home = tmp_path / "home"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert (root / SETTINGS).is_file()
     return root, store, machine, home
 
@@ -1267,7 +1267,7 @@ def test_an_exclude_file_ending_in_a_lone_carriage_return_keeps_its_last_pattern
     _exclude_file(root).write_bytes(held)
     (root / "zz").write_text("mine\n", encoding="utf-8")
     assert "zz" not in git(root, "status", "--porcelain")
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     assert "zz" not in git(root, "status", "--porcelain")
     _detach(root, machine, home)
     assert _exclude_file(root).read_bytes() == held
@@ -1288,7 +1288,7 @@ def test_a_ledger_no_attach_of_that_checkout_wrote_does_not_keep_the_block(
     _grant(store.parents[2], allow=(RULE,))
     home = tmp_path / "home"
     side = tmp_path / "side"
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     if kind == "committed":
         git(root, "add", "-f", LEDGER)
         git(root, "commit", "-qm", "a ledger somebody committed")
@@ -1316,7 +1316,7 @@ def test_an_info_directory_attach_created_is_removed_by_detach(tmp_path: Path) -
     home = tmp_path / "home"
     info = _exclude_file(root).parent
     shutil.rmtree(info)
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     # Non-vacuous: the attach did create the directory for its block.
     assert _exclude_file(root).is_file()
     _detach(root, machine, home)
@@ -1332,7 +1332,7 @@ def test_an_info_directory_the_owner_had_survives_detach(tmp_path: Path) -> None
     info = _exclude_file(root).parent
     _exclude_file(root).unlink()
     assert info.is_dir() and not any(info.iterdir())
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     assert info.is_dir()
 
@@ -1398,7 +1398,7 @@ def test_a_settings_file_detach_withdraws_nothing_from_is_not_rewritten(tmp_path
     home = tmp_path / "home"
     (root / ".claude").mkdir()
     (root / SETTINGS).write_text('{"theme": "dark"}', encoding="utf-8")
-    _attach(root, store, machine, home, confirmed=True)
+    _attach(root, store, machine, home)
     _detach(root, machine, home)
     assert (root / SETTINGS).read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert not (root / LEDGER).exists()

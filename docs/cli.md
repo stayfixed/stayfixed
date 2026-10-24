@@ -68,7 +68,7 @@ Three things hold everywhere:
 - [`stayfixed overlay init --owner OWNER [--root PATH]`](#stayfixed-overlay-init---owner-owner---root-path)
 - [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
 - [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
-- [`stayfixed attach --store PATH [--check] [--yes] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---yes---root-path---machine-path)
+- [`stayfixed attach --store PATH [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
 - [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
@@ -2425,7 +2425,7 @@ length); `2` on a refusal.
 
 ---
 
-## `stayfixed attach --store PATH [--check] [--yes] [--root PATH] [--machine PATH]`
+## `stayfixed attach --store PATH [--check] [--root PATH] [--machine PATH]`
 
 Binds this repository to your private overlay, renders the hooks, skills and agents you keep there
 into a local plugin and installs it, and links its note store in. After it, a session in this
@@ -2478,26 +2478,28 @@ repository already has), the Codex standing-rule files it would place under `.co
 links into the overlay. Read it before the real run: everything under **Writes** below that carries
 content from the overlay is named here first. It asks what the real run asks before its first write,
 through the run's own code, so where the run fails or refuses there, in any case the two lists below
-give before the first write, `--check` ends with the same code and the same line. The exceptions
-are where a flag or a finding decides: a widening without `--yes` it
-reports and goes past, asking what follows as a run given the flag would; at a memory group that
-never moved it reports the finding, exits `1`, and of what the run asks next reads only the Codex
-rule files' names.
+give before the first write, `--check` ends with the same code and the same line. The exception
+is where a finding decides: at a memory group that never moved it reports the finding, exits `1`,
+and of what the run asks next reads only the Codex rule files' names.
 
 It exits `1` when that count is non-zero — a finding you act on before the real run, and `attach`
 itself is what refuses. The count is a count: a group's name comes out of `stayfixed.toml`, so it
 is never printed.
 
-Those standing-rule files are reported but **not** gated by `--yes`. The gate is about widening
-a *permission*; a standing rule is not one, and adding standing rules is the machine owner's own
-to do — which is exactly what the overlay is. `widens` in the `--json` output therefore answers
-about permissions alone, and `rules_to_write` lists the files.
+`rules_to_write` in the `--json` output lists those standing-rule files.
 
-**A write that grants a capability needs `--yes`.** If the diff would add an allow rule, `attach`
-refuses (`2`) without it. That is a refusal and not a prompt on purpose: the
-command line here is usually written by a model that has read this repository, so a gate whose
-only enforcement is a step in a procedure is no gate at all. An overlay that grants nothing needs
-no flag, because the gate is on the capability and not on the command.
+**What the overlay grants is shown, not gated.** The overlay is yours, written by you and your
+agents, and its hooks run scripts from the overlay checkout in place, so `attach` asks for no
+confirmation of what it grants; it says it on one screen and proceeds. Below its line come the
+binding — the first eight characters of the binding id and this checkout's `origin`, escaped as
+every remote is — then each hook entry (by its event and command), skill (by its directory) and
+agent (by its file) the render adds or removes against the render the last run left in
+`$HOME/.local/share/stayfixed/delivery/<id>/`, which is what a session runs, and then each allow
+rule this run merges. A hook's command and an allow rule that do not fit a plain name are printed
+escaped, and cut to their first 120 characters and their length. `--json` carries the same lists
+as `hooks_added`, `hooks_removed`, `skills_added`, `skills_removed`, `agents_added`,
+`agents_removed` and `allow_added`, and no remote. The project's name is on neither: it is the
+repository's, and `--check` and `attach` never print it.
 
 **The overlay's hooks, skills and agents are delivered as a plugin.** Every run renders them into
 `$HOME/.local/share/stayfixed/delivery/<id>/`, named by the binding id below: a marketplace
@@ -3736,9 +3738,8 @@ beside the six above:
 
 `attach --check` reports the way the other four do and exits differently on purpose: its `1` is a
 memory group that never moved into the overlay, not a non-empty diff. A diff carrying allow
-rules is the ordinary state of a first attach and is exactly what the `--yes` gate exists for — the
-refusal `attach` raises names this flag as the way to read that diff first. A `--check` that failed
-whenever the run would widen would make the documented remedy itself a failure.
+rules is the ordinary state of a first attach, which `attach` shows and proceeds with. A `--check`
+that failed on it would make reading the diff first a failure.
 
 Every command that reads a project's configuration takes `--root` and `--machine`, with the
 meanings in the first table, whether or not its heading spells them.

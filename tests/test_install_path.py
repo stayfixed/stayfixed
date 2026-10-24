@@ -380,7 +380,7 @@ def _install_path(
         "attach", "--store", str(store), "--check", "--machine", str(machine), tty=True
     )
     assert previewed.stdout.strip(), "`attach --check` printed no diff to consent to"
-    step("attach", "--store", str(store), "--yes", "--machine", str(machine), tty=True)
+    step("attach", "--store", str(store), "--machine", str(machine), tty=True)
     if initialised:
         # Step 5 already happened, by the owner's hand: the moved note *is* the standing rule.
         return walk
@@ -616,7 +616,7 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
     # The walk's own non-vacuity guard: `snapshot` is a walk, so the comparison below passes
     # vacuously the day the walk stops finding anything.
     assert before
-    step("attach", "--store", str(store), "--yes", "--machine", str(machine), tty=True)
+    step("attach", "--store", str(store), "--machine", str(machine), tty=True)
     assert_snapshot_changed(root, before)
     step("detach", "--machine", str(machine), tty=True)
     assert_snapshot_unchanged(root, before)

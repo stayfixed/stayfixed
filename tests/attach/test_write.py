@@ -1,9 +1,9 @@
-"""What `stayfixed attach` writes, and the three refusals it owes before it writes anything.
+"""What `stayfixed attach` writes, the refusals it owes before it writes anything, and the screen
+it proceeds with.
 
-The third of the rules that keep the overlay trusted is here: a write that would widen a permission
-refuses without an explicit confirmation. It is a parameter and a `Refusal` rather than a step in a
-document, because in this harness the CLI is driven by a model that has read the repository, and a
-gate enforced by model compliance is not a gate.
+What the overlay grants — allow rules, hook entries, skills and agents — is the owner's, written by
+the owner and the owner's agents, so `attach` shows it on one screen beside the binding and asks
+for no confirmation.
 """
 
 from __future__ import annotations
@@ -162,7 +162,6 @@ def test_a_record_of_another_remote_attaches_with_a_note_and_is_left_alone(
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -189,7 +188,6 @@ def test_the_same_repository_under_another_url_form_attaches_with_no_note(
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -197,42 +195,45 @@ def test_the_same_repository_under_another_url_form_attaches_with_no_note(
     assert record.read_bytes() == before
 
 
-def test_an_unconfirmed_attach_that_would_widen_a_permission_refuses(tmp_path: Path) -> None:
-    # The write gate, and the defect that produced it. `attach` writes `settings.local.json` only
-    # after a printed diff and an explicit confirmation, and an earlier revision implemented that
-    # rule with nothing at all: the only mechanism was a Markdown step telling a model to run
-    # `--check` first. A repository that says "setup requires
-    # `stayfixed attach --store <path it names>`" gets a compliant agent to grant it tool
-    # permissions, and no human sees the diff.
-    root, store, machine = _attachable(tmp_path, allow=(RULE,))
-    with pytest.raises(Refusal):
-        attach(
-            root,
-            store=store,
-            machine=machine,
-            confirmed=False,
-            runner=Recorder(),
-            home=tmp_path / "home",
-        )
-    assert not (root / SETTINGS).exists()
-
-
-def test_an_attach_that_widens_nothing_needs_no_confirmation(tmp_path: Path) -> None:
-    # The gate is on the capability, not on the command. An overlay with no allow rules and no
-    # hooks — the state of a freshly created one — must still attach without a flag, or the
-    # flag becomes something people pass reflexively.
+def test_an_attach_of_an_overlay_that_grants_nothing_binds_and_writes_no_settings(
+    tmp_path: Path,
+) -> None:
+    # An overlay with no allow rules and no hooks, the state of a freshly created one: the run
+    # binds and leaves the settings file unwritten.
     root, store, machine = _attachable(tmp_path)
     attached = attach(
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
     assert attached.binding_recorded
     assert not attached.settings_written
     assert (root / LEDGER).is_file()
+
+
+def test_the_screen_names_what_a_render_adds_and_removes_against_the_last_one(
+    tmp_path: Path,
+) -> None:
+    # The executable diff is taken against the render directory the last run left, which is what
+    # a session runs: a skill the overlay dropped is said removed, an agent it gained added, and
+    # a hook entry that stayed is in neither list.
+    hooks = {"SessionStart": [{"hooks": [ENTRY]}]}
+    root, store, machine = _attachable(tmp_path, allow=(RULE,), hooks=hooks)
+    claude = store.parents[2] / COMMON_CLAUDE
+    (claude / "skills" / "old").mkdir(parents=True)
+    (claude / "skills" / "old" / "SKILL.md").write_text("old\n", encoding="utf-8")
+    first = attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    assert first.added.hooks == (("SessionStart", ENTRY["command"]),)
+    assert (first.added.skills, first.allow_added) == (("old",), (RULE,))
+    shutil.rmtree(claude / "skills" / "old")
+    (claude / "agents").mkdir()
+    (claude / "agents" / "reviewer.md").write_text("r\n", encoding="utf-8")
+    second = attach(root, store=store, machine=machine, runner=Recorder(), home=tmp_path / "home")
+    assert (second.added.hooks, second.removed.hooks) == ((), ())
+    assert (second.added.agents, second.removed.skills) == (("reviewer.md",), ("old",))
+    assert (second.added.skills, second.removed.agents, second.allow_added) == ((), (), ())
 
 
 def _delivered_hooks(root: Path) -> Path:
@@ -265,7 +266,7 @@ def test_the_first_attach_installs_the_rendered_plugin_from_the_main_checkout_an
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
     first = Recorder()
-    attach(side, store=store, machine=machine, confirmed=True, runner=first, home=tmp_path / "home")
+    attach(side, store=store, machine=machine, runner=first, home=tmp_path / "home")
     id = binding.read_id(root)
     assert id is not None
     delivery = Path(os.environ["HOME"]) / ".local" / "share" / "stayfixed" / "delivery" / id
@@ -288,9 +289,7 @@ def test_the_first_attach_installs_the_rendered_plugin_from_the_main_checkout_an
     ]
     assert (delivery / ".claude-plugin" / "marketplace.json").is_file()
     second = Recorder()
-    attach(
-        side, store=store, machine=machine, confirmed=True, runner=second, home=tmp_path / "home"
-    )
+    attach(side, store=store, machine=machine, runner=second, home=tmp_path / "home")
     assert _claude_calls(second) == []
 
 
@@ -316,7 +315,6 @@ def test_attach_from_a_worktree_asks_the_main_checkouts_gitignore_about_what_it_
             side,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=runner,
             home=tmp_path / "home",
         )
@@ -346,7 +344,6 @@ def test_attach_from_a_worktree_refuses_a_settings_file_the_main_checkout_tracks
             side,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=runner,
             home=tmp_path / "home",
         )
@@ -366,16 +363,14 @@ def test_an_install_that_did_not_succeed_is_said_by_its_code_and_tried_again(
 
     root, store, machine = _attachable(tmp_path)
     failing = Recorder(answers={"claude plugin install": Completed(1, "", "overlay-secret")})
-    attached = attach(
-        root, store=store, machine=machine, confirmed=True, runner=failing, home=tmp_path / "home"
-    )
+    attached = attach(root, store=store, machine=machine, runner=failing, home=tmp_path / "home")
     id = binding.read_id(root)
     assert id is not None
     assert NOT_INSTALLED.format(verb="install", code=1) in attached.notes
     assert not any(id in note or "overlay-secret" in note for note in attached.notes)
     assert ledger(root).render is None
     again = Recorder()
-    attach(root, store=store, machine=machine, confirmed=True, runner=again, home=tmp_path / "home")
+    attach(root, store=store, machine=machine, runner=again, home=tmp_path / "home")
     assert [argv[2] for argv, _ in _claude_calls(again)] == ["marketplace", "install"]
     assert ledger(root).render is not None
 
@@ -391,7 +386,6 @@ def test_after_attach_the_local_settings_file_holds_the_allow_rules_and_no_hook_
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -431,7 +425,6 @@ def test_an_attach_withdraws_the_hook_entries_its_earlier_ledger_records_and_no_
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -451,9 +444,7 @@ def test_attach_delivers_whatever_the_memory_mode(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     runner = Recorder()
-    attached = attach(
-        root, store=store, machine=machine, confirmed=True, runner=runner, home=tmp_path / "home"
-    )
+    attached = attach(root, store=store, machine=machine, runner=runner, home=tmp_path / "home")
     assert [argv[2] for argv, _ in _claude_calls(runner)] == ["marketplace", "install"]
     assert attached.links.created == []
     assert (root / LEDGER).is_file()
@@ -471,7 +462,6 @@ def test_a_second_attach_that_changes_nothing_leaves_the_settings_file_alone(
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -489,7 +479,6 @@ def test_a_first_attach_records_the_remote_and_the_date(tmp_path: Path) -> None:
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -510,7 +499,6 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -523,7 +511,6 @@ def test_a_record_that_already_binds_this_repository_is_left_alone(tmp_path: Pat
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -539,7 +526,6 @@ def test_the_merged_rules_are_recorded_where_they_can_be_removed_again(tmp_path:
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -559,7 +545,7 @@ def test_attach_writes_nothing_into_gitignore_and_leaves_git_status_empty(tmp_pa
     (root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
     _committed(root)
     before = (root / ".gitignore").read_bytes()
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     # Non-vacuous: the run placed the ledger and the settings file, which git would show.
     assert (root / LEDGER).is_file() and (root / SETTINGS).is_file()
     assert _git(root, "status", "--porcelain=v1", "-z", "-uall") == ""
@@ -580,7 +566,7 @@ def test_a_gitignore_that_re_includes_the_settings_file_refuses_before_it_is_wri
     (root / ".gitignore").write_text(f"!{SETTINGS}\n", encoding="utf-8")
     _committed(root)
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     assert str(refused.value) == NOT_IGNORED.format(paths=quoted(SETTINGS))
     assert not (root / SETTINGS).exists()
     assert not (root / LEDGER).exists()
@@ -599,7 +585,7 @@ def test_a_tracked_local_settings_file_is_refused_before_anything_is_written(
     _committed(root)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert_snapshot_unchanged(root, before)
     with pytest.raises(Refusal) as previewed:
@@ -619,7 +605,7 @@ def test_a_tracked_codex_rule_copy_is_refused_before_anything_is_written(tmp_pat
     _committed(root)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     assert str(refused.value) == TRACKED.format(paths=quoted(".codex/rules/common.rules"))
     assert_snapshot_unchanged(root, before)
 
@@ -647,7 +633,7 @@ def test_a_tracked_settings_file_spelled_in_another_case_is_refused_and_left_as_
     tracked.write_text("{}\n", encoding="utf-8")
     _committed(root)
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     assert str(refused.value) == TRACKED.format(paths=quoted(SETTINGS))
     assert tracked.read_bytes() == b"{}\n"
 
@@ -689,7 +675,6 @@ def test_a_memory_group_that_leaves_the_projects_share_is_refused_not_created(
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -727,7 +712,6 @@ def test_a_memory_group_whose_place_in_the_share_cannot_be_asked_about_is_refuse
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -759,7 +743,6 @@ def test_a_codex_directory_linked_where_nobody_may_search_is_refused_by_name_by_
                 root,
                 store=store,
                 machine=machine,
-                confirmed=True,
                 runner=Recorder(),
                 home=tmp_path / "home",
             )
@@ -782,7 +765,6 @@ def test_the_memory_group_refusal_is_reached_on_a_run_that_would_have_written(
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -805,7 +787,6 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -813,7 +794,6 @@ def test_a_second_attach_adds_nothing_twice(tmp_path: Path) -> None:
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -832,7 +812,6 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -840,7 +819,6 @@ def test_a_second_attach_still_claims_what_the_first_one_added(tmp_path: Path) -
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -855,7 +833,6 @@ def test_codex_rules_land_under_the_directory_codex_reads(tmp_path: Path) -> Non
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -890,7 +867,7 @@ def test_an_unlistable_codex_directory_fails_and_writes_nothing(
     directory.chmod(mode)
     try:
         checked = cli(root, tmp_path, "attach", "--check", *flags, machine=machine)
-        attached = cli(root, tmp_path, "attach", "--yes", *flags, machine=machine)
+        attached = cli(root, tmp_path, "attach", *flags, machine=machine)
     finally:
         directory.chmod(0o755)
     line = (
@@ -932,7 +909,7 @@ def test_an_overlay_rule_file_that_cannot_be_read_fails_naming_it_as_its_directo
     before = snapshot(root)
     try:
         checked = cli(root, tmp_path, "attach", "--check", *flags, machine=machine)
-        attached = cli(root, tmp_path, "attach", "--yes", *flags, machine=machine)
+        attached = cli(root, tmp_path, "attach", *flags, machine=machine)
     finally:
         rule.chmod(0o644)
     why = "is not UTF-8 text" if fault == "not-utf8" else "cannot be read (Permission denied)"
@@ -953,7 +930,6 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -977,7 +953,6 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -998,7 +973,6 @@ def test_a_record_with_no_remote_is_given_one_and_keeps_its_first_attach_date(
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1023,7 +997,6 @@ def test_a_repository_with_no_origin_remote_attaches_and_records_none(tmp_path: 
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1048,7 +1021,6 @@ def test_a_settings_file_the_merge_cannot_read_is_refused_and_never_filtered(
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1067,7 +1039,6 @@ def test_an_overlay_hooks_file_with_an_unreadable_shape_is_refused(tmp_path: Pat
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1082,7 +1053,6 @@ def test_a_ledger_that_is_not_json_is_a_failure_and_not_an_empty_one(tmp_path: P
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1105,7 +1075,6 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1117,7 +1086,6 @@ def test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_intern
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1137,7 +1105,6 @@ def test_a_settings_file_nested_past_the_parsers_reach_is_refused(tmp_path: Path
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1156,7 +1123,6 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1168,7 +1134,6 @@ def test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1187,7 +1152,6 @@ def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1204,7 +1168,6 @@ def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path)
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1230,7 +1193,6 @@ def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> Non
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1254,7 +1216,6 @@ def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1273,7 +1234,6 @@ def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: 
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )
@@ -1327,7 +1287,6 @@ def test_a_ledger_no_attach_could_have_written_is_refused_before_the_first_write
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1349,7 +1308,6 @@ def test_the_refused_ledger_is_reached_on_a_run_that_would_have_written_three_fi
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1384,7 +1342,6 @@ def test_an_overlay_store_the_walk_cannot_enter_is_refused_at_write_time(tmp_pat
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1423,7 +1380,6 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1437,7 +1393,6 @@ def test_a_group_that_never_moved_refuses_the_attach_above_every_write(tmp_path:
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -1459,7 +1414,6 @@ def test_the_refusal_counts_the_groups_and_never_names_one(tmp_path: Path) -> No
             root,
             store=store,
             machine=machine,
-            confirmed=True,
             runner=Recorder(),
             home=tmp_path / "home",
         )
@@ -1516,12 +1470,11 @@ def _placed() -> list[str]:
     ]
 
 
-def _attach_confirmed(root: Path, store: Path, machine: Path, home: Path) -> None:
+def _attach_quietly(root: Path, store: Path, machine: Path, home: Path) -> None:
     attach(
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=home,
     )
@@ -1535,7 +1488,7 @@ def test_attach_leaves_nothing_for_git_status(tmp_path: Path) -> None:
     # writes nothing into `.gitignore`.
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     for placed in _placed():
         # Non-vacuous: each one is really there, so `check-ignore` answers about a real path.
         assert (root / placed).is_symlink() or (root / placed).is_file(), placed
@@ -1562,7 +1515,7 @@ def test_a_checkout_that_already_hides_everything_is_not_touched(tmp_path: Path)
     ]
     exclude.write_text(held + "\n".join(lines) + "\n", encoding="utf-8")
     before = exclude.read_bytes()
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     # Non-vacuous: the attach did place its files, so there was something to hide.
     assert (root / SETTINGS).is_file()
     assert not (root / ".gitignore").exists()
@@ -1586,7 +1539,7 @@ def test_a_checkout_whose_global_excludes_file_hides_everything_is_not_touched(
     _git(root, "config", "core.excludesFile", str(owner))
     exclude = _exclude(root)
     before = exclude.read_bytes() if exclude.is_file() else None
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     # Non-vacuous: the attach did place its files, so there was something to hide.
     assert (root / SETTINGS).is_file()
     assert not (root / ".gitignore").exists()
@@ -1618,7 +1571,7 @@ def test_a_global_excludes_file_named_by_a_relative_path_still_stands_in_for_the
     assert _check_ignore(root, SETTINGS)
     exclude = _exclude(root)
     before = exclude.read_bytes() if exclude.is_file() else None
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     assert (root / SETTINGS).is_file()
     assert (exclude.read_bytes() if exclude.is_file() else None) == before
     assert _status(root) == []
@@ -1635,7 +1588,7 @@ def test_a_committed_gitignore_does_not_stand_in_for_the_exclude_block(tmp_path:
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     (root / ".gitignore").write_text(f"{DEFAULT_MEMORY}/\n.claude/\n.codex/\n", encoding="utf-8")
     _committed(root)
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None
     for placed in _placed():
@@ -1661,7 +1614,7 @@ def test_a_path_the_owners_global_excludes_hide_gets_no_line_whatever_the_gitign
     ignore = Path.home() / ".config" / "git" / "ignore"
     ignore.parent.mkdir(parents=True)
     ignore.write_text(f"{SETTINGS}\n", encoding="utf-8")
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     # Non-vacuous: the run wrote the settings file, and a block for what nobody else hides.
     assert (root / SETTINGS).is_file()
@@ -1687,7 +1640,7 @@ def test_a_gitignore_a_sparse_checkout_leaves_out_does_not_stand_in_for_the_bloc
     (root / ".gitignore").unlink()
     # Non-vacuous: git still reads the left-out file, so the link tree's directory is ignored.
     assert _check_ignore(root, f"{DEFAULT_MEMORY}/developer")
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None
     for placed in (f"{DEFAULT_MEMORY}/MEMORY.md", f"{DEFAULT_MEMORY}/developer"):
@@ -1704,7 +1657,7 @@ def test_a_path_the_owners_excludes_re_include_is_still_hidden(tmp_path: Path) -
     owner = tmp_path / "owner-excludes"
     owner.write_text(f"{DEFAULT_MEMORY}/*\n!{DEFAULT_MEMORY}/developer\n", encoding="utf-8")
     _git(root, "config", "core.excludesFile", str(owner))
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body.split("\n")
     # The other links the owner's file hides get no line of their own.
@@ -1723,13 +1676,13 @@ def test_the_block_keeps_what_an_earlier_attach_hid_when_the_grant_changes(
     root, store, machine = _attachable(tmp_path)
     _committed(root)
     home = tmp_path / "home"
-    _attach_confirmed(root, store, machine, home)
+    _attach_quietly(root, store, machine, home)
     first = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     # Non-vacuous: the first block names the link tree and not the rule copy.
     assert first is not None and f"/{DEFAULT_MEMORY}/developer" in first
     assert ".codex/rules/common.rules" not in first
     _overlay_grants(store, codex="# a standing rule\n")
-    _attach_confirmed(root, store, machine, home)
+    _attach_quietly(root, store, machine, home)
     second = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert second is not None and "/.codex/rules/common.rules" in second.split("\n")
     assert _status(root) == []
@@ -1739,13 +1692,13 @@ def test_a_second_attach_leaves_the_exclude_file_as_the_first_wrote_it(tmp_path:
     root, store, machine = _attachable(tmp_path, allow=(RULE,), codex="# standing rule\n")
     _committed(root)
     home = tmp_path / "home"
-    _attach_confirmed(root, store, machine, home)
+    _attach_quietly(root, store, machine, home)
     # Non-vacuous: the first attach did write the block, so "unchanged" is about a block and not
     # about a file that was never there.
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     assert body is not None and SETTINGS in body and f"/{LEDGER}" in body.split("\n")
     exclude = _exclude(root).read_bytes()
-    _attach_confirmed(root, store, machine, home)
+    _attach_quietly(root, store, machine, home)
     assert _exclude(root).read_bytes() == exclude
 
 
@@ -1759,7 +1712,7 @@ def test_a_linked_worktree_shares_the_block_and_its_links_stay_hidden(tmp_path: 
     root, store, machine = _attachable(tmp_path)
     _committed(root)
     home = tmp_path / "home"
-    _attach_confirmed(root, store, machine, home)
+    _attach_quietly(root, store, machine, home)
     side = tmp_path / "side"
     _git(root, "worktree", "add", "-q", str(side), "-b", "side")
     shared = _git(side, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude")
@@ -1811,7 +1764,7 @@ def test_a_worktree_whose_question_runs_out_of_time_is_named_and_not_called_a_br
 
     _ask_in(side, runs_out, monkeypatch)
     with pytest.raises(Failure) as failed:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     message = str(failed.value)
     assert str(side) in message
     assert Unasked.TIMED_OUT.value in message
@@ -1840,7 +1793,7 @@ def test_a_worktree_removed_while_attach_walks_is_skipped_and_the_rest_is_linked
         return real(args, **kwargs)
 
     _ask_in(side, removed_first, monkeypatch)
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     assert not side.exists()
     # Non-vacuous: the owning checkout's tree was built in the same run.
     assert (root / DEFAULT_MEMORY / "MEMORY.md").is_symlink()
@@ -1861,7 +1814,7 @@ def test_a_symlinked_exclude_file_is_refused_before_anything_is_written(tmp_path
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     assert "symlink" in str(refused.value)
     assert_snapshot_unchanged(root, before)
     assert elsewhere.read_text(encoding="utf-8") == "# not the repository's\n"
@@ -1874,7 +1827,7 @@ def test_the_first_attach_leaves_an_index_behind_its_link(tmp_path: Path) -> Non
     from tests.cli import cli
 
     root, store, machine = _attachable(tmp_path)
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     index = root / DEFAULT_MEMORY / "MEMORY.md"
     assert index.is_symlink()
     assert index.is_file(), "the index link dangles"
@@ -1895,7 +1848,7 @@ def test_a_run_that_would_write_through_a_symlinked_claude_directory_still_refus
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     # Refused for the reason it has: the containment asked of each placed path names the link.
     # Mutation: `mutations/`'s "the exclude block stops holding placed paths to the project".
     assert "symlink" in str(refused.value)
@@ -1921,7 +1874,7 @@ def test_a_symlinked_stayfixed_directory_is_refused_before_anything_is_written(
     before = snapshot(root)
     assert before
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     # Named for what it is. Before, the refusal came by accident from `git check-ignore`, which
     # will not answer about a path beyond a symlink, and blamed git.
     assert "symlink" in str(refused.value)
@@ -1965,7 +1918,7 @@ def test_a_group_name_with_a_line_separator_gets_no_line_and_stops_the_attach(
     _committed(root)
     _owner_hides_dotenv(root, tmp_path)
     with pytest.raises(Refusal) as refused:
-        _attach_confirmed(root, store, machine, tmp_path / "home")
+        _attach_quietly(root, store, machine, tmp_path / "home")
     linked = "1 link(s) of the link tree under paths.memory"
     assert str(refused.value) == NOT_IGNORED.format(paths=linked)
     body = extract(_exclude(root).read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
@@ -1990,7 +1943,7 @@ def test_an_earlier_blocks_line_is_kept_whole_whatever_it_holds(tmp_path: Path) 
     exclude.write_text(
         f"# stayfixed:attach:begin\n{earlier}\n# stayfixed:attach:end\n", encoding="utf-8"
     )
-    _attach_confirmed(root, store, machine, tmp_path / "home")
+    _attach_quietly(root, store, machine, tmp_path / "home")
     body = extract(exclude.read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH)
     # Non-vacuous: this attach did rewrite the block, adding the links it placed.
     assert body is not None and f"/{DEFAULT_MEMORY}/developer" in body
@@ -2063,7 +2016,6 @@ def _attach_it(root: Path, store: Path, machine: Path, home: Path) -> Attached:
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=home,
     )
@@ -2266,13 +2218,13 @@ def test_a_settings_file_an_earlier_attach_wrote_is_hidden_by_the_next_one(
     root, store, machine = _attachable(tmp_path, allow=(RULE,))
     _committed(root)
     home = tmp_path / "home"
-    _attach_confirmed(root, store, machine, home)
+    _attach_quietly(root, store, machine, home)
     exclude = _exclude(root)
     exclude.write_text(
         drop(exclude.read_text(encoding="utf-8"), EXCLUDE_REGION, Style.HASH), encoding="utf-8"
     )
     assert not _check_ignore(root, SETTINGS)
-    _attach_confirmed(root, store, machine, home)
+    _attach_quietly(root, store, machine, home)
     assert _check_ignore(root, SETTINGS)
 
 
@@ -2342,7 +2294,6 @@ def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
         root,
         store=store,
         machine=machine,
-        confirmed=False,
         runner=runner,
         home=tmp_path / "home",
     )

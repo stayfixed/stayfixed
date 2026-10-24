@@ -75,18 +75,17 @@ def _report(
     # The run's gates, taken in the run's order by the run's own `Gates`, which makes what the run
     # asks between them where the run would, so a refusal or failure there ends this command with
     # the run's code and line: each of them was once left out here, and `--check` answered clean
-    # over a checkout the run then stopped on. Every stop is taken and reported, the ones a flag
-    # answers as the run with that flag takes them: the diff is the report. The writes are planned
-    # only where no stop is one a flag cannot answer, as the run plans them only past every stop.
+    # over a checkout the run then stopped on. The stop is taken and reported, and the writes are
+    # planned only where there was none, as the run plans them only past it.
     gates = Gates(root, config, binding)
     stops = list(gates)
     diff, real = gates.diff, gates.real
-    if all(stop.flag is not None for stop in stops):
+    if not stops:
         plan_writes(root, config, binding, diff, machine=machine, home=home)
     # Named and not merely counted, and on this result rather than in `PermissionDiff`: the
-    # diff's two fields say what `attach` would add and what is already there, `widens` is
-    # computed from them, and a fourth of another kind would blur what it means. These names
-    # come out of the overlay, so they are the owner's own and may be printed.
+    # diff's two fields say what `attach` would add and what is already there, and a third of
+    # another kind would blur what it means. These names come out of the overlay, so they are the
+    # owner's own and may be printed.
     rules = tuple(target for target, _ in codex_rules(binding))
     summary = (
         f"{binding.state}; "
@@ -111,7 +110,6 @@ def _report(
         # `settings.local.json`, which a clone can commit, so it is repository-authored.
         "already_present": len(diff.already_present),
         "rules_to_write": list(rules),
-        "widens": diff.widens,
         # A count, for the reason `already_present` is one: the entries are repository-authored.
         "real_directories": real,
     }

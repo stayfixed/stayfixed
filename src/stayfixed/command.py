@@ -54,12 +54,8 @@ SETUP_MACHINE_HELP = (
 # `attach --check` reports the same way the four above do and **exits differently on purpose**.
 # Its exit 1 is a memory group that never moved into the overlay, which `attach` refuses on above
 # its first write -- a thing the owner acts on before the real run -- and not a non-empty diff: a
-# diff with allow rules in it is the ordinary state of a first attach, and it is what the `--yes`
-# gate exists for — the refusal
-# `write.attach` raises names this flag as the way to read the diff before passing `--yes`
-# ("Read the diff with `stayfixed attach --check` and pass --yes"). A `--check` that failed
-# whenever the run would widen would make the documented remedy itself a failure, and the skill
-# that runs check -> relay -> ask would begin with one.
+# diff with allow rules in it is the ordinary state of a first attach, which `attach` shows and
+# proceeds with. A `--check` that failed on it would make reading the diff first a failure.
 ATTACH_CHECK_HELP = (
     "report the binding, the diff and the groups that never moved, and write nothing"
 )

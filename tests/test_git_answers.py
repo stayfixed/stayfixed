@@ -214,7 +214,6 @@ def test_attach_binds_an_origin_it_cannot_record_and_records_none(tmp_path: Path
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )

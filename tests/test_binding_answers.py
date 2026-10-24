@@ -32,7 +32,6 @@ def _attached_then_origin_removed(tmp_path: Path) -> tuple[Path, Path, Path]:
         root,
         store=store,
         machine=machine,
-        confirmed=True,
         runner=Recorder(),
         home=tmp_path / "home",
     )
@@ -49,9 +48,7 @@ def test_a_checkout_whose_origin_was_removed_stays_bound_on_every_surface(
     found, why = resolved(root, load(root, machine=machine), machine=machine)
     assert why is None and found is not None
 
-    attached = attach(
-        root, store=store, machine=machine, confirmed=True, runner=Recorder(), home=home
-    )
+    attached = attach(root, store=store, machine=machine, runner=Recorder(), home=home)
     assert not attached.binding_recorded
 
     checked = check(root, store=store, machine=machine, home=home)

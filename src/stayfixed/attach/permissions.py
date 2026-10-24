@@ -13,7 +13,7 @@ where no marker survives; this module reads the overlay's hook files for that re
 (`hook_groups`). An allow rule has exactly one witness, the ledger `write.py` keeps.
 
 **What may be printed.** `added_allow` is built out of the overlay, which is the owner's own
-repository, so a command may show it — and must, since a diff nobody reads is not a gate.
+repository, so a command may show it, and `attach` does, on the screen it proceeds with.
 `already_present` comes out of `.claude/settings.local.json`, which a hostile clone *can* commit,
 so it is repository-authored: this module carries the strings so a caller can subtract with them,
 and `attach.check` reports only how many there were.
@@ -65,16 +65,6 @@ class PermissionDiff:
 
     added_allow: tuple[str, ...]
     already_present: tuple[str, ...]
-
-    @property
-    def widens(self) -> bool:
-        """Whether applying this diff would grant a permission the project does not have.
-
-        The `--yes` gate on the write is on *this*, not on the command: an overlay with no
-        allow rules — the state of a freshly created one — must still attach with no flag, or the
-        flag becomes something people pass reflexively.
-        """
-        return bool(self.added_allow)
 
 
 def settings_document(text: str) -> dict[str, Any]:
@@ -218,11 +208,8 @@ def codex_rules(binding: Binding) -> tuple[tuple[str, Path], ...]:
     that never appears in the report makes that promise false. A file Codex reads as standing
     instruction is exactly the kind of thing an owner wants named before it lands.
 
-    This is **reporting and not gating**, and the distinction is deliberate. The `--yes` gate is
-    about widening a *permission*, which only the overlay may grant and never a file the repository
-    commits; adding standing rules is the machine owner's to do, and the overlay is the machine
-    owner's own artifact — so a rule file does not make `widens` true, and `widens` keeps meaning
-    what its name says.
+    This is **reporting and not gating**, as everything the overlay grants is: the overlay is the
+    machine owner's own artifact, so `attach` shows what it places and proceeds.
 
     This project's own `codex/` is read second, so a file it shares a name with in `common/` is
     the one that lands; the pair is returned rather than two lists so the caller cannot pair

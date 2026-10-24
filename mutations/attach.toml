@@ -59,21 +59,6 @@ before = '    sources = _claude_sources(binding, PERMISSIONS_FILE)'
 after = '    sources = (*_claude_sources(binding, PERMISSIONS_FILE), (root / ".claude" / "settings.json", None))'
 reddens = ["tests/attach/test_binding.py::test_a_committed_settings_file_can_never_contribute_a_rule"]
 
-# A refusal something downstream reads as permission is a defect this oracle must name outright, and
-# this is its entry. With it gone, a repository that says "setup requires `stayfixed attach --store
-# <path it names>`" gets a compliant agent to grant it tool permissions and no human sees the diff.
-# Declared on the predicate rather than on the branch in `write.py`, because the predicate is where
-# the rule is defined once and `check` reports the same one.
-[[mutation]]
-name = "attach widens a permission without a confirmation"
-file = "src/stayfixed/attach/permissions.py"
-before = '        return bool(self.added_allow)'
-after = '        return False'
-reddens = [
-  "tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses",
-  "tests/attach/test_commands.py::test_a_widening_without_yes_exits_two_and_a_confirmed_one_exits_zero",
-]
-
 # Three load-bearing guards of `attach` that had no entry. The first is the `--machine`
 # gate -- a flag names the machine file, as `STAYFIXED_CONFIG` and `XDG_CONFIG_HOME` did before
 # `config/machine.py` stopped reading either, and this is the command that turns the machine file
@@ -433,7 +418,7 @@ reddens = [
 # One reader for the settings document's allow list, shared by `--check` and the real run, so
 # `--check` refuses exactly what `attach` refuses: `null` where an object or a list goes. A
 # `--check` that read it with a filter of its own exited 0 promising a clean diff for a file
-# `attach --yes` then refused.
+# `attach` then refused.
 [[mutation]]
 name = "check reads a null allow list as no rules"
 file = "src/stayfixed/attach/permissions.py"
@@ -551,7 +536,7 @@ reddens = [
 [[mutation]]
 name = "attach links over notes that never moved again"
 file = "src/stayfixed/attach/write.py"
-before = "            yield Stop(REAL_DIRECTORIES.format(count=self.real))"
+before = "            yield REAL_DIRECTORIES.format(count=self.real)"
 after = "            pass"
 reddens = [
   "tests/attach/test_write.py::test_a_group_that_never_moved_refuses_the_attach_above_every_write",
@@ -572,11 +557,11 @@ name = "the never-moved refusal names the memory groups instead of counting them
 file = "src/stayfixed/attach/write.py"
 before = """        self.real = len(unlinked_groups(self.root, config))
         if self.real:
-            yield Stop(REAL_DIRECTORIES.format(count=self.real))"""
+            yield REAL_DIRECTORIES.format(count=self.real)"""
 after = """        real = unlinked_groups(self.root, config)
         self.real = len(real)
         if self.real:
-            yield Stop(REAL_DIRECTORIES.format(count=", ".join(real)))"""
+            yield REAL_DIRECTORIES.format(count=", ".join(real))"""
 reddens = [
   "tests/attach/test_write.py::test_the_refusal_counts_the_groups_and_never_names_one",
 ]
@@ -767,14 +752,6 @@ reddens = [
 # `local-only` project got the ignore region, `.codex/rules/`, the settings merge, the ledger and,
 # in the overlay, `project.toml` and its group directories before exit 2. The early refusal is the
 # guard; `attach_main`'s own check is the floor under it and reddens nothing on its own.
-# A widening is passed only where `--yes` was given.
-[[mutation]]
-name = "attach passes a widening it was not told --yes for"
-file = "src/stayfixed/attach/write.py"
-before = "        if not (stop.flag == CONFIRMED and confirmed):"
-after = "        if not (stop.flag == CONFIRMED):"
-reddens = ["tests/attach/test_write.py::test_an_unconfirmed_attach_that_would_widen_a_permission_refuses"]
-
 # A `.gitignore` that re-includes a placed path with a `!` line outranks the exclude block, so git
 # would show it however the block reads. git is asked about every placed path once the block
 # stands and before any later write, and the settings file is the one that must never be written
@@ -2422,8 +2399,8 @@ reddens = [
 [[mutation]]
 name = "check reads past a group that never moved"
 file = "src/stayfixed/attach/check.py"
-before = "    if all(stop.flag is not None for stop in stops):"
-after = "    if all(stop.flag is not None or \"real directories\" in stop.refusal for stop in stops):"
+before = "    if not stops:"
+after = "    if all(\"real directories\" in stop for stop in stops):"
 reddens = [
   "tests/attach/test_commands.py::test_check_reads_nothing_past_where_the_run_stops[group-never-moved]",
 ]

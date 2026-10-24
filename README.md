@@ -422,7 +422,7 @@ stayfixed overlay publish-template --owner you --yes             # publish the t
 
 # Binding a repository to the overlay
 stayfixed attach --store ../stayfixed-private/projects/widget/memory --check   # the binding and the permission diff, writing nothing
-stayfixed attach --store ../stayfixed-private/projects/widget/memory --yes     # merge the diff you just read, install the overlay's plugin, link the notes in
+stayfixed attach --store ../stayfixed-private/projects/widget/memory           # merge the allow rules, install the overlay's plugin, link the notes in; prints the binding and what will run
 stayfixed detach                                       # remove what attach added; the binding record stays
 
 # Machine setup

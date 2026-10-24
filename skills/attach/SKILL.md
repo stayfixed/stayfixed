@@ -15,13 +15,11 @@ root comes from the machine configuration, not from what is typed here.
    notes have to move into the overlay first — each group to
    `<overlay>/projects/<name>/memory/<group>`, the shared group to `common/memory`. Say the
    count and wait; moving notes is the owner's act, never yours.
-2. Relay that diff to the user and wait for an answer. The command itself refuses to widen a
-   permission without `--yes`, so this step is how a person comes to give it — not what stands
-   in for it. Once they agree, run `stayfixed attach --store PATH --yes`; it merges the rules,
-   installs the overlay's hooks, skills and agents as this checkout's local plugin, links the
-   notes into this checkout and every worktree, and prints what it wrote. An overlay
-   that grants nothing attaches without the flag, and that is the command's decision rather
-   than a judgement to make here.
+2. Run `stayfixed attach --store PATH`; it merges the rules, installs the overlay's hooks,
+   skills and agents as this checkout's local plugin, links the notes into this checkout and
+   every worktree, and prints one screen: the binding, the hook entries, skills and agents
+   added or removed since the last attach, and the allow rules added. Relay that screen to the
+   user. It asks for no confirmation: the overlay is the owner's own.
 3. If the report or the run names two remotes -- this checkout's `origin` is not the one the
    binding or the overlay records -- relay that line. It refuses nothing: the binding is an id
    this machine keeps, never the remote. Never print or relay more of the binding id than the

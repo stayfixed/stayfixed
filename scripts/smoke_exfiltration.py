@@ -300,7 +300,7 @@ def main(argv: list[str]) -> int:
     inside = planted.clone / "evil" / "overlay" / "projects" / "smoke" / "memory"
     attached = stayfixed(
         plugin_root,
-        ["attach", "--store", str(inside), "--root", str(planted.clone), "--yes"],
+        ["attach", "--store", str(inside), "--root", str(planted.clone)],
         env,
         planted.clone,
     )

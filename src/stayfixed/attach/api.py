@@ -34,7 +34,7 @@ returns — was published on the strength of that sentence and left when the sen
 second sentence of the same kind — "`tests/test_install_path.py`, the walkthrough that runs the
 four packages in the order a person does, is the other consumer, and it drives `attach` and
 `detach`, whose returns are `Attached` and `Detached`". That walkthrough drives the argument
-parser: `step("attach", "--store", ..., "--yes", ...)`, which is the point of it, because the
+parser: `step("attach", "--store", ..., "--machine", ...)`, which is the point of it, because the
 commands' argv wiring is what it exists to exercise. It imports two surfaces,
 `stayfixed.doctor.api` and `stayfixed.memory.api`, and reaches no name on this list. The two verbs
 are this area's own command module's, and their results are read where they are returned.

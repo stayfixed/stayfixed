@@ -41,10 +41,9 @@ and `stayfixed.binding` and `attach.render` for this machine's binding record an
 from __future__ import annotations
 
 import datetime
-import functools
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -68,6 +67,9 @@ from stayfixed.attach.permissions import (
     settings_document,
 )
 from stayfixed.attach.render import (
+    COPIED,
+    HOOK_FILE,
+    PLUGIN_DIRECTORY,
     PLUGIN_INSTALL_LOCAL,
     PLUGIN_MARKETPLACE_ADD_LOCAL,
     Part,
@@ -137,7 +139,7 @@ FALLBACK_KEY = "autoMemoryDirectory"
 # What `attach` says of a checkout with no `origin`, which binds as any other: the binding is the
 # id in the git common directory, and the remote is only what the records note beside it.
 NO_ORIGIN_NOTE = "this checkout has no `origin` remote, so the binding records none"
-# The fourth, and the first of the two whose trigger is repository-authored
+# The third, and the first of the two whose trigger is repository-authored
 # (`memory.groups` reaches no guard of its own). One constant for the check above every write
 # and for the `O_NOFOLLOW` walk that is the floor under it, because two spellings of one
 # refusal are two refusals to keep in step. The entry is never quoted back into it.
@@ -151,7 +153,7 @@ GROUP_UNASKED = (
     "a memory.groups entry's place in this project's share of the overlay cannot be checked for "
     "a symlink ({fault}), so it is refused rather than created"
 )
-# The sixth, and the second of the two whose trigger is repository-authored. Its anchor is
+# The fifth, and the second of the two whose trigger is repository-authored. Its anchor is
 # `root` -- the checkout the command was pointed at, never a value the repository chose -- so a
 # repository cannot move the directory this count is taken under: `unlinked_groups` contains
 # every `<paths.memory>/<group>` against that root and refuses the ones that leave it. The
@@ -185,14 +187,39 @@ CREATED_DIRS = (".stayfixed/local", ".stayfixed", ".codex/rules", ".codex", ".cl
 
 
 @dataclass(frozen=True)
-class Attached:
-    """What one `attach` changed.
+class Carried:
+    """What a render of the plugin carries, as `attach` names it on its screen: each hook entry by
+    its event and command, and each skill and agent by its name under `skills/` or `agents/`.
 
-    Nothing here is repository-authored but two notes: what `pre-commit install` printed, which
-    is this machine's tool answering in the overlay, and `memory.store.origin_note`'s, which
-    names the remotes through `printed.quoted`. `binding` is the binding id as `binding.short`
-    prints it, never the whole id; `binding_recorded` says whether this run bound a checkout this
-    machine did not bind before.
+    Every name is the overlay's, the owner's own, read either out of the parts this run renders or
+    out of the render directory the last run left, which is this machine's; each prints through
+    `printed`."""
+
+    hooks: tuple[tuple[str, str], ...] = ()
+    skills: tuple[str, ...] = ()
+    agents: tuple[str, ...] = ()
+
+    def without(self, other: Carried) -> Carried:
+        """What this carries that `other` does not."""
+        return Carried(
+            tuple(entry for entry in self.hooks if entry not in other.hooks),
+            tuple(name for name in self.skills if name not in other.skills),
+            tuple(name for name in self.agents if name not in other.agents),
+        )
+
+
+@dataclass(frozen=True)
+class Attached:
+    """What one `attach` changed, and the screen it is said on: the binding, then what will run
+    that did not before and what no longer will, then the allow rules added.
+
+    Nothing here is repository-authored but `origin`, this checkout's remote, which a caller
+    prints through `printed`, and two notes: what `pre-commit install` printed, which is this
+    machine's tool answering in the overlay, and `memory.store.origin_note`'s, which names the
+    remotes through `printed.quoted`. `binding` is the binding id as `binding.short` prints it,
+    never the whole id; `binding_recorded` says whether this run bound a checkout this machine did
+    not bind before. `added` and `removed` are the executable diff against the render the last
+    run left, and `allow_added` the allow rules this run merged; all three are the overlay's.
     """
 
     settings_written: bool
@@ -201,6 +228,10 @@ class Attached:
     notes: tuple[str, ...]
     links: Links
     binding: str
+    origin: str | None = None
+    added: Carried = Carried()
+    removed: Carried = Carried()
+    allow_added: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1101,7 +1132,6 @@ def attach(
     *,
     store: Path,
     machine: Path | None,
-    confirmed: bool,
     runner: Runner,
     home: Path | None,
     owner: Owner | None = None,
@@ -1110,13 +1140,13 @@ def attach(
     its executable parts, and link the notes in.
 
     The order below is the order they are enumerated in: read the binding, which already
-    refuses a store outside the machine-recorded overlay; compute the diff; refuse a widening
-    without `confirmed`; read the existing ledger, which refuses one no attach could have
-    written; refuse a `memory.groups` entry that leaves this
-    project's share of the overlay; refuse a harness anchor this machine cannot vouch for;
-    refuse a group that never moved into the overlay; ask git what it already hides, which
-    refuses a `check-ignore` with no answer, a placed path that leaves the project and a
-    symlinked or unwritable exclude file; read the overlay's rule sources and the parts the
+    refuses a store outside the machine-recorded overlay; compute the diff, which gates nothing,
+    since the overlay is the owner's and what it grants is shown rather than refused; read the
+    existing ledger, which refuses one no attach could have written; refuse a `memory.groups`
+    entry that leaves this project's share of the overlay; refuse a harness anchor this machine
+    cannot vouch for; refuse a group that never moved into the overlay; ask git what it already
+    hides, which refuses a `check-ignore` with no answer, a placed path that leaves the project
+    and a symlinked or unwritable exclude file; read the overlay's rule sources and the parts the
     plugin carries, the checkouts and the machine's trust record, which the writes below would
     otherwise read for themselves; then write the exclude block, refuse a placed path git would
     still not ignore (`exclude.NOT_IGNORED`), and only then write any file the block hides. The
@@ -1135,17 +1165,17 @@ def attach(
     after it. The reason is the `Config`: `_check_groups` has just loaded it, and the
     never-moved check reads the same `memory.groups` and the same `paths.memory` — so the two
     containments over one repository-authored list stay in one place, and the anchor, which
-    needs neither, follows. Nothing writes between them; every one of the six is above the
+    needs neither, follows. Nothing writes between them; every one of the five is above the
     first write, which is the property that matters and the one the tests assert.
 
-    **A seventh refusal is above every write and is not one of the six**, because it is not a
+    **A sixth refusal is above every write and is not one of the five**, because it is not a
     check this function makes: `unlinked_groups` contains each `<paths.memory>/<group>` against
     `root` before it counts, and a `PathEscape` out of it propagates as the refusal it already
     is — `paths.memory` may itself be a symlink, and then every group escapes at once. It is
     enumerated nowhere because it has no ordinal of its own; it is named here so that the count
-    above reads as "six checks" rather than as "six ways this can refuse".
+    above reads as "five checks" rather than as "five ways this can refuse".
 
-    **All six checks are above every write, and two of them were not.** The ledger's lived in
+    **All five checks are above every write, and two of them were not.** The ledger's lived in
     `_write_ledger`, and the `memory.groups` one in `_prepare_store` — which runs after the
     ignore region, the Codex rule files, the settings merge, the ledger *and* the binding. Each
     could exit 2 having written four or five artifacts, with `doctor._attached` — which keys on
@@ -1177,36 +1207,28 @@ def attach(
         root,
         store=store,
         machine=machine,
-        confirmed=confirmed,
         home=home,
         owner=owner,
     )
     return _carry_out(root, planned, machine=machine, runner=runner, home=home)
 
 
-# The flag that takes the run past a stop: `--yes` past a widening.
-CONFIRMED = "--yes"
-
-
-@dataclass(frozen=True)
-class Stop:
-    """A gate past the binding that stops `attach`: the refusal it makes, and the flag that takes
-    the run past it, where one does."""
-
-    refusal: str
-    flag: str | None = None
-
-
 class Gates:
     """The gates `attach` meets past the binding, in the order it meets them.
 
-    Iterated, it yields each stop and makes the reads that lie between them, so `_plan` and
-    `attach --check` take one order and cannot come to disagree about it. `_plan` refuses at the
-    first stop no flag it was given answers, and reads nothing past it. `--check` takes every stop
-    and reports it: it reads past a flag's stop as the run does with the flag, so a read the run
-    makes only once every stop before it is passed is made only where none was one no flag
-    answers. `diff` and `real` are what the reads found, for the plan and the report.
+    Iterated, it yields the refusal of each stop and makes the reads that lie between them, so
+    `_plan` and `attach --check` take one order and cannot come to disagree about it. `_plan`
+    refuses at the first stop and reads nothing past it; `--check` takes the stop and reports it,
+    and plans the writes only where there was none. `diff` and `real` are what the reads found,
+    for the plan and the report.
+
+    **No stop is about what the overlay grants.** The allow rules and the executable parts are the
+    owner's, written by the owner and the owner's agents, neither of them this delivery's
+    adversary, so `attach` shows them and proceeds (`Attached`) rather than asking for a flag.
     """
+
+    # What the overlay grants and the local settings lack, read past the share once iterated.
+    diff: PermissionDiff
 
     def __init__(self, root: Path, config: Config, binding: Binding) -> None:
         self.root = root
@@ -1214,30 +1236,21 @@ class Gates:
         self.binding = binding
         self.real = 0
 
-    @functools.cached_property
-    def diff(self) -> PermissionDiff:
-        """What the overlay grants and the local settings lack, read past the share."""
-        return diff_permissions(self.root, self.binding)
-
-    def __iter__(self) -> Iterator[Stop]:
+    def __iter__(self) -> Iterator[str]:
         binding, config = self.binding, self.config
         # Beside the binding's own refusals: a `project.name` no directory under the overlay can
         # carry leaves the binding record and the group directories nowhere to go, and the
         # overlay's sources read under it answer "none" rather than refusing, so nothing below
         # would ask before writing.
         refuse_unless_share_can_exist(binding, config)
-        if self.diff.widens:
-            yield Stop(
-                f"attaching would add {len(self.diff.added_allow)} allow rule(s) to "
-                f"{LOCAL_SETTINGS}, which grants capability. Read the diff with "
-                f"`stayfixed attach --check` and pass --yes to confirm it",
-                CONFIRMED,
-            )
+        # The diff, read in the run's order: it refuses a settings file the merge could not read,
+        # and `--check` reads it past a stop where the run reads nothing, so it is read before it.
+        self.diff = diff_permissions(self.root, binding)
         # The two checks about the notes, asked only where they are linked.
         if config.memory.mode != OVERLAY_MODE:
             return
         refuse_unless_share_holds(binding, config)
-        # The sixth, and the one whose remedy is an act no command performs: `attach` **links**,
+        # The fifth, and the one whose remedy is an act no command performs: `attach` **links**,
         # so a group that is still a real directory under `paths.memory` has its notes in the
         # repository and its share of the overlay empty, and linking over it would leave every
         # session reading the repository's copy with the binding record, the settings merge and
@@ -1248,7 +1261,7 @@ class Gates:
         # `PathEscape` out of `unlinked_groups` propagates as the refusal it already is.
         self.real = len(unlinked_groups(self.root, config))
         if self.real:
-            yield Stop(REAL_DIRECTORIES.format(count=self.real))
+            yield REAL_DIRECTORIES.format(count=self.real)
 
 
 def _plan(
@@ -1256,16 +1269,14 @@ def _plan(
     *,
     store: Path,
     machine: Path | None,
-    confirmed: bool,
     home: Path | None,
     owner: Owner | None,
 ) -> AttachPlan:
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
     nothing written: what it returns is all `_carry_out` may act on.
 
-    The gates -- the widening `--yes` confirms and the groups that never moved -- are `Gates`',
-    which `attach --check` iterates too, and the run refuses at the first one its flags do not
-    answer.
+    The gate -- the groups that never moved -- is `Gates`', which `attach --check` iterates too,
+    and the run refuses at it.
     What lies between and after them is `refuse_unless_share_holds` and `plan_writes`, which
     `--check` asks where the run would, so the preview stops on every refusal the run makes past
     those gates, with the same code and line, by calling what the run calls."""
@@ -1281,9 +1292,8 @@ def _plan(
     config = load(root, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     gates = Gates(root, config, binding)
-    for stop in gates:
-        if not (stop.flag == CONFIRMED and confirmed):
-            raise Refusal(stop.refusal)
+    for refusal in gates:
+        raise Refusal(refusal)
     return plan_writes(root, config, binding, gates.diff, machine=machine, home=home)
 
 
@@ -1294,7 +1304,7 @@ def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
     Asked between the run's gates (`Gates`), above every write, by `attach` and by
     `attach --check` alike where the run would reach it, so the two end alike on either.
     """
-    # The fourth refusal, and it belongs here for the reason the three above it do; the third,
+    # The third refusal, and it belongs here for the reason the two above it do; the second,
     # the ledger's, is read in `plan_writes` and is above every write too. `ledger()` refuses
     # a ledger naming files or settings keys `attach` could not have written, and asked for by
     # `_write_ledger`, the fourth write of the run, it would let a clone that commits such a
@@ -1431,6 +1441,9 @@ def _carry_out(
     id = ensure_id(root)
     bound = record(root, binding.project, binding.remote)
     _record_project(binding, bound.origin)
+    # What ran before this render, read out of the render directory before it is rewritten, and
+    # what will run after it, read out of the parts: the screen's executable diff.
+    before, after = _carried_in(delivery_directory(id)), _carried(planned.parts)
     rendered = write_render(id, planned.parts, stale=recorded.parts if recorded else ())
     # Installed once: a re-render needs no reinstall, since the plugin runs from the render
     # directory in place. Recorded once the install succeeded, so a failed one is tried again.
@@ -1451,8 +1464,24 @@ def _carry_out(
         notes.append(NO_ORIGIN_NOTE)
     elif binding.note is not None:
         notes.append(binding.note)
+
+    def said(written: bool) -> Attached:
+        """What this run did, with the screen it is said on."""
+        return Attached(
+            written,
+            rules,
+            binding.state != BOUND,
+            tuple(notes),
+            links,
+            short(id),
+            origin=binding.remote,
+            added=after.without(before),
+            removed=before.without(after),
+            allow_added=planned.diff.added_allow,
+        )
+
     if not planned.memory:
-        return Attached(written, rules, binding.state != BOUND, tuple(notes), links, short(id))
+        return said(written)
     owner = planned.checkouts[0]
     keys = _harness_fallback(root, config, owner=owner, machine=machine, home=home)
     if keys != carried:
@@ -1471,7 +1500,57 @@ def _carry_out(
     # its notes, and a run that says something else above has no use for that.
     elif (waits := _harness_waits(owner, config, machine=machine)) is not None:
         notes.append(waits)
-    return Attached(written, rules, binding.state != BOUND, tuple(notes), links, short(id))
+    return said(written)
+
+
+def _named_under(files: Iterable[str], directory: str) -> tuple[str, ...]:
+    """The first name below `directory/` of each of `files`, paths relative to the plugin, sorted
+    and each once: a skill is its directory, an agent its file."""
+    prefix = f"{directory}/"
+    return tuple(
+        sorted({path[len(prefix) :].split("/")[0] for path in files if path.startswith(prefix)})
+    )
+
+
+def _hook_entries(text: str) -> tuple[tuple[str, str], ...]:
+    """Each entry of a rendered hook file as `(event, command)`, in its order; nothing for a file
+    of any other shape, since the screen is a convenience and refuses nothing."""
+    try:
+        hooks = json.loads(text).get("hooks", {})
+    except (ValueError, AttributeError, RecursionError):
+        return ()
+    found: list[tuple[str, str]] = []
+    for event, groups in hooks.items() if isinstance(hooks, dict) else ():
+        for group in groups if isinstance(groups, list) else ():
+            entries = group.get("hooks", []) if isinstance(group, dict) else []
+            for entry in entries if isinstance(entries, list) else ():
+                if isinstance(entry, dict) and isinstance(entry.get("command"), str):
+                    found.append((str(event), entry["command"]))
+    return tuple(dict.fromkeys(found))
+
+
+def _carried(parts: Mapping[str, Part]) -> Carried:
+    """What the parts `render.read_parts` read carry."""
+    hooks = parts[HOOK_FILE].text if HOOK_FILE in parts else ""
+    return Carried(_hook_entries(hooks), *(_named_under(parts, name) for name in COPIED))
+
+
+def _carried_in(directory: Path) -> Carried:
+    """What the render directory the last run left carries, or nothing where it holds no render
+    or cannot be read: asked after the first write, so it answers rather than refusing, and a
+    directory it cannot read shows every part as added."""
+    plugin = directory / PLUGIN_DIRECTORY
+    try:
+        hooks = fsops.read_regular_text(plugin / HOOK_FILE)
+    except (OSError, UnicodeDecodeError):
+        hooks = ""
+    files: list[str] = []
+    for name in COPIED:
+        try:
+            files += [f"{name}/{child}" for child in os.listdir(plugin / name)]
+        except OSError:
+            continue
+    return Carried(_hook_entries(hooks), *(_named_under(files, name) for name in COPIED))
 
 
 # Said on the run that installed the render.

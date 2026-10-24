@@ -1,9 +1,8 @@
-"""What `attach --check` answers, and the three refusals it owes before it answers anything.
+"""What `attach --check` answers, and the two refusals it owes before it answers anything.
 
-Three rules on one boundary keep the overlay trusted, and two of them are read here: the overlay
-root comes from the machine file rather than from `--store`, and `--store` names this project's own
-directory inside it. The third — a widening that needs an explicit confirmation — is a write, and
-lives in `test_write.py`.
+Two rules on one boundary keep the overlay trusted, and both are read here: the overlay root comes
+from the machine file rather than from `--store`, and `--store` names this project's own directory
+inside it. What the overlay then grants is the owner's, shown and not gated (`test_write.py`).
 """
 
 from __future__ import annotations

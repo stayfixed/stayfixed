@@ -58,14 +58,11 @@ def _bound(tmp_path: Path) -> tuple[Path, Path, Path]:
     return root, own, _machine(tmp_path, overlay=overlay)
 
 
-def _attach(
-    root: Path, store: Path, machine: Path, home: Path, *, confirmed: bool = False
-) -> Attached:
+def _attach(root: Path, store: Path, machine: Path, home: Path) -> Attached:
     return attach(
         root,
         store=store,
         machine=machine,
-        confirmed=confirmed,
         runner=Recorder(),
         home=home,
     )
@@ -581,6 +578,6 @@ def test_a_home_that_is_not_there_refuses_above_every_write(tmp_path: Path) -> N
     # `snapshot` is a walk, and an empty one satisfies the comparison below on its own.
     assert before
     with pytest.raises(Refusal, match="never creates the home directory itself"):
-        _attach(root, store, machine, tmp_path / "no-such-home", confirmed=True)
+        _attach(root, store, machine, tmp_path / "no-such-home")
     assert_snapshot_unchanged(root, before)
     assert not (root / LEDGER).exists()

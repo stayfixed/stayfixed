@@ -29,12 +29,17 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import ATTACH_CHECK_HELP, command_owner, common_flags
 from stayfixed.config.machine import override_is_honoured
 from stayfixed.errors import Refusal
+from stayfixed.printed import clipped, quoted
 from stayfixed.result import Result
+
+if TYPE_CHECKING:
+    from stayfixed.attach.write import Attached
 
 _NO_STORE = (
     "`stayfixed attach` needs --store, naming this project's own directory inside the overlay "
@@ -81,7 +86,6 @@ def run_attach(args: argparse.Namespace) -> Result:
         root,
         store=store,
         machine=machine,
-        confirmed=args.yes,
         runner=subprocess_runner(),
         # Explicit, as `runner` is: both parameters are keyword-required so that a caller has
         # to say which home and which runner it means, and the real command's answer is the
@@ -103,6 +107,15 @@ def run_attach(args: argparse.Namespace) -> Result:
         # is the secret a delivery's names carry.
         "binding": attached.binding,
         "notes": list(attached.notes),
+        # The executable diff and the allow rules added, as the screen below names them. Each is
+        # the overlay's, the owner's own, so it may be shown; `origin` is the repository's and is
+        # not here, as no remote is in any `--json` of this area.
+        **{
+            f"{kind}_{side}": list(getattr(getattr(attached, side), kind))
+            for side in ("added", "removed")
+            for kind in ("hooks", "skills", "agents")
+        },
+        "allow_added": list(attached.allow_added),
     }
     summary = "; ".join(
         (
@@ -114,7 +127,26 @@ def run_attach(args: argparse.Namespace) -> Result:
             *attached.notes,
         )
     )
-    return Result(summary, data)
+    return Result("\n".join((summary, *_screen(attached))), data)
+
+
+def _screen(attached: Attached) -> list[str]:
+    """The binding, then what will run that did not before and what no longer will, then the
+    allow rules added: one screen, said as the run proceeds, since the overlay is the owner's and
+    what it grants is shown rather than gated. Every name prints through `printed`: the remote is
+    the repository's, and a hook's command or an allow rule holds spaces and may hold anything."""
+    origin = "no origin remote" if attached.origin is None else f"origin {quoted(attached.origin)}"
+    lines = [f"binding {attached.binding}: {origin}"]
+    for side in ("added", "removed"):
+        carried = getattr(attached, side)
+        lines += [
+            f"hook entry {side}: {quoted(event)} {clipped(command)}"
+            for event, command in carried.hooks
+        ]
+        lines += [f"skill {side}: {quoted(name)}" for name in carried.skills]
+        lines += [f"agent {side}: {quoted(name)}" for name in carried.agents]
+    lines += [f"allow rule added: {clipped(rule)}" for rule in attached.allow_added]
+    return lines
 
 
 def run_detach(args: argparse.Namespace) -> Result:
@@ -178,14 +210,6 @@ def register(groups: SubParsers) -> None:
         store=True,
     )
     attach.add_argument("--check", action="store_true", help=ATTACH_CHECK_HELP)
-    # A parameter and not a sentence in a document: in this harness the CLI is driven by a
-    # model that has read repository text, so a gate enforced by model compliance is not a
-    # gate. The skill's "relay the diff, then ask" is the UX around this flag.
-    attach.add_argument(
-        "--yes",
-        action="store_true",
-        help="confirm a diff that would widen a permission; refused without it",
-    )
     attach.set_defaults(func=run_attach)
 
     detach = common_flags(
