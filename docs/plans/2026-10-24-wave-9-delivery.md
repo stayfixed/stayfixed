@@ -1209,3 +1209,23 @@ line in a tracked `.gitignore` brings a path listed in `.git/info/exclude` back 
 ## Findings
 
 Written by Tasks 1, 12, 21 and 28, and by each wave's controller when its implementer reports.
+
+### Task 1 — the measurements re-run, 2026-10-24
+
+Re-run at $0 with the committed probe (fresh stub on port 8787, isolated `CLAUDE_CONFIG_DIR` and
+`HOME`) on the CLI, Claude Code 2.1.301, and on the desktop app's bundled binary, 2.1.304, which the
+app launches with `--setting-sources=user,project,local`. Every row matches the table; nothing stops
+the plan before Wave E.
+
+| # | 2.1.301 (CLI) | 2.1.304 (desktop's binary, its flags) |
+|---|---|---|
+| D1 | Same: the session runs the marketplace directory's bytes (an `r2` edit arrived with no reinstall while the cache copy kept `r1`); with the directory gone nothing loads, exit 0, `cache-miss` only in the debug log | not run |
+| D2 | Same: a fresh configuration skips a repo-authored marketplace headless; where the machine knows the marketplace, a clone committing only `enabledPlugins` runs the hook on every run | not run |
+| D2, unknown id | A clone naming a marketplace id the machine never registered loads nothing (`Skipping orphaned enabledPlugins entry`); the same clone naming the known id runs the hook | not run |
+| D2b | Same: `--scope local` also writes the machine-wide `known_marketplaces.json` | not run |
+| D3 | Same: a linked worktree reads the main checkout's `settings.local.json`, with or without its own; hooks run; Claude Code adds install records for the worktree paths | Same, in the desktop's layout `<main>/.claude/worktrees/<n>` |
+| D4 | Same: an absolute `autoMemoryDirectory` in the main checkout's file is the store from the main checkout and a worktree; a clone's committed `settings.json` setting it is honoured headless | Same |
+| D5 | Same: from a worktree with no file of its own, "don't ask again" wrote the allow-rule into the main checkout's file, rewritten whole with its keys reordered | Same |
+
+The 2.1.304 runs are a proxy for D6, not D6: the desktop app draws its own permission dialog and
+passes its own `--settings`, which only Task 12 Step 3 sees.
