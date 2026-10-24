@@ -103,8 +103,8 @@ What it does, in order:
 2. **Harvests.** A second writer — you, another session — may have appended
    `- [trigger → answer](group/note.md)` lines to `MEMORY.md`. For a note with neither key, those
    are read back into its `index:` frontmatter, marked `index_provenance: native`, so nothing a
-   session wrote is lost by regenerating. A line equal to the note's description is the one step 3
-   renders, read back from the last run, and is left where it is. A note written so is unreviewed until promoted again
+   session wrote is lost by regenerating. Only lines outside the region the render writes are
+   read (step 4), so the render's own lines are never read back into a note. A note written so is unreviewed until promoted again
    ([`memory promote`](#stayfixed-memory-promote-note----changed)).
 3. **Renders what is missing.** A note with none of these is rendered with its `description`, and
    is not written. A line an earlier release wrote into a note as `index_provenance: provisional`
@@ -114,11 +114,15 @@ What it does, in order:
    note ranked for the session leads its section whatever its position within a sub-heading.
    The harness's own memory writer keeps its notes as topic files at the top of the store,
    outside every group, each named by one `- [title](file.md)` line in `MEMORY.md`: every such
-   line whose file the store still holds is kept, verbatim and once, ahead of the sections, and
-   the topic files are never written. A note you have not promoted at the bytes it holds now
+   line whose file the store still holds is kept, verbatim and once, and the topic files are never
+   written. The render sits between two marker lines, `<!-- stayfixed:index -->` and
+   `<!-- stayfixed:index:end -->`; the native writer's pointer lines stand after it, where that
+   writer appends, and a `MEMORY.md` with no markers is read whole as lines outside the region. In
+   a composed store's own `MEMORY.md` under `~/.local/share/stayfixed/stores/`, a note you have not
+   promoted at the bytes it holds now
    ([`memory promote`](#stayfixed-memory-promote-note----changed)) has its line end in
-   `[unreviewed]`, as the bundles label it, since the harness reads `MEMORY.md` beside them; the
-   label follows this machine's record, so promoting or editing a note changes its line.
+   `[unreviewed]`, as the bundles label it; the label follows this machine's record, so it is never
+   written into an index a repository commits or the overlay shares.
 
 `--json`'s `provisional` lists the notes rendered by step 1 or step 3, the ones whose line a
 curated `index:` would replace.

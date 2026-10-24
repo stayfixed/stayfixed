@@ -2375,8 +2375,8 @@ reddens = [
 [[mutation]]
 name = "the harvest reads the index with no bound"
 file = "src/stayfixed/memory/index.py"
-before = "        text = read_regular_text(path)\n    except (OSError, UnicodeDecodeError):\n        return {}"
-after = "        text = path.read_text(encoding=\"utf-8\")\n    except (OSError, UnicodeDecodeError):\n        return {}"
+before = "        lines = read_regular_text(path).splitlines()"
+after = "        lines = path.read_text(encoding=\"utf-8\").splitlines()"
 reddens = [
   "tests/memory/test_index.py::test_an_index_past_the_read_cap_hands_the_harvest_nothing",
 ]
@@ -3211,21 +3211,32 @@ reddens = [
 [[mutation]]
 name = "a store path is printed with the whole binding id"
 file = "src/stayfixed/memory/store.py"
-before = '            return "/".join([str(base), f"{short(id)}…", *rest])'
-after = "            return str(path)"
+before = '    return "/".join([str(base), f"{short(id)}…", *rest])'
+after = "    return str(path)"
 reddens = [
   "tests/memory/test_composed.py::test_no_memory_command_prints_the_whole_binding_id_through_a_store_path",
 ]
 
-# The index's own rendered line, read back out of `MEMORY.md`, is not the native writer's: it is
-# never harvested into the note, whose bytes and reviewed status a second `memory index` keeps.
+# The harvest reads only the lines outside the region `render_index` writes: read back out of the
+# region, the last render's line for an edited note was written into it as the native writer's.
 [[mutation]]
-name = "the index harvests its own rendered line"
+name = "the harvest reads the rendered region"
 file = "src/stayfixed/memory/index.py"
-before = "        if line == note.description:"
-after = "        if False:"
+before = "        return lines[:start] + lines[end + 1 :]"
+after = "        return lines"
 reddens = [
-  "tests/memory/test_index.py::test_two_index_runs_leave_a_bare_note_as_it_was_and_reviewed",
+  "tests/memory/test_index.py::test_an_edited_description_leaves_every_note_as_it_was_over_two_runs",
+]
+
+# An unreviewed note's label follows this machine's record, so it is written only into a composed
+# store's own index, never one a repository commits or the overlay shares.
+[[mutation]]
+name = "the index labels an unreviewed note outside a composed store"
+file = "src/stayfixed/memory/index.py"
+before = "    if on_this_machine(_destination(store, config)):"
+after = "    if True:"
+reddens = [
+  "tests/memory/test_index.py::test_an_in_repo_index_carries_no_label_another_machines_record_would_change",
 ]
 
 # A note file that is a link is skipped in every store: the repository would choose what is read

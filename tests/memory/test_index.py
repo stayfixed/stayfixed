@@ -12,7 +12,9 @@ from stayfixed.errors import Refusal
 from stayfixed.memory.index import (
     EXTRA_TITLE,
     INDEX_NAME,
-    _appended,
+    REGION_BEGIN,
+    REGION_END,
+    _outside,
     check_index,
     entries_in,
     index_source,
@@ -116,7 +118,8 @@ def test_the_volatile_group_is_recognised_by_its_name_not_a_hardcoded_string() -
 
 def test_the_header_contract_is_present(tmp_path: Path) -> None:
     text = rendered(tmp_path)
-    assert text.startswith("# Memory Index\n")
+    assert text.startswith(f"{REGION_BEGIN}\n# Memory Index\n")
+    assert text.endswith(f"\n{REGION_END}\n")
     assert "never the answer" in text
 
 
@@ -391,12 +394,52 @@ def test_a_second_index_run_writes_nothing(tmp_path: Path) -> None:
     assert _index_cli(store, tmp_path, "--check")[0] == 0
 
 
+def test_an_edited_description_leaves_every_note_as_it_was_over_two_runs(tmp_path: Path) -> None:
+    # The last render's line for a note stood in `MEMORY.md` as an ordinary entry, so once the
+    # note's description was edited it no longer equalled the render and the next run harvested
+    # it into the note as the native writer's: the note was rewritten, with the stale line, and
+    # unreviewed. The harvest reads only lines outside the rendered region. Mutation (oracle):
+    # `mutations/`'s "the harvest reads the rendered region".
+    store, _ = a_store(tmp_path)
+    bare = store.groups["developer"] / "bare.md"
+    bare.write_text(note("bare"), encoding="utf-8")
+    assert _index_cli(store, tmp_path)[0] == 0
+    bare.write_text(note("bare").replace("bare description", "an edited description"), "utf-8")
+    before = snapshot(store.path)
+    assert _index_cli(store, tmp_path)[0] == 0
+    assert _index_cli(store, tmp_path)[0] == 0
+    after = snapshot(store.path)
+    assert {k: v for k, v in after.items() if k != INDEX_NAME} == {
+        k: v for k, v in before.items() if k != INDEX_NAME
+    }
+    assert "- [an edited description](developer/bare.md)" in after[INDEX_NAME].decode()
+
+
+def test_a_line_appended_after_the_region_is_harvested_exactly_once(tmp_path: Path) -> None:
+    # Where the native writer appends — after the rendered region — a line naming a note is
+    # harvested into it once; the render then carries it inside the region, and the next run
+    # writes nothing.
+    store, _ = a_store(tmp_path)
+    bare = store.groups["developer"] / "bare.md"
+    bare.write_text(note("bare"), encoding="utf-8")
+    assert _index_cli(store, tmp_path)[0] == 0
+    index = store.path / INDEX_NAME
+    line = "- [native trigger → answer](developer/bare.md)"
+    index.write_text(index.read_text(encoding="utf-8") + line + "\n", encoding="utf-8")
+    assert _index_cli(store, tmp_path)[0] == 0
+    assert "index: native trigger → answer" in bare.read_text(encoding="utf-8")
+    before = snapshot(store.path)
+    assert _index_cli(store, tmp_path)[0] == 0
+    assert_snapshot_unchanged(store.path, before)
+    assert index.read_text(encoding="utf-8").count(line) == 1
+
+
 def test_two_index_runs_leave_a_bare_note_as_it_was_and_reviewed(tmp_path: Path) -> None:
     # The first run renders a note with no `index:` line from its description; the second read
     # that rendered line back out of `MEMORY.md` as the native writer's and wrote it into the note,
     # whose digest moved: the owner's promoted note was unreviewed and left the standing rules.
-    # A line equal to what the index renders for the note is stayfixed's own and is not
-    # harvested. Mutation (oracle): `mutations/`'s "the index harvests its own rendered line".
+    # The render sits between its markers in `MEMORY.md`, and the harvest reads only what stands
+    # outside them.
     store, _ = a_store(tmp_path)
     bare = store.groups["developer"] / "bare.md"
     bare.write_text(note("bare"), encoding="utf-8")
@@ -413,17 +456,49 @@ def test_two_index_runs_leave_a_bare_note_as_it_was_and_reviewed(tmp_path: Path)
     assert code == 0 and entries["bare"]["reviewed"] is True
 
 
-def test_an_unreviewed_notes_line_in_the_index_is_labelled(tmp_path: Path) -> None:
-    # The harness reads `MEMORY.md` natively, beside the bundles, which label an unreviewed note
-    # and wrap it as data; its index line carried no mark, so the two channels disagreed about the
-    # same note. A promoted note's line carries none.
-    store, _ = a_store(tmp_path)
+def test_an_unreviewed_notes_line_is_labelled_only_in_a_composed_stores_own_index(
+    tmp_path: Path,
+) -> None:
+    # The harness reads `MEMORY.md` natively, beside the bundles, which label an unreviewed note;
+    # the label follows this machine's record, so it is written only into an index on this
+    # machine, a composed store's own under the data directory, and a promoted note's line
+    # carries none.
+    from stayfixed.config.paths import data_directory
+
+    _, config = a_store(tmp_path)
+    base = data_directory() / "stores" / ("0" * 32)
+    (base / "developer").mkdir(parents=True)
+    (base / "developer" / "a.md").write_text(note("a", index="A trigger → A"), encoding="utf-8")
+    (base / "developer" / "b.md").write_text(note("b", index="B trigger → B"), encoding="utf-8")
     machine = tmp_path / "machine.toml"
-    assert cli(store.root, tmp_path, "memory", "promote", "developer/a.md", machine=machine)[0] == 0
-    assert _index_cli(store, tmp_path)[0] == 0
-    lines = (store.path / INDEX_NAME).read_text(encoding="utf-8").splitlines()
+    store = Store(
+        base, "overlay", tmp_path / "project", {"developer": base / "developer"}, machine=machine
+    )
+    from stayfixed.memory.notes import walk
+    from stayfixed.memory.reviewed import promote
+
+    promote(store, [n for n in walk(base, ["developer"]).notes if n.name == "a"])
+    lines = render_index(reconcile(store, config, write=False), config, store).splitlines()
     assert "- [B trigger → B](developer/b.md) [unreviewed]" in lines
     assert "- [A trigger → A](developer/a.md)" in lines
+
+
+def test_an_in_repo_index_carries_no_label_another_machines_record_would_change(
+    tmp_path: Path,
+) -> None:
+    # A committed index labelled by one machine's record read as drift on every other machine,
+    # and the overlay's shared one flipped between machines. Mutation (oracle): `mutations/`'s
+    # "the index labels an unreviewed note outside a composed store".
+    store, _ = a_store(tmp_path)
+    mine = tmp_path / "machine.toml"
+    other = tmp_path / "other" / "machine.toml"
+    other.parent.mkdir()
+    other.write_text("", encoding="utf-8")
+    assert cli(store.root, tmp_path, "memory", "promote", "developer/a.md", machine=mine)[0] == 0
+    assert cli(store.root, tmp_path, "memory", "index", machine=mine)[0] == 0
+    code, out, err = cli(store.root, tmp_path, "memory", "index", "--check", machine=other)
+    assert code == 0, (out, err)
+    assert "[unreviewed]" not in (store.path / INDEX_NAME).read_text(encoding="utf-8")
 
 
 def test_a_file_that_will_not_parse_is_quarantined_not_fatal(tmp_path: Path) -> None:
@@ -481,13 +556,13 @@ def test_an_index_past_the_read_cap_hands_the_harvest_nothing(
     # contributes no entry rather than being read to its end. The cap is lowered to one byte under
     # the render, which read whole hands back every entry. Mutation (oracle): `mutations/`'s "the
     # harvest reads the index with no bound" -> the entries come back.
-    store, config = a_store(tmp_path)
-    reconciled = reconcile(store, config, write=False)
-    text = render_index(reconciled, config, store)
-    path = write_index(store, config, text)
-    assert _appended(path) != {}
+    store, _ = a_store(tmp_path)
+    path = store.path / INDEX_NAME
+    text = "- [A](developer/a.md)\n- [B](developer/b.md)\n"
+    path.write_text(text, encoding="utf-8")
+    assert _outside(path) != []
     monkeypatch.setattr(fsops, "REGULAR_READ_LIMIT", len(text.encode("utf-8")) - 1)
-    assert _appended(path) == {}
+    assert _outside(path) == []
 
 
 def test_check_reports_the_budget_and_the_caps_separately(tmp_path: Path) -> None:
@@ -503,7 +578,7 @@ def test_write_index_writes_where_the_store_says(tmp_path: Path) -> None:
     reconciled = reconcile(store, config, write=False)
     path = write_index(store, config, render_index(reconciled, config, store))
     assert path == store.path / INDEX_NAME
-    assert path.read_text(encoding="utf-8").startswith("# Memory Index")
+    assert path.read_text(encoding="utf-8").startswith(f"{REGION_BEGIN}\n# Memory Index")
 
 
 # --- what a second, non-stayfixed writer can append to MEMORY.md -------------------------------
@@ -981,7 +1056,7 @@ def test_a_local_only_store_keeps_the_native_writers_files_and_their_pointer_lin
     lines = (base / INDEX_NAME).read_text(encoding="utf-8").splitlines()
     assert all(line in lines for line in NATIVE_LINES), lines
     assert stale not in lines
-    assert "- [A trigger → A](developer/a.md) [unreviewed]" in lines
+    assert "- [A trigger → A](developer/a.md)" in lines
     assert {name: (base / f"{name}.md").read_text(encoding="utf-8") for name in topics} == topics
     # And the render is stable: a second look finds the index current.
     assert cli(root, tmp_path, "memory", "index", "--check", machine=machine)[0] == 0

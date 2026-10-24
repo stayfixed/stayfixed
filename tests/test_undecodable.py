@@ -175,8 +175,8 @@ def test_an_undecodable_file_is_its_readers_own_failure(
 ABSENT: list[tuple[str, Callable[[Path], Callable[[], object]], object]] = [
     (
         "the memory index a second writer appended to",
-        lambda t: lambda: index._appended(_plant(t / "MEMORY.md")),
-        {},
+        lambda t: lambda: index._outside(_plant(t / "MEMORY.md")),
+        [],
     ),
     (
         "the attach record's first-attach date",
