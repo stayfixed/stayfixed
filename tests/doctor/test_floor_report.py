@@ -184,10 +184,11 @@ def test_a_preference_the_session_put_back_is_the_presets(tmp_path: Path) -> Non
     # preset's is the preset's, from the same read that noted it. Mutation (`mutations/`'s "the
     # NOTE load hands its reader the document as written"): `memory.mode` reads as the
     # repository's.
-    template = LOCAL_ONLY.replace('mode = "local-only"', 'mode = "harness"')
+    template = LOCAL_ONLY.replace('mode = "local-only"', 'mode = "cloud"')
     root = _initialised(tmp_path, template=template)
     checked = row(run_checks_for(tmp_path, root, machine=none(tmp_path)), "preferences")
-    assert "memory.mode = local-only (preset)" in checked.detail
+    # Put back, the mode is the preset's, and the preset chooses none: no layer holds it.
+    assert "memory.mode" not in checked.detail
     assert "memory.groups (repository)" in checked.detail
 
 
@@ -197,7 +198,7 @@ def test_preferences_with_no_stayfixed_toml_are_the_presets(tmp_path: Path) -> N
     root = tmp_path / "project"
     root.mkdir()
     checked = row(run_checks_for(tmp_path, root, machine=none(tmp_path)), "preferences")
-    assert "memory.mode = local-only (preset)" in checked.detail
+    assert "memory.groups (preset)" in checked.detail
     assert "(repository)" not in checked.detail
 
 

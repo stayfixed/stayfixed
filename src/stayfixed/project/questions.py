@@ -22,6 +22,7 @@ from typing import Any
 
 from stayfixed.config.schema import (
     BRANCH_NAME,
+    HARNESS_MODE,
     IN_REPO_MODE,
     LOCAL_ONLY_MODE,
     MEMORY_MODES,
@@ -44,6 +45,7 @@ SCHEMA = "https://json-schema.org/draft/2020-12/schema"
 # The source of a default that nothing in the repository chose.
 PRESET = "the preset's default"
 MEMORY_TITLES = {
+    HARNESS_MODE: "In the coding agent's own memory, which stayfixed leaves alone",
     IN_REPO_MODE: "In this repository, committed with the code",
     LOCAL_ONLY_MODE: "On this machine only, under .stayfixed/local/",
 }
@@ -89,7 +91,7 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
     from stayfixed.config.loader import preset_defaults
     from stayfixed.harnesses import HARNESSES
     from stayfixed.profiles import shipped
-    from stayfixed.project.detect import detect
+    from stayfixed.project.detect import DEFAULT, detect
     from stayfixed.project.init import precheck
 
     precheck(root, answering=True)
@@ -134,8 +136,9 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
             "title": "Where the notes live",
             # A mode with no title is a `KeyError` here: loud, and caught by every test.
             "oneOf": [{"const": mode, "title": titles[mode]} for mode in MEMORY_MODES],
+            # The preset chooses no mode, so the default is the schema's own, `harness`.
             "default": preset.memory.mode,
-            "x-stayfixed-source": PRESET,
+            "x-stayfixed-source": DEFAULT,
         },
         "artifacts.local": {
             "type": "array",

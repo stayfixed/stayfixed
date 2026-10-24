@@ -64,7 +64,7 @@ def unparseable(root: Path, home: Path) -> None:
 def newer_release(root: Path, home: Path) -> None:
     # A file a newer release wrote: an unknown section, an unknown key and an unknown enum value
     # together.
-    text = LATER + '\n[newer]\nx = 1\n[memory]\nmode = "harness"\nfuture = 1\n'
+    text = LATER + '\n[newer]\nx = 1\n[memory]\nmode = "cloud"\nfuture = 1\n'
     (root / "stayfixed.toml").write_text(text, encoding="utf-8")
 
 
@@ -265,7 +265,9 @@ def test_pre_tool_use_prints_no_warning_and_logs_it_once(tmp_path: Path) -> None
 
 # A real file under which each handler about the project speaks, and the handler.
 def _worktree_link(root: Path) -> tuple[Handler, HookEvent]:
-    (root / "stayfixed.toml").write_text(CONFIG, encoding="utf-8")
+    # A mode that keeps a store: memory left to the harness has nothing to link and says nothing.
+    text = CONFIG + '\n[memory]\nmode = "local-only"\n'
+    (root / "stayfixed.toml").write_text(text, encoding="utf-8")
     handler = next(h for h in memory_handlers() if h.name == "worktree-link")
     return handler, _event("SessionStart", root)
 

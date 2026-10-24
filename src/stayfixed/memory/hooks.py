@@ -72,8 +72,11 @@ HARNESS_UNREACHABLE = (
 
 
 def _link_worktree(event: HookEvent, session: SessionConfig) -> HookResult:
+    from stayfixed.config.schema import HARNESS_MODE
+
     config = session.config
-    if config is None or event.project_root is None:
+    # Memory left to the harness has no store to link, and nothing to say about it.
+    if config is None or event.project_root is None or config.memory.mode == HARNESS_MODE:
         return HookResult()
     try:
         from stayfixed.errors import Failure, Refusal

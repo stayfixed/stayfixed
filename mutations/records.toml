@@ -3086,8 +3086,8 @@ reddens = ["tests/memory/test_worktree.py::test_a_harness_link_to_either_target_
 [[mutation]]
 name = "the worktree link speaks only without a project configuration"
 file = "src/stayfixed/memory/hooks.py"
-before = "    config = session.config\n    if config is None or event.project_root is None:"
-after = "    config = session.config\n    if config is not None or event.project_root is None:"
+before = "    config = session.config\n    # Memory left to the harness has no store to link, and nothing to say about it.\n    if config is None or"
+after = "    config = session.config\n    # Memory left to the harness has no store to link, and nothing to say about it.\n    if config is not None or"
 reddens = [
   "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[worktree_link]",
 ]

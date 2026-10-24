@@ -326,7 +326,7 @@ def test_questions_print_each_default_with_its_source_and_write_nothing(tmp_path
     assert code == 0, printed
     assert printed.startswith("detected:\n")
     assert "  project.name: widget (origin remote; --name)\n" in printed
-    assert "  memory.mode: local-only (the preset's default; --memory-mode)\n" in printed
+    assert "  memory.mode: harness (default; --memory-mode)\n" in printed
     assert "  artifacts.local: none (the preset's default; --local)\n" in printed
     code, printed = _run(root, tmp_path, "--questions", "--json")
     assert code == 0, printed

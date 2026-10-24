@@ -21,7 +21,7 @@ from pathlib import Path
 
 from stayfixed.areas import SubParsers
 from stayfixed.command import CHECK_HELP, command_owner, common_flags
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import HARNESS_MODE, Config
 from stayfixed.config.session import command_config, session_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.findings import labels, listed
@@ -386,7 +386,8 @@ def run_session_context(args: argparse.Namespace) -> Result:
     root = Path(args.root).resolve()
     machine = _machine(args)
     config = session_config(root, machine=machine).config
-    if config is None:
+    # No project configuration, or memory left to the harness: no store, and nothing to say.
+    if config is None or config.memory.mode == HARNESS_MODE:
         return Result("")
     text = render(bundle, _store_of(args, root, config, machine), config, part=args.part)
     return Result(text if text is not None else "")

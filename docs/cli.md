@@ -317,8 +317,9 @@ Output is deliberately **raw**, not JSON: the margin that keeps a bundle inside 
 is additive only because there is no envelope and no escaping. Do not pass `--json` from a hook
 entry.
 
-When the store's notes are repository data with no trust record, both bundles are empty, and
-this command says nothing rather than explaining why — its output *is* what reaches the model.
+Where no layer sets `[memory] mode`, memory is the coding agent's own (`harness`), there is no
+store, and this command prints nothing. When the store's notes are repository data with no trust
+record, both bundles are empty, and this command says nothing rather than explaining why — its output *is* what reaches the model.
 `stayfixed memory index` and `stayfixed memory fit` are where the explanation is printed,
 because those are the commands a person runs. It reads the configuration as the session does
 ([Configuration](#configuration)), and a machine file that does not load is read as recording no
@@ -1826,7 +1827,7 @@ detected:
   project.base_branch: main (origin/HEAD; --base-branch)
   stayfixed.agents: claude, codex (default; --agent)
   stayfixed.profile: python (profile markers; --profile)
-  memory.mode: local-only (the preset's default; --memory-mode)
+  memory.mode: harness (default; --memory-mode)
   artifacts.local: none (the preset's default; --local)
 each is answered by the flag its line names, on `stayfixed init --yes`; `stayfixed init --questions --json` carries them as a JSON Schema
 ```
@@ -1839,8 +1840,9 @@ when that names a plain branch under `refs/remotes/origin/`; with no remote at a
 `current branch` when that is a plain branch; otherwise, a remote with no `origin/HEAD` and
 remotes git could not list included, it is the `default`, `main`. The agents come from the `harness
 directories` the root carries; otherwise the `default` is every harness. The profile comes from
-`profile markers`, or there are `no profile markers`. The memory mode and the files kept out of
-git are `the preset's default`. Each default is exactly what `stayfixed init --yes` writes when
+`profile markers`, or there are `no profile markers`. The memory mode is the `default`,
+`harness`, since the preset chooses none, and the files kept out of git are `the preset's
+default`. Each default is exactly what `stayfixed init --yes` writes when
 that question is not answered. `origin/HEAD` goes stale after the remote's default branch is
 renamed, because git does not refresh one it has. That is why its source is printed: you can
 catch it.
@@ -3867,7 +3869,7 @@ memory = "docs/memory"
 stayfixed = "docs/stayfixed" # stayfixed's own project files: <stayfixed>/rules/<profile>.md
 
 [memory]
-mode = "local-only"      # local-only | in-repo | overlay
+mode = "harness"         # harness | overlay | in-repo | local-only — default: harness
 groups = ["developer", "project-stable", "project-volatile", "specs"]
 index_extra = []         # extra pointers rendered into MEMORY.md
 

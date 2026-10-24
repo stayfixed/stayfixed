@@ -23,6 +23,7 @@ from stayfixed.memory.bundles import (
 from stayfixed.memory.store import Store, resolve
 from stayfixed.memory.trust import DELIMITER
 from tests.approved import record
+from tests.cli import cli
 from tests.gitfixture import git
 
 CONFIG = """
@@ -424,3 +425,34 @@ def test_the_overlay_groups_themselves_are_neither_gated_nor_wrapped(tmp_path: P
     produced = blocks(Bundle.STANDING_RULES, store, config)
     assert produced != []
     assert not any(DELIMITER in block for block in produced)
+
+
+LOCAL_CONFIG = """
+[stayfixed]
+version = "0.1.0"
+preset = "recommended"
+
+[project]
+name = "widget"
+{memory}
+"""
+
+
+def test_with_no_mode_chosen_session_context_prints_no_bundle(tmp_path: Path) -> None:
+    # The same approved local-only store twice: chosen explicitly it is delivered as today, and with
+    # no layer choosing a mode memory is the harness's own, so not one bundle is printed.
+    root = tmp_path / "project"
+    (root / ".stayfixed" / "local" / "memory" / "developer").mkdir(parents=True)
+    (root / ".stayfixed" / "local" / "memory" / "developer" / "rule.md").write_text(
+        note("rule", startup="1", body="Standing body."), encoding="utf-8"
+    )
+    machine = a_machine(tmp_path)
+    chosen = '[memory]\nmode = "local-only"\ngroups = ["developer"]\n'
+    (root / CONFIG_FILE).write_text(LOCAL_CONFIG.format(memory=chosen), encoding="utf-8")
+    assert cli(root, tmp_path, "memory", "trust", "--in-repo-memory", machine=machine)[0] == 0
+    argv = ("memory", "session-context", "--bundle", "standing-rules")
+    code, out, _ = cli(root, tmp_path, *argv, machine=machine)
+    assert (code, "Standing body." in out) == (0, True)
+    unchosen = '[memory]\ngroups = ["developer"]\n'
+    (root / CONFIG_FILE).write_text(LOCAL_CONFIG.format(memory=unchosen), encoding="utf-8")
+    assert cli(root, tmp_path, *argv, machine=machine) == (0, "\n", "")

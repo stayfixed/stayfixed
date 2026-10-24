@@ -211,7 +211,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 |---|---|---|
 | `stayfixed.toml` | Your project's configuration, committed | `stayfixed init`, once — into a file you wrote, only a missing `[stayfixed] version`; you after |
 | `docs/memory/` (configurable) | The note store, in `in-repo` and `overlay` mode | `stayfixed memory index` |
-| `.stayfixed/local/memory/` | The note store in `local-only` mode, the default — git-ignored | `stayfixed memory index` |
+| `.stayfixed/local/memory/` | The note store in `local-only` mode — git-ignored | `stayfixed memory index` |
 | `<store>/MEMORY.md` | The rendered routing index. **Generated — do not hand-edit** | `stayfixed memory index` |
 | `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `stayfixed init` writes the empty index and `docs/bugs/audits/README.md`; `stayfixed bugs new`, `bugs index` and `bugs renumber` after |
 | `docs/roadmap.md` and `docs/roadmap-history.md` (configurable) | The forward track and the closed phases; in the roadmap, `docs trail` owns only the listing between its two markers | `stayfixed init` writes both files; `stayfixed docs trail` rewrites the listing |
@@ -531,8 +531,10 @@ Run `uv add`, not `pip install`. The lockfile is committed and CI runs `uv sync 
 note's `index:` line. A second writer appending entries to `MEMORY.md` is expected, and
 `memory index` harvests those back into the notes before it re-renders.
 
-`memory.mode` decides where the store is. `local-only` (the default — `.stayfixed/local/memory`,
-git-ignored) and `in-repo` (committed) both put the notes **inside the repository**, so both are
+`memory.mode` decides where the store is. `harness`, the default where no layer sets it, leaves
+memory to the coding agent's own and stayfixed resolves no store and injects no bundle.
+`local-only` (`.stayfixed/local/memory`, git-ignored) and `in-repo` (committed) both put the notes
+**inside the repository**, so both are
 behind the trust gate; `overlay` (a directory of links into a machine-level overlay shared across
 your projects) puts them outside it, and notes that are yours need no approval, though the harness
 memory link to that directory of links waits for one (see `stayfixed trust approve memory`

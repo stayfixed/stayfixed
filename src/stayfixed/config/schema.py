@@ -58,12 +58,14 @@ BUILTIN_GATES = ("docs", "bugs", "plan", "commit", "trail")
 # The configuration check: a gate runner's other verdict, and never a gate's name.
 CONFIG_CHECK = "config"
 # The memory modes, each spelled here and nowhere else, since the areas that read the store branch
-# on them: notes in the private overlay, the one mode `attach` binds; notes committed with the
-# code; and notes on this machine only, under `.stayfixed/local/`.
+# on them: the agent harness's own memory, where stayfixed delivers nothing, which is the mode
+# where no layer chooses one; notes in the private overlay, the one mode `attach` binds; notes
+# committed with the code; and notes on this machine only, under `.stayfixed/local/`.
+HARNESS_MODE = "harness"
 OVERLAY_MODE = "overlay"
 IN_REPO_MODE = "in-repo"
 LOCAL_ONLY_MODE = "local-only"
-MEMORY_MODES = (OVERLAY_MODE, IN_REPO_MODE, LOCAL_ONLY_MODE)
+MEMORY_MODES = (HARNESS_MODE, OVERLAY_MODE, IN_REPO_MODE, LOCAL_ONLY_MODE)
 CI_MODES = ("reusable", "uvx", "none")
 
 
@@ -119,9 +121,12 @@ class Paths:
 
 @dataclass(frozen=True)
 class Memory:
-    mode: str
+    """`[memory]`. `mode` is `HARNESS_MODE` where no layer sets it: the preset chooses no store, so
+    a repository that never chose one keeps the harness's own memory."""
+
     groups: tuple[str, ...]
     index_extra: tuple[str, ...]
+    mode: str = HARNESS_MODE
 
 
 @dataclass(frozen=True)

@@ -59,7 +59,7 @@ from stayfixed.binding import Bound, bound_project
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.paths import PathEscape, PathUnasked, contained
 from stayfixed.config.reading import MachineConfigError
-from stayfixed.config.schema import LOCAL_ONLY_MODE, OVERLAY_MODE, Config
+from stayfixed.config.schema import HARNESS_MODE, LOCAL_ONLY_MODE, OVERLAY_MODE, Config
 from stayfixed.findings import listed
 from stayfixed.fsops import read_regular_text
 from stayfixed.gitenv import git_answer, without_userinfo
@@ -237,6 +237,11 @@ OVERLAY_GONE = (
 # Two of the resolver's own sentences, for the causes a store most often fails on. Each is
 # stayfixed's text: the path it is about, and the groups that did not resolve, stay in the detail.
 STORE_MISSING = "the memory store's directory does not exist"
+# Said where no layer chose a store: memory is the agent harness's own, and stayfixed delivers none.
+LEFT_TO_HARNESS = (
+    "memory is left to the agent harness, since no layer sets [memory] mode; set it to choose a "
+    "store"
+)
 BUILT_BY_ATTACH = "; run `stayfixed attach` to build it"
 
 
@@ -475,6 +480,9 @@ def _resolve_at(
     root: Path, config: Config, override: str | None, machine: Path | None
 ) -> Resolution:
     mode = config.memory.mode
+    if mode == HARNESS_MODE and override is None:
+        # Memory is the harness's own: stayfixed delivers nothing, so there is no store to read.
+        return None, Unresolved(LEFT_TO_HARNESS)
     overlay = _recorded_overlay(machine)
     if _names_own_share(override, config, overlay):
         override = None

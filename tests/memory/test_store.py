@@ -13,12 +13,14 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.schema import Config
 from stayfixed.gitenv import GitUnavailable, Unasked
 from stayfixed.memory.store import (
+    LEFT_TO_HARNESS,
     NO_RECORD,
     Store,
     inside_project,
     main_checkout,
     refusal_reason,
     resolve,
+    resolved,
 )
 from tests.gitfixture import git
 from tests.pathfaults import ROOT_SEARCHES_EVERYTHING, unsearchable
@@ -132,6 +134,20 @@ def test_local_only_mode_uses_dot_stayfixed(tmp_path: Path) -> None:
     assert store is not None
     assert store.path == root / ".stayfixed" / "local" / "memory"
     assert inside_project(store) is True
+
+
+def test_with_no_mode_chosen_memory_is_left_to_the_harness(tmp_path: Path) -> None:
+    # Where no layer sets `[memory] mode`, the harness keeps its own memory and stayfixed resolves
+    # no store, even where a local-only store's directories stand ready: the old default read them.
+    root = tmp_path / "project"
+    a_repo(root)
+    (root / ".stayfixed" / "local" / "memory" / "developer").mkdir(parents=True)
+    text = CONFIG.format(mode="", groups='["developer"]').replace('mode = ""\n', "")
+    (root / CONFIG_FILE).write_text(text, encoding="utf-8")
+    config = load(root, machine=root / "absent.toml")
+    found = resolved(root, config, machine=root / "absent.toml")
+    assert found[0] is None
+    assert found[1] is not None and found[1].said == LEFT_TO_HARNESS
 
 
 def test_local_only_mode_refuses_a_symlinked_store(tmp_path: Path) -> None:
