@@ -50,11 +50,13 @@ process killed mid-pass can leave an empty directory behind, which no later run 
 
 **An attached repository is detached first.** `attach`'s ledger, which records what it placed,
 the overlay's plugin and the allow rules among it, lives under `.stayfixed/local/` in the main
-checkout, and taking it with the scaffold would leave nothing to withdraw them by. So once every
-refusal below has been asked, and before this run's first write, it runs `detach`, which takes
-back exactly what the ledger records and the ledger with it; a dry run says it would. A `detach`
-that refuses or stops part-way stops this run with nothing of its own done, and the next run
-finishes from what is left.
+checkout, and taking it with the scaffold would leave nothing to withdraw them by. Attached means
+the ledger is there and the repository carries the binding id `attach` draws, which no commit can
+put there: a ledger a clone committed is a file this run would not remove, and is refused below.
+So once every refusal below has been asked, and before this run's first write, it runs `detach`,
+which takes back exactly what the ledger records and the ledger with it; a dry run says it would.
+A `detach` that refuses or stops part-way stops this run with nothing of its own done, and the
+next run finishes from what is left.
 
 **One refusal comes before any write**: while `.stayfixed/local/` holds a file this run would not
 remove, the local-only memory notes above all, `attach`'s ledger aside, which `detach` takes.
@@ -104,7 +106,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from stayfixed import fsops
-from stayfixed.binding import main_checkout_or_none
+from stayfixed.binding import main_checkout_or_none, read_id
 from stayfixed.config.layout import ATTACH_LEDGER
 from stayfixed.config.loader import loads, read_document
 from stayfixed.config.owner import Owner
@@ -324,14 +326,18 @@ def _remove_ledger(root: Path) -> None:
 
 
 def _attached(root: Path) -> bool:
-    """Whether `attach`'s ledger is in this checkout or in the main checkout, where `attach` keeps
-    it whichever worktree it ran from; a `git` that cannot name the main checkout leaves this
-    one."""
+    """Whether this repository is attached: `attach`'s ledger is in this checkout or in the main
+    checkout, where `attach` keeps it whichever worktree it ran from, and the repository carries
+    the binding id `attach` draws. The id decides, since it lives in the git common directory,
+    which no commit reaches, while a clone can commit the ledger; the ledger is asked first, so a
+    repository holding none asks `git` nothing more. A `git` that cannot name the main checkout
+    leaves this one."""
     try:
         main = main_checkout_or_none(root) or root
     except Failure:
         main = root
-    return any(fsops.is_file(contained(checkout, ATTACH_LEDGER)) for checkout in (root, main))
+    ledgered = any(fsops.is_file(contained(checkout, ATTACH_LEDGER)) for checkout in (root, main))
+    return ledgered and read_id(root) is not None
 
 
 def _detach(root: Path, runner: Runner) -> None:

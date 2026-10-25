@@ -233,6 +233,38 @@ def test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout(
 
 
 @needs_git
+def test_a_ledger_a_clone_committed_detaches_nothing(tmp_path: Path) -> None:
+    # Whether a repository is attached is the binding id's to say, in the git common directory,
+    # which no commit reaches, and never the ledger's, which a clone can commit with `git add -f`.
+    # Read off the ledger, `uninstall` in a never-attached clone ran `detach`, which deleted the
+    # owner's untracked rule file and took their allow rule and `autoMemoryDirectory` out of their
+    # settings. The committed ledger is a file under `.stayfixed/local/` the run would not remove,
+    # so the run refuses with nothing touched. Mutation (oracle): `mutations/`'s "uninstall takes a
+    # committed ledger for an attachment" -> the owner's files go and this reddens.
+    root = initialised(tmp_path)
+    ledger = {
+        "store": "",
+        "allow": ["Bash(npm test)"],
+        "entries": {},
+        "rules": [".codex/rules/team.rules"],
+        "settings_keys": ["autoMemoryDirectory"],
+        "directories": [],
+    }
+    (root / ".stayfixed" / "local").mkdir(parents=True, exist_ok=True)
+    (root / ".stayfixed" / "local" / "attach.json").write_text(json.dumps(ledger), encoding="utf-8")
+    (root / ".codex" / "rules").mkdir(parents=True)
+    (root / ".codex" / "rules" / "team.rules").write_text("# the owner's\n", encoding="utf-8")
+    (root / ".claude").mkdir(exist_ok=True)
+    settings = {"permissions": {"allow": ["Bash(npm test)"]}, "autoMemoryDirectory": "/notes"}
+    (root / ".claude" / "settings.local.json").write_text(json.dumps(settings), encoding="utf-8")
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _uninstall(root, tmp_path)
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
 def test_notes_kept_out_of_git_refuse_the_run_that_would_expose_them(tmp_path: Path) -> None:
     # The local-only store is the preset's default, and the ignore region this run removes is
     # all that keeps it out of git. The count is reported by the dry run and refuses the real

@@ -860,6 +860,16 @@ before = "for checkout in (root, main))"
 after = "for checkout in (root,))"
 reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout"]
 
+# Attached is the binding id's to say, in the git common directory, which no commit reaches; the
+# ledger alone is a file a clone can commit, and read as an attachment it had `uninstall` run
+# `detach` over the owner's untracked rule file and settings.
+[[mutation]]
+name = "uninstall takes a committed ledger for an attachment"
+file = "src/stayfixed/project/uninstall.py"
+before = "    return ledgered and read_id(root) is not None"
+after = "    return ledgered"
+reddens = ["tests/project/test_uninstall.py::test_a_ledger_a_clone_committed_detaches_nothing"]
+
 # `uninstall` replans the write-once pass over the body the footprint pass leaves, so an untouched
 # footprint leaves only what was there before.
 [[mutation]]
