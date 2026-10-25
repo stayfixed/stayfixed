@@ -1813,7 +1813,7 @@ detected:
   stayfixed.profile: python (profile markers; --profile)
   ci.mode: reusable (the preset's default; --no-ci)
   commit_messages.attribution_check: off (the preset's default; --attribution-check)
-  commit_messages.types: feat, fix, docs, test, refactor, style, chore, harden, guard (the preset's default; --commit-type)
+  commit_messages.types: feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test (the preset's default; --commit-type)
   artifacts.local: none (the preset's default; --local)
   stayfixed.agents: claude, codex (default; --agent)
   plugins: none (default; stayfixed setup --plugin)
@@ -3602,7 +3602,7 @@ custom_timeout_seconds = 600  # seconds a gate of your own may run: a whole numb
 
 [commit_messages]
 attribution_check = false # whether `commit check` enforces the attribution block
-types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
+types = ["feat", "fix", "build", "chore", "ci", "docs", "perf", "refactor", "revert", "style", "test"]
 
 [guards]
 bg_cleanup = true        # false switches the bg-cleanup session guard off by default here;

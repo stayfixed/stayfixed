@@ -129,7 +129,9 @@ TRADE_OFFS: dict[str, tuple[str, str, str, str]] = {
         "library documentation, in every Claude Code session",
         "both are third-party and unpinned: whatever they ship, hooks included, runs in every "
         "session",
-        "a user-scope plugin install in Claude Code, outside this repository",
+        "a whole machine setup outside this repository: the machine configuration file, the "
+        "preset's deny rules and plugin options merged into ~/.claude/settings.json, and a "
+        "user-scope plugin install in Claude Code",
         "`claude plugin uninstall <name>`",
     ),
 }

@@ -75,7 +75,8 @@ custom_timeout_seconds = 600
 
 [defaults.commit_messages]
 attribution_check = false
-types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
+# The Conventional Commits types, as `@commitlint/config-conventional` lists them.
+types = ["feat", "fix", "build", "chore", "ci", "docs", "perf", "refactor", "revert", "style", "test"]
 
 [defaults.personal]
 preset = "recommended"

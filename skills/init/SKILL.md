@@ -33,7 +33,8 @@ harness's limits. Never run this skill in a forked context: a subagent cannot as
    list and every `note:` line. Ask for a final yes. **Silence, a timeout or an empty answer is a
    no.**
 6. On a yes, run the same command without `--dry-run`, and relay the real run the same way.
-7. If plugins were chosen, run the plugins question's `x-stayfixed-flag` with each one.
+7. If plugins were chosen, run the plugins question's `x-stayfixed-flag` with each one. It is a
+   whole machine setup, not only an install, as the question's `trace` says: relay that first.
 8. If the answer was the overlay: when the machine records none, hand over to the `setup`
    skill to create or record one; then hand over to the `attach` skill to bind this
    repository. Each asks its own confirmations. Come back here afterwards.

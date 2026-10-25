@@ -22,6 +22,7 @@ from stayfixed.project.questions import (
     OVERLAY_NEXT,
     PLUGINS,
     PROPERTIES,
+    TRADE_OFFS,
     card,
     questions,
 )
@@ -220,6 +221,14 @@ def test_the_skip_takes_attribution_off_the_preset_types_and_no_plugin(tmp_path:
         "superpowers",
         "context7",
     }
+
+
+def test_the_plugins_question_names_the_machine_setup_its_flag_runs() -> None:
+    # The flag the question names is `stayfixed setup --plugin`, a whole machine setup: it writes
+    # the machine file and merges deny rules and plugin options into the user settings, besides
+    # the install. The trace named only the install.
+    trace = TRADE_OFFS[PLUGINS][2]
+    assert "machine configuration file" in trace and "~/.claude/settings.json" in trace, trace
 
 
 def test_the_plugins_question_s_flag_is_one_setup_takes_for_each_plugin_it_offers() -> None:
