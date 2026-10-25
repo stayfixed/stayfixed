@@ -13,13 +13,8 @@ named after its owner, and every one gets the commit-time secret scan. Generatin
 `gh` may give up on the clone with the repository already created, so a second run is the
 ordinary case rather than the exception — and so is `finish`.
 
-**A tree is an overlay exactly when its identity record parses** (`identity.overlay_fault`), so
-each way a tree is made writes the record last, and a tree cut short is never one: the render
-writes it after every other file of the template (`layout.OVERLAY_FILES` ends with it), and a
-clone checks it out last, since git checks a tree out in path order and the record's path sorts
-after every other the template ships. An empty directory holds nothing to keep, and is made into
-one as nothing at all is (`fsops.vacant`). Once `gh repo create` has run, the repository may
-exist whatever `gh` answered, so every refusal after it ends in `UNRECORDED` (`_unrecorded`).
+Each way a tree is made writes its identity record last (`layout.OVERLAY_FILES`), into nothing or
+an empty directory (`fsops.vacant`), and every refusal after `gh repo create` ends in `UNRECORDED`.
 """
 
 from __future__ import annotations
@@ -84,10 +79,8 @@ PLACEHOLDER_NAME = 'name = "stayfixed-private"'
 # shorter "Could not resolve", which `Could not resolve host` shares. A named string, not a cap:
 # it bounds nothing and no shipped file changes with it.
 NOT_FOUND_ANSWER = "Could not resolve to a Repository"
-# What every refusal that can follow `gh repo create` ends with, `{slug}` the repository and
-# `{path}` the destination through `printed.quoted`: once `gh` has run, the repository may exist
-# whatever it answered, and a second `create:` fails on the name GitHub already holds, so the
-# remedy that works is to clone it there and record it.
+# What every refusal after `gh repo create` ends with (`{path}` through `printed.quoted`): the
+# repository may exist whatever `gh` answered, and a second `create:` fails on its name.
 UNRECORDED = (
     "{slug} may now exist on GitHub, and nothing was recorded in the machine configuration; once "
     "{path} holds a clone of it, record it with `stayfixed setup --overlay {path}`"
@@ -293,10 +286,8 @@ def generate(
     if not fsops.vacant(target):
         return _arrived(target, slug, f"created {slug} from {template}", template)
     if created.code == NOT_FOUND:
-        # `gh` could not be launched, so nothing ran on GitHub, and `gh repo view` would ask the
-        # same absent binary a second question and name GitHub for a fault that is this machine's.
-        # stayfixed does not install `gh`, so its absence is the machine owner's to fix: a
-        # reported finding that names it, never a traceback.
+        # `gh` could not be launched, so nothing ran on GitHub: a finding about this machine, which
+        # `gh repo view` would only ask the same absent binary again, never a traceback.
         raise Failure(
             f"`gh repo create {slug} …` could not be run ({answered(created)}), so nothing was "
             f"created and nothing was cloned. Install `gh` and authenticate it, or render the "
@@ -342,14 +333,13 @@ def generate(
 
 
 def _unrecorded(slug: str, target: Path) -> str:
-    """`UNRECORDED` for `slug` cloned to `target`: what every refusal after `gh repo create` ends
-    with."""
+    """`UNRECORDED` for `slug` and its destination `target`."""
     return UNRECORDED.format(slug=slug, path=quoted(str(target)))
 
 
 def _arrived(target: Path, slug: str, note: str, template: str) -> Created:
-    """The tree a clone left at `target`, or a refusal saying it is not an overlay, before
-    `finish` writes in it, and that the repository may now exist."""
+    """The tree a clone left at `target`, or, before `finish` writes in it, a refusal that it is
+    not an overlay."""
     fault = overlay_fault(target)
     if fault is not None:
         raise Refusal(f"{fault}. {_unrecorded(slug, target)}")

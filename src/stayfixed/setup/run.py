@@ -484,9 +484,7 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
         root = fsops.resolved(destination)
         _recordable(root)
         return _Overlay(root=root, create=(account, name), destination=destination)
-    # A leading `~` is the home `config.machine.owner_home` reads, as the machine file's own
-    # `[overlay] root` is: `expanduser` read an empty `HOME` as `/` and a relative one against the
-    # working directory, and rendered and recorded an overlay there.
+    # `~` as the machine file's `[overlay] root` reads it: never `/` or the working directory.
     named = in_owner_home(overlay)
     if named is None:
         raise Refusal(NO_HOME_FOR_OVERLAY.format(overlay=quoted(overlay)))

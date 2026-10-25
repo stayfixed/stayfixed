@@ -40,7 +40,8 @@ PRE_COMMIT_HOOK = "pre-commit"
 # are two statements of one thing: `tests/overlay/test_template.py` asserts each way round, so a
 # file deleted from the tree and a file added to it without a line here are both caught rather than
 # one of them. The identity record is last, because a tree is an overlay exactly when it parses: a
-# render cut short before it is never one.
+# render cut short before it is never one, and nor is a clone, which git checks out in path order,
+# where the record's path sorts last.
 # The two files an overlay carries that can grant a capability, and the reason `overlay upgrade`
 # has a decision list at all: an upgrade diffs these and asks about them "regardless of hash",
 # because a hash match is not consent for a permission or a hook entry. Named once, unpacked

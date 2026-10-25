@@ -51,9 +51,9 @@ process killed mid-pass can leave an empty directory behind, which no later run 
 **An attached repository is detached first.** `attach`'s ledger, which records what it placed,
 the overlay's plugin and the allow rules among it, lives under `.stayfixed/local/` in the main
 checkout, and taking it with the scaffold would leave nothing to withdraw them by. Attached means
-the ledger is there and so is the render `attach` writes for the repository's binding id, outside
-the work tree, where no commit reaches and which `detach` removes: a ledger a clone committed, or
-one committed after a `detach`, is a file this run would not remove, and is refused below.
+the ledger and the render `attach` writes for the binding id, outside the work tree and removed by
+`detach`, which the id outlives: a ledger a clone commits, before an attach or after a `detach`,
+is a file this run would not remove, and is refused below.
 So once every refusal below has been asked, and before this run's first write, it runs `detach`,
 which takes back exactly what the ledger records and the ledger with it; a dry run says it would.
 A `detach` that refuses or stops part-way stops this run with nothing of its own done, and the
@@ -327,14 +327,9 @@ def _remove_ledger(root: Path) -> None:
 
 
 def _attached(root: Path) -> bool:
-    """Whether this repository is attached: `attach`'s ledger is in this checkout or in the main
-    checkout, where `attach` keeps it whichever worktree it ran from, and the render `attach`
-    writes for the repository's binding id is on this machine. The render decides, since it lies
-    outside the work tree, where no commit reaches, while a clone can commit the ledger; and
-    `detach` removes it, while the id and its record outlive a `detach`, so a ledger a later
-    commit carries does not read as attached either. The ledger is asked first, so a repository
-    holding none asks `git` nothing more. A `git` that cannot name the main checkout leaves this
-    one."""
+    """Whether `attach`'s ledger is in this checkout or the main one, where `attach` keeps it, and
+    the render `attach` writes for the binding id is on this machine (the module docstring says
+    why the render decides); a `git` that cannot name the main checkout leaves this one."""
     try:
         main = main_checkout_or_none(root) or root
     except Failure:

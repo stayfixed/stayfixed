@@ -47,10 +47,8 @@ from, and every write still goes through `contained()` and the `O_NOFOLLOW` walk
 `check-ignore` that gave no answer — `git_run`'s `-1`, a `git` that timed out under load — is a
 warning the command reports (`UNANSWERED`) and never a pass said in silence, and never a refusal:
 a `git` slow under load stopped every `init`, `upgrade` and `uninstall` until it answered. Any
-other answer that is neither "some matched" nor "none matched" refuses (`DECLINED`), because a
-repository can choose it: git answers a whole batch holding a path inside a submodule with exit
-128, so one `[paths]` value pointed there made the guard a warning for every other target in the
-batch, a git-ignored `.env` among them. Whether this is a work tree at all is read off the disk
+other failure refuses (`DECLINED`), since a repository can choose one: git answers a batch holding
+a path inside a submodule with exit 128. Whether this is a work tree at all is read off the disk
 (`gitenv.in_work_tree`) and never asked of the same `git`, which fails the same way under the same
 load: a `rev-parse` that timed out beside the `check-ignore` read as "no repository" and let the
 write through with nothing said.
