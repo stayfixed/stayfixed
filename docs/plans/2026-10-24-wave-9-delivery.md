@@ -1350,3 +1350,75 @@ and one regression (`in-repo` labels landing in a committed `MEMORY.md`). Both w
 
 **Bug ledger** (in the private overlay): BR-004, BR-022, BR-027, BR-037, BR-038 and BR-042 are
 closed by the controller after the merge, against the merge commit.
+
+### Task 28 — HS4's final review and pull request, 2026-10-25
+
+**Execution.** Wave O's implementer was stopped by a usage limit part-way through Task 24, after
+Tasks 22 and 23 were committed (`00a4109a`, `162d6119`); the owner committed its tree as it stood
+(`a9e77184`) and pushed it, and the controller moved to a cloud session. A fresh implementer
+finished Task 24 from that state (`18677609`): 41 mutation entries for deleted controls removed, the
+rest re-pointed, one test that still held live code restored. Wave P ran as one implementer
+(`b8ecde6f..fec2d7bb`). The cloud host runs as root, so ten permission tests fail there on `dev` as
+well; root-skipped tests were run as an unprivileged user, and the oracle's 58 root-only misses
+were set apart from real survivors (none; the one `scripts/plugin_tree.py` survivor predates the
+branch). An automated commit-level security review flagged the deletion of `_outside_the_project`
+on every commit; it was ruled against, as below.
+
+**Final review** at `fec2d7bb`, with three read-only seats (correctness; refusals and deletion;
+security), run as in-session agents. The security seat joined because the range deletes the
+overlay-root containment check and changes what decides that a checkout is attached. The
+controller's full suite, 3.13 suite and full oracle on that head were green against the root
+baseline. One triaged fix round followed (`fec2d7bb..dfdf2dd8`), then one scoped re-review. It
+found every triaged item addressed and two regressions of the round (an empty destination this
+user cannot write reached `gh repo create`; a ledger left without its render was no longer
+finished by `uninstall`, while the documents said it was). Both were fixed in
+`dfdf2dd8..b01f7559`, which the controller read, with no further review round.
+
+**Rulings taken on the owner's behalf** (each costs what is said if wrong):
+- *What makes a directory an overlay* (six findings at one seam: a cut-short render recorded next
+  run, a cut-short clone with a remedy that could not work, an older template, an empty
+  destination refused for a false reason, a typo re-pointing the root). One rule: a directory is
+  an overlay exactly when its identity record parses, and every writer writes the record last; a
+  vacant destination is absent or an empty, unlinked directory this user can list, search and
+  write; every exit after `gh repo create` says the repository may now exist and names the one
+  working remedy (clone it there, then `setup --overlay <path>`); `setup` says when it records a
+  root other than the recorded one. If wrong: a mistyped `--overlay` path still renders a new
+  overlay, now with a note.
+- *`_outside_the_project` stays deleted.* The overlay path comes only from the owner's command
+  line, so the check stopped no repository-bytes adversary; `doctor` warns when the root lies in
+  another work tree.
+- *Attachment for `uninstall`* is attach's ledger plus the render under `<data>/delivery/<id>/`,
+  which `detach` removes; the binding id alone outlives `detach`, so a ledger a pull request
+  commits later detaches nothing. If wrong: after an `attach` or `detach` that stopped part-way,
+  `uninstall` refuses and the remedy is `stayfixed detach`, then `uninstall`.
+- *`check-ignore`*: only no answer (a timeout, or a `git` that cannot start) is a warning; git
+  declining refuses before any write.
+- *`commit strip`* gives way only to a non-empty `attribution.commit` in the owner's own
+  `~/.claude/settings.json`; a repository's settings are never read.
+- *The preset's commit types* are the eleven Conventional Commits types, as Task 25 says; `harden`
+  and `guard` are gone, and nothing in the tree used them.
+- *`[plugins] recommended`* replaces `[plugins] install = []`: an empty `install` would have had no
+  reader; `init` offers the recommended list and `setup --plugin NAME` installs.
+- *`pluginConfigs`* values are filled only where none exists, so a value `setup` wrote earlier also
+  stays; telling the two apart needs a record with one reader.
+- *`uninstall` (core) calls `detach`*: one more pinned core-to-delivery import.
+- *Deleted for want of a reader*: `setup --root` on a machine setup, and the `picked`, `detached`
+  and `unanswered` `--json` keys.
+
+**Follow-ups left out of HS4:**
+- The identity record's `owner` and `name` have no reader; Task 22 specifies them (owner's call).
+- `REPLACED_ROOT` fires when the recorded root is spelled through `~` or a linked home.
+- "A clone checks the record out last" rests on git's path order; parallel checkout or a template
+  path sorting after the record breaks it.
+- The refusal for a cut-short tree starts with "add the record", which would make it an overlay.
+- The `~` refusal for `--overlay` has no mutation entry; nothing pins that `uninstall`'s refusals
+  precede its `detach`; the doctor row's nesting arm has none either.
+- The nesting warning is hidden while the floor row is WARN or RED.
+- `doctor`'s skip row for a manifests-only overlay names no remedy.
+- `--commit-type` and `--attribution-check` refuse or omit only what the owner types; their trace
+  lines overstate what `init` writes.
+- `create:` records an overlay already at `<home>/<name>` without comparing its `owner`/`name`.
+
+**Bug ledger** (in the private overlay): BR-018 and BR-039's `--overlay` half are closed by the
+owner after the merge, against the merge commit; their Fix sections were handed over with this
+pull request.
