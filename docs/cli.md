@@ -73,6 +73,7 @@ Three things hold everywhere:
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
+- [Terms](#terms)
 - [Configuration](#configuration)
 
 ---
@@ -2171,7 +2172,10 @@ key `stayfixed trust list --json` prints, withdraws one.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
-`[paths]` value chose, and what is under `.stayfixed/local/`.
+`[paths]` value chose, and what is under `.stayfixed/local/`; and, to tell whether the repository is
+attached, `attach`'s ledger in this checkout and in the main checkout, which `git` names, the binding
+id in the git common directory, and whether `~/.local/share/stayfixed/delivery/<id>/` is there. On an
+attached repository, what `stayfixed detach` reads.
 
 **Writes** only removals, and region removals, through the scaffold engine, and after each pass
 the two records of what is left: `.stayfixed/manifest.json`, which every pass rewrites, whether or
@@ -2183,9 +2187,9 @@ above a file it removed, once that directory is empty. After the write-once pass
 ledger: `.stayfixed/assessment.json`, `.stayfixed/manifest.json`, then `.stayfixed/local/` and
 `.stayfixed/`, each once it is empty. A harness's own directory is never removed. When
 `stayfixed.toml` is gone and nothing records it, only the ledger is removed. On an attached
-repository, before all of that, everything `stayfixed detach` writes and removes, which its section
-names, `attach`'s ledger among them, and through its `claude plugin` commands. Under `--dry-run`,
-nothing.
+repository it first writes and removes what `stayfixed detach` does, which that section names,
+`attach`'s ledger among them, and runs the same `claude plugin` commands, which write what Claude
+Code records about the plugin. Under `--dry-run`, nothing.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
@@ -3511,9 +3515,9 @@ in a parser, which is the whole point of the rule.
 anything differs. `stayfixed bugs index`, `stayfixed docs trail` and `stayfixed memory index` all
 take it with that meaning.
 
-Four commands mean something else by a shared name. Each is a **named exception** — a decision
-that the flag means something else, not a sentence that drifted — and each has its own constant
-beside the six above:
+Three commands mean something else by a shared name, `setup` by two. Each of the four is a
+**named exception** — a decision that the flag means something else, not a sentence that drifted —
+and each has its own constant beside the six above:
 
 | Command and flag | What it means there |
 |---|---|
@@ -3522,7 +3526,7 @@ beside the six above:
 | `stayfixed setup --machine` | the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the file every reader reads) |
 | `stayfixed attach --check` | report the binding and the diff, and write nothing |
 
-`attach --check` reports the way the other four do and exits differently on purpose: never on a
+`attach --check` reports the way the three `--check`s above do and exits differently on purpose: never on a
 non-empty diff. A diff carrying allow rules is the ordinary state of a first attach, which
 `attach` shows and proceeds with. A `--check` that failed on it would make reading the diff first a
 failure.
@@ -3530,11 +3534,27 @@ failure.
 Every command that reads a project's configuration takes `--root` and `--machine`, with the
 meanings in the first table, whether or not its heading spells them.
 Neither flag is taken by `stayfixed commit strip`, `stayfixed hook` and `stayfixed prove`,
-because none of them reads a project's configuration: the first reads only what it is handed,
-`hook` finds the project from the harness's own event, and `prove` runs its command where it is
-typed and answers for that directory's repository. `overlay upgrade` takes `--root` alone, in the sense the second table gives it, and read no
+because none of them reads a project's configuration: the first reads the message file it is
+handed and your own `~/.claude/settings.json`, `hook` finds the project from the harness's own
+event, and `prove` runs its command where it is typed and answers for that directory's repository.
+`overlay upgrade` takes `--root` alone, in the sense the second table gives it, and reads no
 `stayfixed.toml`; `setup` takes both, in its own senses. `tests/test_documents.py` holds both
 lists to the real parser.
+
+---
+
+## Terms
+
+**Scaffold** means three things on this page, and the sentence says which:
+
+- everything `stayfixed init` writes into a repository, which `upgrade` refreshes and `uninstall`
+  takes back: the write-once files (`stayfixed.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton) and
+  the rest;
+- the rest alone, the second of the two passes those commands plan: the report headed `scaffold:`
+  and the `scaffold` key of their `--json`, beside the write-once pass's `write-once:` report and
+  `once` key (`upgrade` plans this pass alone, so it prints no `write-once:`);
+- the scaffold engine, which plans and writes both passes and reports every action in the same
+  verbs, `stayfixed overlay upgrade`'s included.
 
 ---
 

@@ -777,9 +777,10 @@ def test_init_yes_says_what_it_picked_attribution_off_the_types_and_no_plugin(
 ) -> None:
     # The skip path writes every default without a question asked, so the run itself says what
     # it took, one line per question in the order the guided walk asks them: the attribution
-    # check off, the Conventional Commits types, and no plugin. `--no-ci` keeps the network out.
-    # The types are written out here rather than read back from the preset, which compared the
-    # preset with itself and held stayfixed's own `harden` and `guard` as the standard's.
+    # check off, the eleven types of `@commitlint/config-conventional`, and no plugin. `--no-ci`
+    # keeps the network out. The types are written out here rather than read back from the
+    # preset, which compared the preset with itself and held stayfixed's own `harden` and `guard`
+    # as the standard's.
     root = _repo(tmp_path)
     code, printed, _ = cli(root, tmp_path, "init", "--yes", "--no-ci")
     assert code == 0, printed
