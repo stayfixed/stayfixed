@@ -2086,8 +2086,10 @@ repository's binding id is in `~/.local/share/stayfixed/delivery/`, outside the 
 commit reaches, the run asks every refusal below, then
 runs [`stayfixed detach`](#stayfixed-detach---root-path---machine-path) before its first write,
 which withdraws what `attach` placed, the overlay's plugin and the allow rules among it, and takes
-the ledger; a `note:` line says so, and a dry run says it would. A `detach` that refuses or stops
-part-way stops the run there with nothing of its own done, its own sentence and exit code given.
+the ledger; a `note:` line says so, and a dry run says it would. A run whose plans refuse stops
+before `detach`, and neither it nor its dry run says it detached or would. A `detach` that refuses
+or stops part-way stops the run there with nothing of its own done, its own sentence and exit code
+given.
 While the render is still there, running `uninstall` again finishes from what is left. A `detach`
 that stopped after removing the render, or an `attach` that stopped after writing its ledger and
 before the render, leaves the ledger with no render, which the next `uninstall` refuses as below:

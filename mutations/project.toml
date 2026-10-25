@@ -874,6 +874,19 @@ reddens = [
   "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
 ]
 
+# A plan that refuses stops the run before `detach`, so a refused report that still said the
+# repository was detached told the person `stayfixed detach` had run while the overlay's plugin and
+# rules were all in place; a refused dry run said it would, and the real run would not.
+[[mutation]]
+name = "a refused uninstall reports the repository detached"
+file = "src/stayfixed/project/uninstall.py"
+before = "        report = replace(report, detached=False)"
+after = "        pass"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching[real]",
+  "tests/project/test_uninstall.py::test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching[dry-run]",
+]
+
 # `uninstall` replans the write-once pass over the body the footprint pass leaves, so an untouched
 # footprint leaves only what was there before.
 [[mutation]]

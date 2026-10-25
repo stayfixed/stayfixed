@@ -210,6 +210,40 @@ def test_an_attached_repository_is_detached_and_then_uninstalled(
 
 
 @needs_git
+@pytest.mark.parametrize("dry_run", [False, True], ids=["real", "dry-run"])
+def test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dry_run: bool
+) -> None:
+    # A plan that refuses returns the report before `detach` runs, and the report still said the
+    # repository was detached, so the person read "uninstall ran `stayfixed detach` first" above a
+    # REFUSED section while the overlay's plugin and rules were all still in place; a dry run
+    # that refuses said it would detach, which the real run would not either. The footprint pass
+    # refuses a region whose begin marker is gone. Mutation (oracle): `mutations/`'s "a refused
+    # uninstall reports the repository detached" -> the DETACHED line prints and this reddens.
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "scaffold")
+    _attach(root, store, machine)
+    agents = root / "AGENTS.md"
+    agents.write_text(
+        agents.read_text(encoding="utf-8").replace("<!-- stayfixed:harness:begin -->\n", ""),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    flags = ("--dry-run",) if dry_run else ()
+    code, printed, _ = cli(root, tmp_path, "uninstall", *flags, machine=machine)
+    assert code == 1, printed
+    verb = "would be" if dry_run else "was"
+    assert printed.startswith(f"refused, and nothing {verb} removed:"), printed
+    assert DETACHED not in printed and DETACHED_DRY not in printed, printed
+    assert_snapshot_unchanged(root, before)
+    assert (root / ".stayfixed" / "local" / "attach.json").is_file()
+    assert _render_of(root)[1].exists()
+
+
+@needs_git
 def test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

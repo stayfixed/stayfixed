@@ -429,6 +429,10 @@ def uninstall(
     kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS} | detaching)
     kept_config = CONFIG_ARTIFACT not in manifest.records
     report = UninstallReport(footprint, once, orphans, dry_run, note, kept, kept_config, attached)
+    if report.refused:
+        # Returned below before `detach`, and a real run would stop here too, so the report says
+        # no detach ran or would run.
+        report = replace(report, detached=False)
     if dry_run or report.refused:
         return report
     if kept:
