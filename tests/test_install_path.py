@@ -281,8 +281,6 @@ def _install_path(
         str(home),
         "--machine",
         str(machine),
-        "--root",
-        str(root),
     )
     assert str(overlay) not in machine.read_text(encoding="utf-8"), (
         "the first `setup` named no overlay and must have recorded none"
@@ -297,8 +295,6 @@ def _install_path(
         str(machine),
         "--overlay",
         str(overlay),
-        "--root",
-        str(root),
     )
     assert str(overlay) in machine.read_text(encoding="utf-8"), (
         "the second `setup` recorded the overlay into the file the first one wrote"
@@ -516,8 +512,6 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
         str(machine),
         "--overlay",
         str(overlay),
-        "--root",
-        str(root),
     )
     before = snapshot(root)
     # The walk's own non-vacuity guard: `snapshot` is a walk, so the comparison below passes
