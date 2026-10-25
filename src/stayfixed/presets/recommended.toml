@@ -73,7 +73,7 @@ builtin = ["docs", "bugs", "plan", "commit", "trail"]
 custom_timeout_seconds = 600
 
 [defaults.commit_messages]
-attribution_check = true
+attribution_check = false
 types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
 
 [defaults.personal]

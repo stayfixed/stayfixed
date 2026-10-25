@@ -1,12 +1,15 @@
 """What `stayfixed init` would ask, as a JSON Schema: `stayfixed init --questions`.
 
-Six questions, each keyed by the `stayfixed.toml` key its answer writes. Each carries the value
-`stayfixed init --yes` takes when it is not answered, where that value came from, and the flag on
-`init --yes` that answers it. The schema is modelled on MCP elicitation's flat form schema, so a
-client that drops `pattern` and the `x-stayfixed-*` keys can send it as a requested schema; an
+Ten questions, each keyed by the `stayfixed.toml` key its answer writes, but the last, `plugins`,
+which `stayfixed setup` answers on the machine rather than in the repository. Each carries the
+value `stayfixed init --yes` takes when it is not answered, where that value came from, the flag
+that answers it, and four lines (`TRADE_OFFS`): what the answer gives, what it gives up, what it
+leaves behind and how to take it back. The texts are the command's, so the `init` skill relays
+them rather than writing its own. The schema is modelled on MCP elicitation's flat form schema, so
+a client that drops `pattern` and the `x-stayfixed-*` keys can send it as a requested schema; an
 agent harness's ask tool takes questions and options instead, so the `init` skill turns the
-properties into questions: the first four as one confirmation of their defaults, and the rest
-one at a time, within each harness's limits.
+properties into questions: taking every default first, then the name and the base branch as one
+confirmation, then the rest one at a time, in `PROPERTIES`' order, within each harness's limits.
 
 **Nothing here carries a byte a grammar rejected.** Every default comes from `detect`, which
 bounds the three repository-authored strings before it returns them, from stayfixed's own
@@ -28,19 +31,112 @@ from stayfixed.config.schema import (
     MEMORY_MODES,
     OVERLAY_MODE,
     PROJECT_NAME,
+    Config,
 )
 from stayfixed.project.templates import LOCAL_ELIGIBLE
 
-# Each question's `stayfixed.toml` key, and the flag on `stayfixed init --yes` that answers it.
+# The recommended plugins' question, which no `stayfixed.toml` key answers: they are installed on
+# the machine, by the command its flag names.
+PLUGINS = "plugins"
+# Each question's `stayfixed.toml` key, in the order the `init` skill asks them, and the flag that
+# answers it: on `stayfixed init --yes`, but the plugins'.
 FLAGS = {
     "project.name": "--name",
     "project.base_branch": "--base-branch",
-    "stayfixed.agents": "--agent",
-    "stayfixed.profile": "--profile",
     "memory.mode": "--memory-mode",
+    "stayfixed.profile": "--profile",
+    "ci.mode": "--no-ci",
+    "commit_messages.attribution_check": "--attribution-check",
+    "commit_messages.types": "--commit-type",
     "artifacts.local": "--local",
+    "stayfixed.agents": "--agent",
+    PLUGINS: "stayfixed setup --plugin",
 }
 PROPERTIES = tuple(FLAGS)
+# A commit type as `stayfixed assess`'s commit-vocabulary probe reads one off a subject, and the
+# same rule in words for the parser's refusal.
+COMMIT_TYPE = re.compile(r"\A[a-z]+\Z")
+COMMIT_TYPE_RULE = "lowercase ASCII letters"
+# What each answer gives, what it gives up, what it leaves behind and how to take it back, in that
+# order: the four lines the `init` skill relays with each question. Fixed text, and stayfixed's own.
+TRADE_OFFS: dict[str, tuple[str, str, str, str]] = {
+    "project.name": (
+        "the name stayfixed calls this project by: the heading of AGENTS.md and the overlay "
+        "project a later attach binds",
+        "nothing",
+        "[project] name in stayfixed.toml",
+        "edit [project] name in stayfixed.toml",
+    ),
+    "project.base_branch": (
+        "the branch the workflow gates and the gates compare a change against",
+        "a pull request into any other branch is not gated",
+        "[project] base_branch and release_branch in stayfixed.toml",
+        "edit both in stayfixed.toml",
+    ),
+    "memory.mode": (
+        "notes an agent keeps about this repository, read back at the start of a session",
+        "in-repo notes are committed and read in every clone; the agent's own memory and "
+        "local-only stay on this machine; an overlay is one more repository to keep",
+        "[memory] mode in stayfixed.toml, and the notes wherever the mode keeps them",
+        "change [memory] mode in stayfixed.toml; notes already written stay where they are",
+    ),
+    "stayfixed.profile": (
+        "the stack's rules, in AGENTS.md and a rules file every agent reads before its first "
+        "command",
+        "nothing a gate enforces; the rules file is yours to edit, and an edited one is no "
+        "longer refreshed",
+        "[stayfixed] profile in stayfixed.toml and the profile's rules files",
+        'set [stayfixed] profile = "" and run `stayfixed upgrade`, which removes the rules files '
+        "you have not edited",
+    ),
+    "ci.mode": (
+        "a workflow that runs stayfixed's gates on every pull request, pinned to a released "
+        "stayfixed commit",
+        "init asks the public stayfixed repository for that commit over the network",
+        ".github/workflows/stayfixed.yml, and [ci] mode and ref in stayfixed.toml",
+        'set [ci] mode = "none" and run `stayfixed upgrade`, which removes the workflow if you '
+        "have not edited it",
+    ),
+    "commit_messages.attribution_check": (
+        "the commit gate fails a pull request whose commit messages end in an AI tool's "
+        "attribution trailer or footer",
+        "every such trailer has to come out before a merge; the git hook `stayfixed setup "
+        "--git-hooks` installs strips it as you commit",
+        "[commit_messages] attribution_check in stayfixed.toml",
+        "set it to false in stayfixed.toml",
+    ),
+    "commit_messages.types": (
+        "`stayfixed assess` names the recent commits whose subject's type is not in this list",
+        "nothing is refused: the probe only advises",
+        "[commit_messages] types in stayfixed.toml",
+        "edit the list in stayfixed.toml",
+    ),
+    "artifacts.local": (
+        "the documents you choose stay on this machine, under .stayfixed/local/artifacts/",
+        "no one else sees them: not a teammate, not CI, not another clone",
+        "[artifacts] local in stayfixed.toml and the copies under .stayfixed/local/artifacts/",
+        "take the id out of [artifacts] local and run `stayfixed upgrade`",
+    ),
+    "stayfixed.agents": (
+        "each agent you use gets its own pointer at AGENTS.md and the profile's rules",
+        "nothing; an agent left out still reads AGENTS.md",
+        "[stayfixed] agents in stayfixed.toml and each agent's pointer files",
+        "edit [stayfixed] agents and run `stayfixed upgrade`",
+    ),
+    PLUGINS: (
+        "superpowers' working skills (brainstorm, plan, test first, review) and context7's "
+        "library documentation, in every Claude Code session",
+        "both are third-party and unpinned: whatever they ship, hooks included, runs in every "
+        "session",
+        "a user-scope plugin install in Claude Code, outside this repository",
+        "`claude plugin uninstall <name>`",
+    ),
+}
+TRADE_OFF_KEYS = ("get", "give_up", "trace", "undo")
+CI_TITLES = {
+    "reusable": "Gate pull requests with stayfixed's reusable workflow",
+    "none": "No CI workflow",
+}
 SCHEMA = "https://json-schema.org/draft/2020-12/schema"
 # The source of a default that nothing in the repository chose.
 PRESET = "the preset's default"
@@ -54,8 +150,9 @@ OVERLAY_NEXT = "In a private overlay, which the setup skill creates or records n
 # How the card shows a question with no default: one whose value could not be derived.
 UNANSWERED = "none; asked"
 TAIL = (
-    "each is answered by the flag its line names, on `stayfixed init --yes`; "
-    "`stayfixed init --questions --json` carries them as a JSON Schema"
+    "each is answered by the flag its line names, on `stayfixed init --yes` but the plugins'; "
+    "`stayfixed init --questions --json` carries them as a JSON Schema, each with what it gives, "
+    "what it gives up, what it leaves and how to undo it"
 )
 
 
@@ -81,8 +178,16 @@ def _overlay_recorded(machine: Path | None) -> bool:
         return False
 
 
+def _recommended() -> list[str]:
+    """The plugins the default preset recommends, which the plugins question offers."""
+    from stayfixed.presets import DEFAULT_PRESET, load_preset
+
+    listed = load_preset(DEFAULT_PRESET).get("plugins", {}).get("install", [])
+    return [name for name in listed if isinstance(name, str)]
+
+
 def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
-    """The six questions `init` asks at `root`, as a JSON Schema object (draft 2020-12).
+    """The ten questions `init` asks at `root`, as a JSON Schema object (draft 2020-12).
 
     Refused where `init --yes` with an answer would be (`init.precheck`): a manifest, or a
     `stayfixed.toml` that already answers them. Detection is lenient, so a name outside the
@@ -113,13 +218,14 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
             "default": found.base_branch,
             "x-stayfixed-source": found.sources["base_branch"],
         },
-        "stayfixed.agents": {
-            "type": "array",
-            "title": "Coding agents",
-            "items": {"type": "string", "enum": [h.name for h in HARNESSES]},
-            "minItems": 1,
-            "default": list(found.agents),
-            "x-stayfixed-source": found.sources["agents"],
+        "memory.mode": {
+            "type": "string",
+            "title": "Where the notes live",
+            # A mode with no title is a `KeyError` here: loud, and caught by every test.
+            "oneOf": [{"const": mode, "title": titles[mode]} for mode in MEMORY_MODES],
+            # The preset chooses no mode, so the default is the schema's own, `harness`.
+            "default": preset.memory.mode,
+            "x-stayfixed-source": DEFAULT,
         },
         "stayfixed.profile": {
             "type": "string",
@@ -131,14 +237,26 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
             "default": found.profile,
             "x-stayfixed-source": found.sources["profile"],
         },
-        "memory.mode": {
+        "ci.mode": {
             "type": "string",
-            "title": "Where the notes live",
-            # A mode with no title is a `KeyError` here: loud, and caught by every test.
-            "oneOf": [{"const": mode, "title": titles[mode]} for mode in MEMORY_MODES],
-            # The preset chooses no mode, so the default is the schema's own, `harness`.
-            "default": preset.memory.mode,
-            "x-stayfixed-source": DEFAULT,
+            "title": "Gate pull requests in CI",
+            "oneOf": [{"const": mode, "title": title} for mode, title in CI_TITLES.items()],
+            "default": preset.ci.mode,
+            "x-stayfixed-source": PRESET,
+        },
+        "commit_messages.attribution_check": {
+            "type": "boolean",
+            "title": "Fail a pull request whose commit messages carry an AI tool's attribution",
+            "default": preset.commit_messages.attribution_check,
+            "x-stayfixed-source": PRESET,
+        },
+        "commit_messages.types": {
+            "type": "array",
+            "title": "Commit types a subject may start with",
+            "items": {"type": "string", "pattern": ecma(COMMIT_TYPE)},
+            "minItems": 1,
+            "default": list(preset.commit_messages.types),
+            "x-stayfixed-source": PRESET,
         },
         "artifacts.local": {
             "type": "array",
@@ -147,9 +265,28 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
             "default": list(preset.artifacts.local),
             "x-stayfixed-source": PRESET,
         },
+        "stayfixed.agents": {
+            "type": "array",
+            "title": "Coding agents",
+            "items": {"type": "string", "enum": [h.name for h in HARNESSES]},
+            "minItems": 1,
+            "default": list(found.agents),
+            "x-stayfixed-source": found.sources["agents"],
+        },
+        PLUGINS: {
+            "type": "array",
+            "title": "Recommended plugins to install on this machine",
+            "items": {"type": "string", "enum": _recommended()},
+            # None unasked: a third-party plugin runs in every session, so it is installed only
+            # when a person names it.
+            "default": [],
+            "x-stayfixed-source": DEFAULT,
+        },
     }
     for key, flag in FLAGS.items():
         properties[key]["x-stayfixed-flag"] = flag
+        lines = zip(TRADE_OFF_KEYS, TRADE_OFFS[key], strict=True)
+        properties[key]["x-stayfixed-tradeoff"] = dict(lines)
     return {
         "$schema": SCHEMA,
         "title": "stayfixed init",
@@ -159,12 +296,38 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
     }
 
 
+def picked(config: Config) -> dict[str, Any]:
+    """What a run of `init --yes` took for each question, in `PROPERTIES`' order, read off the
+    configuration it wrote or adopted: `init` installs no plugin, and the agents are the harnesses
+    stayfixed serves among those listed, since a name none answers to is counted, never printed."""
+    from stayfixed.harnesses import select
+
+    values: dict[str, Any] = {}
+    for key in PROPERTIES:
+        if key == PLUGINS:
+            values[key] = []
+            continue
+        table, name = key.split(".")
+        value = getattr(getattr(config, table), name)
+        values[key] = list(value) if isinstance(value, tuple) else value
+    served, _ = select(config.stayfixed.agents)
+    values["stayfixed.agents"] = [harness.name for harness in served]
+    return values
+
+
 def _shown(question: dict[str, Any]) -> str:
     if "default" not in question:
         return UNANSWERED
-    value = question["default"]
-    shown = ", ".join(value) if isinstance(value, list) else str(value)
-    return shown or "none"
+    return shown(question["default"])
+
+
+def shown(value: object) -> str:
+    """A default or a picked value as one line prints it: a list joined, a switch on or off, and
+    `none` for nothing. Every value is stayfixed's own or bounded by a grammar."""
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    text = ", ".join(map(str, value)) if isinstance(value, list | tuple) else str(value)
+    return text or "none"
 
 
 def card(schema: dict[str, Any]) -> str:

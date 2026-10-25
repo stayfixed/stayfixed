@@ -60,7 +60,7 @@ Three things hold everywhere:
 - [`stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#stayfixed-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
 - [`stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
 - [`stayfixed memory refs`](#stayfixed-memory-refs)
-- [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
+- [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--attribution-check] [--commit-type TYPE …] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---attribution-check---commit-type-type----local-id----no-ci---root-path---machine-path)
 - [`stayfixed init --questions [--root PATH] [--machine PATH]`](#stayfixed-init---questions---root-path---machine-path)
 - [`stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-upgrade---dry-run---force-path---root-path---machine-path)
 - [`stayfixed uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-uninstall---dry-run---force-path---root-path---machine-path)
@@ -510,9 +510,9 @@ two paragraphs — and it ends at the first paragraph holding any body line. Bod
 judged. A trailer's display name is judged whole: one that is a product's name and nothing else
 (`Cursor`, `Devin`, `ChatGPT`) is a violation whatever its address, and a person's name that holds
 a product word (`Cursor Smith`, `Claude Lemaire`) is not, by its name.
-`[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
-a violation, but the range must still be readable, because the report says how many messages it
-read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
+The rules apply only where `[commit_messages] attribution_check = true`; the preset leaves it
+`false`, and then no message is ever a violation, but the range must still be readable, because
+the report says how many messages it read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
 never the text, which is the repository's; `--json`'s `violations` carries every one — and `2`
 when git cannot read the range or the range looks like an option.
 
@@ -1550,7 +1550,7 @@ the resolver's reason. Write a path that deliberately does not resolve in *itali
 
 ---
 
-## `stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`
+## `stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--attribution-check] [--commit-type TYPE …] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`
 
 Writes a repository's stayfixed footprint, once. It is the only command that creates the
 documents every other command reads, and the only one that writes `stayfixed.toml`.
@@ -1565,7 +1565,21 @@ Each answer flag replaces one default and writes one key:
 - `--agent`, once per harness, writes `[stayfixed] agents`;
 - `--profile` writes `[stayfixed] profile`, an empty value meaning none;
 - `--memory-mode` writes `[memory] mode`;
+- `--attribution-check` writes `[commit_messages] attribution_check = true`, which is off unless
+  answered;
+- `--commit-type`, once per type, writes `[commit_messages] types`, each lowercase ASCII letters;
 - `--local`, once per file, writes `[artifacts] local`.
+
+`--no-ci` answers the CI question (below). The recommended plugins are not `init`'s to install:
+`init --questions` asks about them, and the answer is `stayfixed setup`'s.
+
+After the CI line the run prints `what I picked:`, one line per question in the order
+`init --questions` asks them, with the value this run took: the name, the base branch, the memory
+mode, the profile, the CI mode, the attribution check (`on` or `off`), the commit types, the
+files kept out of git, the agents stayfixed serves among those listed, and `plugins: none`, since
+`init` installs none. Taking every default gives the attribution check `off`, the preset's commit
+types and no plugin. A value a `stayfixed.toml` you wrote holds outside the plain-path grammar
+prints as `<unprintable name; see --json>`.
 
 The parser refuses a value outside its grammar or its choices (`2`), and it refuses a name or
 a branch by naming the rule, never the value. A branch is a name git accepts as one, written in
@@ -1769,15 +1783,18 @@ the base branch; empty otherwise. An answered `--base-branch` replaced nothing, 
 `head_note` empty.
 `custom_gates` lists the custom gates a `stayfixed.toml` you wrote configures, by name, and is empty
 when this run writes the file. `unanswered` is the sentence of a `git check-ignore` that could not
-answer, or empty.
+answer, or empty. `picked` is what `what I picked:` lists, keyed by question, each value as the
+configuration holds it.
 
 ---
 
 ## `stayfixed init --questions [--root PATH] [--machine PATH]`
 
-Prints the values `stayfixed init --yes` would take for the six things a person may answer, where
-each came from, and the flag on `init --yes` that replaces it. It writes nothing. The `init` skill
-asks its questions from it, and a person reads it to see the defaults before choosing any.
+Prints the values `stayfixed init --yes` would take for the ten things a person may answer, where
+each came from, and the flag that replaces it: on `init --yes`, but for the recommended plugins,
+which `stayfixed setup` installs on the machine. It writes nothing. The `init` skill asks its
+questions from it, taking every default offered first, and a person reads it to see the defaults
+before choosing any.
 
 The summary is one line per question, `<key>: <default> (<where it came from>; <flag>)`, then
 one line saying how each is answered:
@@ -1786,11 +1803,15 @@ one line saying how each is answered:
 detected:
   project.name: widget (origin remote; --name)
   project.base_branch: main (origin/HEAD; --base-branch)
-  stayfixed.agents: claude, codex (default; --agent)
-  stayfixed.profile: python (profile markers; --profile)
   memory.mode: harness (default; --memory-mode)
+  stayfixed.profile: python (profile markers; --profile)
+  ci.mode: reusable (the preset's default; --no-ci)
+  commit_messages.attribution_check: off (the preset's default; --attribution-check)
+  commit_messages.types: feat, fix, docs, test, refactor, style, chore, harden, guard (the preset's default; --commit-type)
   artifacts.local: none (the preset's default; --local)
-each is answered by the flag its line names, on `stayfixed init --yes`; `stayfixed init --questions --json` carries them as a JSON Schema
+  stayfixed.agents: claude, codex (default; --agent)
+  plugins: none (default; stayfixed setup --plugin)
+each is answered by the flag its line names, on `stayfixed init --yes` but the plugins'; `stayfixed init --questions --json` carries them as a JSON Schema, each with what it gives, what it gives up, what it leaves and how to undo it
 ```
 
 Where a value came from is one of a fixed set of phrases. The name comes from the
@@ -1802,25 +1823,32 @@ when that names a plain branch under `refs/remotes/origin/`; with no remote at a
 remotes git could not list included, it is the `default`, `main`. The agents come from the `harness
 directories` the root carries; otherwise the `default` is every harness. The profile comes from
 `profile markers`, or there are `no profile markers`. The memory mode is the `default`,
-`harness`, since the preset chooses none, and the files kept out of git are `the preset's
-default`. Each default is exactly what `stayfixed init --yes` writes when
-that question is not answered. `origin/HEAD` goes stale after the remote's default branch is
+`harness`, since the preset chooses none; the CI mode, the attribution check (off), the commit
+types and the files kept out of git are `the preset's default`; and the plugins are the `default`,
+none, because a third-party plugin runs in every session and is installed only when named. Each
+default is exactly what `stayfixed init --yes` writes when that question is not answered. `origin/HEAD` goes stale after the remote's default branch is
 renamed, because git does not refresh one it has. That is why its source is printed: you can
 catch it.
 
-`--json` carries `questions`: a JSON Schema object (draft 2020-12) with six required
-`properties`. Each is keyed by the `stayfixed.toml` key its answer writes: `project.name`,
-`project.base_branch`, `stayfixed.agents`, `stayfixed.profile`, `memory.mode` and
-`artifacts.local`. Each property carries three keys: `default` (absent for a name that is not
-derivable), `x-stayfixed-source` (the phrase above) and `x-stayfixed-flag` (the `init --yes` flag
-that answers it). A choice is a `oneOf` of `const` and `title`, or `items.enum` for a list. The
-two free-text properties carry `pattern`, the grammar their flag enforces.
+`--json` carries `questions`: a JSON Schema object (draft 2020-12) with ten required
+`properties`, in the order the `init` skill asks them. Each but the last is keyed by the
+`stayfixed.toml` key its answer writes: `project.name`, `project.base_branch`, `memory.mode`,
+`stayfixed.profile`, `ci.mode`, `commit_messages.attribution_check`, `commit_messages.types`,
+`artifacts.local` and `stayfixed.agents`; the last, `plugins`, offers the plugins the preset
+recommends, which `stayfixed setup --plugin` installs. Each property carries four keys: `default`
+(absent for a name that is not derivable), `x-stayfixed-source` (the phrase above),
+`x-stayfixed-flag` (the flag that answers it) and `x-stayfixed-tradeoff`, four lines of fixed
+text: `get`, what the answer gives; `give_up`, what it costs; `trace`, what it leaves behind; and
+`undo`, how to take it back. A choice is a `oneOf` of `const` and `title`, `items.enum` for a list
+of choices, or `boolean`. The two free-text properties and each commit type carry `pattern`, the
+grammar their flag enforces.
 
 The schema is modelled on MCP elicitation's flat form schema. A client may send it as a
 `requestedSchema` once it drops `pattern` and the `x-stayfixed-*` keys, which that subset does not
 carry. Harness ask tools take lists of questions and options rather than a schema, so the `init`
-skill turns the properties into questions: the first four as one confirmation of their defaults,
-the rest one at a time, within each harness's limits. The flags validate the answers; the schema
+skill turns the properties into questions: every default at once first, then the name and the
+base branch as one confirmation, the rest one at a time with their four lines, within each
+harness's limits. The flags validate the answers; the schema
 does not.
 
 It is refused (`2`) before anything beyond the root is read, in three cases:
@@ -3187,7 +3215,7 @@ called the result green, would be worse than one that says it could not vouch fo
 
 `.github/workflows/check.yml` is a `workflow_call` workflow a project runs its stayfixed gates
 through. `stayfixed init` writes the caller —
-[`.github/workflows/stayfixed.yml`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
+[`.github/workflows/stayfixed.yml`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---attribution-check---commit-type-type----local-id----no-ci---root-path---machine-path)
 — so most projects never type these lines; what follows is what that file contains, and what to
 write by hand if you would rather:
 
@@ -3535,7 +3563,7 @@ custom_timeout_seconds = 600  # seconds a gate of your own may run: a whole numb
 # run = ["pytest", "-q"]       # an argv, never a shell string
 
 [commit_messages]
-attribution_check = true # whether `commit check` enforces the attribution block
+attribution_check = false # whether `commit check` enforces the attribution block
 types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
 
 [guards]

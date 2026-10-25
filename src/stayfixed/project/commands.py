@@ -89,6 +89,8 @@ CUSTOM_GATES = (
     "`stayfixed gate` and `stayfixed adopt promote` run each one's command from [gates.custom], "
     "so read those commands before running any of the three; each takes --builtin to run none"
 )
+# Heads the list of what the run took for each question, which the skip path took unasked.
+PICKED = "what I picked:"
 QUESTIONS_HELP = (
     "print the defaults init would take, where each came from and the flag that changes it; "
     "under --json, as a JSON Schema. Writes nothing"
@@ -117,6 +119,8 @@ def _given(args: argparse.Namespace) -> Given:
         profile=args.profile,
         memory_mode=args.memory_mode,
         local=listed(args.local),
+        attribution_check=args.attribution_check,
+        types=listed(args.commit_type),
     )
 
 
@@ -135,8 +139,22 @@ def run_questions(args: argparse.Namespace) -> Result:
     return Result(card(schema), {"questions": schema})
 
 
+def _picked_line(key: str, value: object) -> str:
+    """One line of what `init --yes` picked. A value an adopted `stayfixed.toml` wrote, a commit
+    type above all, prints through `printable`; `--json` carries it as it is."""
+    from stayfixed.printed import printable
+    from stayfixed.project.questions import shown
+
+    if isinstance(value, str) and value:
+        value = printable(value)
+    elif isinstance(value, list):
+        value = [printable(item) for item in value]
+    return f"  {key}: {shown(value)}"
+
+
 def run_init(args: argparse.Namespace) -> Result:
     from stayfixed.project.init import NO_ANSWERS, init
+    from stayfixed.project.questions import picked
     from stayfixed.project.templates import CI_ARTIFACT
     from stayfixed.runner import subprocess_runner
 
@@ -187,6 +205,9 @@ def run_init(args: argparse.Namespace) -> Result:
         "",
         ci_line,
     ]
+    chosen = picked(report.config) if report.config is not None else {}
+    if chosen:
+        lines += [PICKED, *(_picked_line(key, value) for key, value in chosen.items())]
     if report.note:
         lines.append(f"note: {report.note}")
     if report.unknown_harnesses:
@@ -218,6 +239,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "stamped": report.stamped,
         "custom_gates": list(report.custom_gates),
         "unanswered": report.unanswered,
+        "picked": chosen,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
@@ -422,6 +444,7 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     )
     from stayfixed.harnesses import HARNESSES
     from stayfixed.profiles import shipped
+    from stayfixed.project.questions import COMMIT_TYPE, COMMIT_TYPE_RULE
     from stayfixed.project.templates import LOCAL_ELIGIBLE
 
     answers = parser.add_argument_group(
@@ -448,6 +471,20 @@ def _answers(parser: argparse.ArgumentParser) -> None:
         help="[stayfixed] profile; an empty value for none",
     )
     answers.add_argument("--memory-mode", choices=MEMORY_MODES, help="[memory] mode")
+    answers.add_argument(
+        "--attribution-check",
+        action="store_const",
+        const=True,
+        help="[commit_messages] attribution_check = true: the commit gate fails a message "
+        "carrying an AI tool's attribution",
+    )
+    answers.add_argument(
+        "--commit-type",
+        action="append",
+        type=grammar(COMMIT_TYPE, f"not a commit type: {COMMIT_TYPE_RULE}"),
+        metavar="TYPE",
+        help="[commit_messages] types; once per type",
+    )
     answers.add_argument(
         "--local",
         action="append",

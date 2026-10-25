@@ -768,3 +768,54 @@ def test_an_adopted_document_holding_a_hex_integer_of_any_length_is_the_configur
         _init(root, tmp_path, dry_run=False, ci=False)
     assert "f" * 50 not in str(refused.value)
     assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_init_yes_says_what_it_picked_attribution_off_the_types_and_no_plugin(
+    tmp_path: Path,
+) -> None:
+    # The skip path writes every default without a question asked, so the run itself says what
+    # it took, one line per question in the order the guided walk asks them: the attribution
+    # check off, the preset's commit types, and no plugin. `--no-ci` keeps the network out.
+    root = _repo(tmp_path)
+    code, printed, _ = cli(root, tmp_path, "init", "--yes", "--no-ci")
+    assert code == 0, printed
+    assert "what I picked:\n" in printed, printed
+    picked = printed.split("what I picked:\n", 1)[1].splitlines()
+    types = ", ".join(load(root, machine=tmp_path / "absent.toml").commit_messages.types)
+    assert picked[:10] == [
+        "  project.name: widget",
+        "  project.base_branch: main",
+        "  memory.mode: harness",
+        "  stayfixed.profile: none",
+        "  ci.mode: none",
+        "  commit_messages.attribution_check: off",
+        f"  commit_messages.types: {types}",
+        "  artifacts.local: none",
+        "  stayfixed.agents: claude, codex",
+        "  plugins: none",
+    ]
+    assert types.startswith("feat, fix")
+
+
+@needs_git
+def test_a_commit_type_an_adopted_document_wrote_prints_only_inside_the_grammar(
+    tmp_path: Path,
+) -> None:
+    # `what I picked:` reads the adopted `stayfixed.toml`, whose commit types no grammar holds: a
+    # clone's type carrying an escape sequence and `::error::` would drive the terminal and the CI
+    # runner. It prints withheld, and `--json` carries it as written. Mutation (oracle):
+    # `mutations/`'s "init prints an adopted commit type as written" -> the first `in` reddens.
+    root = _repo(tmp_path)
+    hostile = "x\x1b[2J\n::error::forged"
+    document = (
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\n\n[project]\nname = "widget"\n\n'
+        f"[commit_messages]\ntypes = {json.dumps(['feat', hostile])}\n"
+    )
+    (root / CONFIG_FILE).write_text(document, encoding="utf-8")
+    code, printed, _ = cli(root, tmp_path, "init", "--yes", "--dry-run", "--no-ci")
+    assert code == 0, printed
+    assert "  commit_messages.types: feat, <unprintable name; see --json>\n" in printed
+    assert "\x1b" not in printed and "::error::" not in printed
+    code, printed, _ = cli(root, tmp_path, "init", "--yes", "--dry-run", "--no-ci", "--json")
+    assert json.loads(printed)["picked"]["commit_messages.types"] == ["feat", hostile]

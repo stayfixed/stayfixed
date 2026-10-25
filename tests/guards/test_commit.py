@@ -634,6 +634,10 @@ agents = ["claude"]
 name = "widget"
 base_branch = "main"
 release_branch = "main"
+
+# On, since the preset leaves the check off: what these cases judge is the check itself.
+[commit_messages]
+attribution_check = true
 """
 
 
@@ -691,7 +695,7 @@ def test_every_offence_of_one_commit_travels_in_its_violation(tmp_path: Path) ->
 def test_check_range_honours_the_attribution_switch(tmp_path: Path) -> None:
     root = repo(tmp_path, "fix: dirty\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n")
     (root / CONFIG_FILE).write_text(
-        CONFIG + "\n[commit_messages]\nattribution_check = false\n", encoding="utf-8"
+        CONFIG.replace("attribution_check = true", "attribution_check = false"), encoding="utf-8"
     )
     report = check_range(root, "base..HEAD", load(root, machine=tmp_path / "absent.toml"))
     assert report.violations == ()

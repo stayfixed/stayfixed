@@ -495,11 +495,18 @@ def test_a_checked_out_branch_standing_in_for_a_remote_head_is_noted(tmp_path: P
 
 def _answers(schema: dict[str, Any]) -> list[str]:
     """`init --yes` argv answering every question as the `init` skill does: each property's own
-    flag with its default, one flag per list item, and `widget` where there is no default."""
+    flag with its default, one flag per list item, a switch only when its default is on, and
+    `widget` where there is no default. CI is `_invoke`'s own `--no-ci`, and the plugins are
+    `setup`'s, not `init`'s."""
     argv: list[str] = []
     for key, question in schema["properties"].items():
+        if key in ("ci.mode", "plugins"):
+            continue
         value = question.get("default", "widget" if key == "project.name" else None)
         assert value is not None, key
+        if isinstance(value, bool):
+            argv += [question["x-stayfixed-flag"]] if value else []
+            continue
         for item in value if isinstance(value, list) else [value]:
             argv += [question["x-stayfixed-flag"], item]
     return argv
@@ -549,6 +556,7 @@ def test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes(
         ("--yes", "--memory-mode", "cloud"),
         ("--yes", "--profile", "rust"),
         ("--yes", "--agent", "cursor"),
+        ("--yes", "--commit-type", "Feat"),
         ("--questions", "--yes"),
     ],
     ids=[
@@ -560,6 +568,7 @@ def test_the_questions_answered_as_the_skill_answers_them_write_what_yes_writes(
         "mode",
         "profile",
         "agent",
+        "commit-type",
         "questions-and-yes",
     ],
 )

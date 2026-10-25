@@ -1,4 +1,4 @@
-"""`stayfixed init --questions`' schema: six questions, each default what `init --yes` alone
+"""`stayfixed init --questions`' schema: ten questions, each default what `init --yes` alone
 writes, each source one of `detect`'s phrases, and no byte a grammar rejected."""
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from stayfixed.config.loader import load
+from stayfixed.config.loader import load, preset_defaults
 from stayfixed.config.schema import MEMORY_MODES
 from stayfixed.errors import Refusal
 from stayfixed.project.init import init
@@ -18,6 +18,7 @@ from stayfixed.project.questions import (
     FLAGS,
     NAME_PATTERN,
     OVERLAY_NEXT,
+    PLUGINS,
     PROPERTIES,
     card,
     questions,
@@ -40,7 +41,7 @@ def _defaults(schema: dict[str, Any]) -> dict[str, tuple[object, str]]:
 
 
 @needs_git
-@pytest.mark.parametrize("key", PROPERTIES)
+@pytest.mark.parametrize("key", [key for key in PROPERTIES if key != PLUGINS])
 def test_each_default_is_what_init_yes_alone_writes(tmp_path: Path, key: str) -> None:
     # The card promises that each default is what `init --yes` would take, and the skill asks
     # the person to confirm the card, not the file. The two are computed in two places, so each
@@ -52,8 +53,9 @@ def test_each_default_is_what_init_yes_alone_writes(tmp_path: Path, key: str) ->
     (root / ".codex").mkdir()
     (root / "pyproject.toml").write_text("[project]\nname = 'widget'\n", encoding="utf-8")
     default = _schema(tmp_path, root)["properties"][key]["default"]
+    # With CI, as `init --yes` alone runs: the stub answers no released tag, so nothing pins.
     written = init(
-        root, machine=tmp_path / "absent.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False
+        root, machine=tmp_path / "absent.toml", runner=LsRemote(), yes=True, dry_run=False, ci=True
     )
     assert not written.refused
     table, name = key.split(".")
@@ -68,7 +70,7 @@ def test_the_schema_keys_are_the_stayfixed_toml_keys_the_answers_write(tmp_path:
     schema = _schema(tmp_path, repository(tmp_path))
     assert schema["type"] == "object"
     assert tuple(schema["properties"]) == PROPERTIES == tuple(schema["required"])
-    assert len(PROPERTIES) == 6
+    assert len(PROPERTIES) == 10
     for key, question in schema["properties"].items():
         assert question["x-stayfixed-flag"] == FLAGS[key], key
 
@@ -171,3 +173,48 @@ def test_the_questions_are_refused_where_init_would_refuse(tmp_path: Path) -> No
     (root / MANIFEST_PATH).write_text("{}", encoding="utf-8")
     with pytest.raises(Refusal, match="stayfixed upgrade"):
         _schema(tmp_path, root)
+
+
+# The order the guided walk asks in, after the name and the base branch it confirms first:
+# memory, the profile, CI, attribution and the commit types, files kept out of git, the agents,
+# and the recommended plugins last.
+GUIDED = (
+    "memory.mode",
+    "stayfixed.profile",
+    "ci.mode",
+    "commit_messages.attribution_check",
+    "commit_messages.types",
+    "artifacts.local",
+    "stayfixed.agents",
+    "plugins",
+)
+
+
+@needs_git
+def test_every_question_carries_its_four_lines_in_the_guided_order(tmp_path: Path) -> None:
+    # The skill relays each question with what the answer gives, what it costs, what it leaves
+    # behind and how to take it back, and the texts are the command's, so a skill cannot drift
+    # from what the command does. A question without them is one the person answers blind.
+    schema = _schema(tmp_path, repository(tmp_path))
+    assert tuple(schema["properties"]) == ("project.name", "project.base_branch", *GUIDED)
+    for key, question in schema["properties"].items():
+        lines = question["x-stayfixed-tradeoff"]
+        assert tuple(lines) == ("get", "give_up", "trace", "undo"), key
+        assert all(isinstance(line, str) and line.strip() for line in lines.values()), key
+
+
+@needs_git
+def test_the_skip_takes_attribution_off_the_preset_types_and_no_plugin(tmp_path: Path) -> None:
+    # Taking every default is offered first, so each default is what a person gets without
+    # reading a question: the attribution check off, the preset's commit types, and no plugin of
+    # the ones it recommends.
+    schema = _schema(tmp_path, repository(tmp_path))["properties"]
+    assert schema["commit_messages.attribution_check"]["default"] is False
+    preset = preset_defaults("widget")
+    assert schema["commit_messages.types"]["default"] == list(preset.commit_messages.types)
+    assert schema["ci.mode"]["default"] == "reusable"
+    plugins = schema["plugins"]
+    assert plugins["default"] == [] and set(plugins["items"]["enum"]) == {
+        "superpowers",
+        "context7",
+    }
