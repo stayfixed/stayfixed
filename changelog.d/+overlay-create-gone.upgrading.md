@@ -1,7 +1,8 @@
 `stayfixed overlay create`, `stayfixed overlay init` and `stayfixed overlay publish-template` are
 gone; `stayfixed setup --overlay` is the one entry for an overlay. `--overlay <path>` naming an
-existing overlay records it, as before; naming nothing, or an empty directory you can list and
-write, it renders the shipped template there with no network call, makes it a git repository on
+existing overlay records it, as before, and now installs its commit-time secret scan too, which a
+second machine recording its clone of the overlay had to do by hand; naming nothing, or an empty
+directory you can list and write, it renders the shipped template there with no network call, makes it a git repository on
 `main`, installs the commit-time secret scan and records it, where `overlay create --local` and
 `overlay init` used to be run by hand. A mistyped path is therefore rendered at rather than refused,
 and `setup` says so when the root it records replaces the one the machine configuration held. The

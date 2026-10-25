@@ -551,7 +551,10 @@ def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
         return root, f"rendered the overlay at {quoted(str(root))}: {'; '.join(notes)}"
     if planned.create is None:
         require_overlay(planned.root, because=_RECORDING)
-        return planned.root, f"recorded the existing overlay at {quoted(str(planned.root))}"
+        # Armed here too: the hook lives in the clone's own `.git`, so an overlay a second machine
+        # records from a clone has no commit-time scan until something installs it.
+        recorded = f"recorded the existing overlay at {quoted(str(planned.root))}"
+        return planned.root, f"{recorded}; {finish(planned.root, runner=runner)}"
     owner, name = planned.create
     destination = planned.destination if planned.destination is not None else planned.root
     created = generate(owner, name, root=destination.parent, runner=runner)

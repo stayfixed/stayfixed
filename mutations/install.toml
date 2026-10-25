@@ -522,6 +522,17 @@ reddens = [
   "tests/test_install_path.py::test_setup_then_overlay_then_attach_then_a_session_sees_memory",
 ]
 
+# The hook lives in a clone's own `.git`, so an overlay a second machine records from a clone had
+# no commit-time scan, and only `doctor` warned.
+[[mutation]]
+name = "setup records an existing overlay without its secret scan"
+file = "src/stayfixed/setup/run.py"
+before = '        return planned.root, f"{recorded}; {finish(planned.root, runner=runner)}"'
+after = "        return planned.root, recorded"
+reddens = [
+  "tests/setup/test_setup.py::test_recording_an_existing_overlay_arms_its_commit_time_secret_scan",
+]
+
 # Guards that shipped without an entry, and one a review found asserting nothing.
 
 # ---------------------------------------------------------------------------------------------
@@ -949,8 +960,8 @@ reddens = [
 [[mutation]]
 name = "setup notes a recorded overlay's path raw"
 file = "src/stayfixed/setup/run.py"
-before = '        return planned.root, f"recorded the existing overlay at {quoted(str(planned.root))}"'
-after = '        return planned.root, f"recorded the existing overlay at {planned.root}"'
+before = '        recorded = f"recorded the existing overlay at {quoted(str(planned.root))}"'
+after = '        recorded = f"recorded the existing overlay at {planned.root}"'
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[the-note]",
 ]

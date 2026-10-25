@@ -35,7 +35,7 @@ And these are the machinery. Leave them alone unless you know why:
 | Path | What it holds |
 |---|---|
 | `stayfixed-overlay.toml` | what makes this tree a stayfixed overlay: `requires` (the stayfixed this layout needs, which `stayfixed doctor` and a session's first lines read, above) and `layout = 1`, and nothing of yours, so `stayfixed overlay upgrade` can raise the floor. `stayfixed setup --overlay` records a tree only when it carries this file, and `stayfixed overlay upgrade` refreshes only such a tree. |
-| `.pre-commit-config.yaml` | the gitleaks hook, pinned at a revision: the commit-time half of "no credential enters this repository". `stayfixed setup --overlay` installs it when it makes this overlay. |
+| `.pre-commit-config.yaml` | the gitleaks hook, pinned at a revision: the commit-time half of "no credential enters this repository". `stayfixed setup --overlay` installs it when it makes or records this overlay. |
 | `.github/workflows/scan.yml` | the push-time half, with every action pinned to a commit sha. |
 | `.github/dependabot.yml` | what keeps those pins from rotting: a monthly grouped pull request that moves each sha and the version comment beside it. You read it before you merge it. |
 | `.gitignore` | env files, in every spelling, so a credential cannot be added by accident. |
@@ -48,10 +48,9 @@ kept here, because a second copy of a security rule is a copy that drifts.
 
 ## Making it yours
 
-`stayfixed setup --overlay` made this repository, named it after you if it generated it on
-GitHub, installed the secret scan, and recorded it as this machine's overlay. On another machine,
-clone it and record it there with `stayfixed setup --overlay <path>`, and run `pre-commit install`
-in it. After that, `stayfixed attach` binds a repository to it — stayfixed renders what this
+`stayfixed setup --overlay` made this repository, installed the secret scan, and recorded it as
+this machine's overlay. On another machine, clone it and record it there with `stayfixed setup
+--overlay <path>`, which installs the secret scan in that clone too. After that, `stayfixed attach` binds a repository to it — stayfixed renders what this
 overlay holds into a plugin of its own on each machine, so nothing here is installed by hand — and
 `stayfixed overlay upgrade` refreshes the files you have not edited when a new stayfixed is
 released.

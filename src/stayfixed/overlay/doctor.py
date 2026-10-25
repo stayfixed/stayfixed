@@ -97,9 +97,9 @@ def _overlay_absent(overlay: Path | MachineUnread | None) -> Row:
 def _pre_commit(context: Context) -> Row:
     """Whether the overlay's own secret scan is armed on **this** machine.
 
-    `setup --overlay` runs `pre-commit install` on the machine that made the overlay; a second
-    machine clones that overlay and records it, so the machine that thinks it is set up is
-    exactly the one whose commit-time scan is not.
+    The hook lives in a clone's own `.git`, so each machine arms its own: `setup --overlay` runs
+    `pre-commit install` in every overlay it makes or records, and says so when it cannot. A
+    clone no `setup` recorded, or one recorded where `pre-commit` was missing, is what this finds.
     """
     from pathlib import Path
 

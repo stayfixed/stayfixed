@@ -25,14 +25,13 @@ COMMON_CODEX = f"{COMMON}/codex"
 # replaced the plugin manifests the overlay carried while it was a plugin of its own.
 IDENTITY_RECORD = "stayfixed-overlay.toml"
 # The overlay's commit-time secret scan, and the hook `pre-commit install` writes for it: `setup
-# --overlay` installs the hook when it makes the overlay, and `doctor`'s `pre-commit` row asks
-# whether it is there. The hook's *name* only: where it lives is `guards.hooks_dir`'s answer and
-# never `.git/hooks`, because an overlay with `core.hooksPath` set -- a common global dotfiles
+# --overlay` installs the hook when it makes or records the overlay, and `doctor`'s `pre-commit` row
+# asks whether it is there. The hook's *name* only: where it lives is `guards.hooks_dir`'s answer
+# and never `.git/hooks`, because an overlay with `core.hooksPath` set -- a common global dotfiles
 # setting -- or one that is a worktree or a submodule, where `.git` is a file, keeps its hooks
-# somewhere else entirely. A hardcoded path would find the scan missing and warn in `doctor` with
-# a remedy that cannot clear it. `docs/cli.md`'s
-# `setup --git-hooks` section states the rule: `git rev-parse --git-path hooks`, never
-# `core.hooksPath`.
+# somewhere else entirely. A hardcoded path would find the scan missing and warn in `doctor` with a
+# remedy that cannot clear it. `docs/cli.md`'s `setup --git-hooks` section states the rule: `git
+# rev-parse --git-path hooks`, never `core.hooksPath`.
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 PRE_COMMIT_HOOK = "pre-commit"
 

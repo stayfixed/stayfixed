@@ -2399,8 +2399,8 @@ index` renders it, so the store's index link never dangles and `memory index --c
 a first attach in an overlay this release rendered, and in an older one once `overlay upgrade` has
 run on it, because it removes the `common/memory/README.md` 0.1.x shipped unless it was edited).
 It runs no program in the overlay: its commit-time secret scan is `setup --overlay`'s, which makes
-the overlay, and on a machine that cloned one and only recorded it `doctor`'s `pre-commit` row says
-it is not installed. The ledger is the only record
+or records the overlay, and where that scan is missing `doctor`'s `pre-commit` row says it is not
+installed. The ledger is the only record
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook
 entry can; `detach` reads it and nothing else. **`.gitignore` is never written**: it is tracked, so
 any line there would be a change every collaborator gets. A `stayfixed:ignore` region an earlier
@@ -2753,7 +2753,7 @@ the name it holds, so every refusal from then on says so and gives the remedy th
 When `gh repo create` itself fails, the command stops there with its exit code and stderr; when it reports success and the clone leaves nothing at
 `<home>/<name>`, `gh repo view` is asked whether the repository exists, and the clone is retried once, after a
 ten-second wait when it does — a wait carried on reasoning rather than a measurement, since the one
-trial run against it did not reproduce the race. A rendered or generated
+trial run against it did not reproduce the race. A rendered, generated or recorded
 overlay gets the commit-time secret scan with `pre-commit install`; a missing `pre-commit` is a
 note. What `gh`, `git` and `pre-commit` print is quoted in these notes as it came, except that one
 holding anything but a plain path is escaped, and one longer than 120 characters is cut to its
@@ -2777,7 +2777,8 @@ it, once for the preset and again for the overlay root `--overlay` records;
 commands it runs for each plugin `--plugin` names, on each harness with a declared marketplace (`claude plugin marketplace add` and
 `claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
 registrations and installed plugins those commands write into each harness's own configuration.
-`--overlay <path>` naming an overlay writes nothing in it; it is only recorded. Naming nothing or an
+`--overlay <path>` naming an overlay writes nothing in its tree: it is recorded, and its
+`pre-commit` git hook is installed through `pre-commit install`. Naming nothing or an
 empty directory, it writes the directory with every file of the template plus `.stayfixed/manifest.json`, the
 repository `git init` makes there, and, through `pre-commit install`, its `pre-commit` git hook.
 `--overlay create:<owner>/<name>` writes, through `gh repo create <owner>/<name> --private

@@ -8,11 +8,11 @@ git repository of it, and touches no network. A template and not a fork: a fork'
 bound to the upstream network and cannot be made private, and an overlay that is not private is
 the one outcome this whole area exists to prevent.
 
-`finish` is what every overlay `setup` makes runs next: it installs the commit-time secret scan,
-and writes nothing into the tree, so the identity record stays the bytes the template shipped and
-`overlay upgrade` can refresh it. Generating is idempotent — `gh` may give up on the clone with
-the repository already created, so a second run is the ordinary case rather than the exception —
-and so is `finish`.
+`finish` is what every overlay `setup` makes or records runs next: it installs the commit-time
+secret scan, and writes nothing into the tree, so the identity record stays the bytes the template
+shipped and `overlay upgrade` can refresh it. Generating is idempotent — `gh` may give up on the
+clone with the repository already created, so a second run is the ordinary case rather than the
+exception — and so is `finish`.
 
 Each way a tree is made writes its identity record last (`layout.OVERLAY_FILES`), into nothing or
 an empty directory (`fsops.vacant`), and every refusal after `gh repo create` ends in `UNRECORDED`.

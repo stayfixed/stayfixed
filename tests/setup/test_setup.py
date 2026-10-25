@@ -1617,6 +1617,30 @@ def test_setup_renders_an_overlay_at_an_absent_or_empty_path_and_records_it(
     assert report.overlay == destination
 
 
+def test_recording_an_existing_overlay_arms_its_commit_time_secret_scan(tmp_path: Path) -> None:
+    # A second machine records the overlay the first one made, from a clone: the `pre-commit` hook
+    # lives in the clone's own `.git`, which no clone carries, so a recorded overlay had no
+    # commit-time scan until the owner ran `pre-commit install` by hand, and only `doctor` warned.
+    # Recording installs it, as making one does, in the overlay and nowhere else.
+    #
+    # Mutation: `mutations/`'s "setup records an existing overlay without its secret scan".
+    existing = tmp_path / "overlay"
+    _seed_overlay(existing)
+    runner = Recorder()
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        overlay=str(existing),
+    )
+    assert runner.calls == [["pre-commit", "install"]]
+    assert runner.cwds == [existing.resolve()]
+    assert "installed the commit-time secret scan with `pre-commit install`" in " ".join(
+        report.notes
+    )
+
+
 # --- the destination `create:` clones into, asked before GitHub is -------------------------------
 
 
