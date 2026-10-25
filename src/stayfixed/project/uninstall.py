@@ -334,9 +334,9 @@ def _attached(root: Path) -> bool:
     except Failure:
         main = root
     ledgered = any(fsops.is_file(contained(checkout, ATTACH_LEDGER)) for checkout in (root, main))
-    id = read_id(root) if ledgered else None
+    binding_id = read_id(root) if ledgered else None
     try:
-        return id is not None and fsops.is_dir(delivery_directory(id))
+        return binding_id is not None and fsops.is_dir(delivery_directory(binding_id))
     except Failure:
         # A `HOME` that names no home holds no render.
         return False
@@ -374,7 +374,15 @@ def uninstall(
                 _detach(root, runner)
             _remove_ledger(root)
         note = NO_CONFIG.format(count=len(manifest.records))
-        return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0, detached=attached)
+        return UninstallReport(
+            footprint=Plan(),
+            once=Plan(),
+            orphans=0,
+            dry_run=dry_run,
+            note=note,
+            kept_locally=0,
+            detached=attached,
+        )
     config = loads(document, root, machine=machine, owner=owner)
     # `removing`: every record `retired_templates` lists goes, and a profile artifact kept out of
     # git is not refused, so a configuration written before that rule can still be taken back.
@@ -428,7 +436,16 @@ def uninstall(
     detaching = {ATTACH_LEDGER} if attached else set()
     kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS} | detaching)
     kept_config = CONFIG_ARTIFACT not in manifest.records
-    report = UninstallReport(footprint, once, orphans, dry_run, note, kept, kept_config, attached)
+    report = UninstallReport(
+        footprint=footprint,
+        once=once,
+        orphans=orphans,
+        dry_run=dry_run,
+        note=note,
+        kept_locally=kept,
+        kept_config=kept_config,
+        detached=attached,
+    )
     if report.refused:
         # Returned below before `detach`, and a real run would stop here too, so the report says
         # no detach ran or would run.
@@ -463,8 +480,16 @@ def uninstall(
     last = passes.replan(config_retired, force=once_force)
     _apply(root, last)
     _remove_ledger(root)
-    joined = _joined(body, ignore), _joined(judged, last)
-    return UninstallReport(*joined, orphans, dry_run, note, 0, kept_config, attached)
+    return UninstallReport(
+        footprint=_joined(body, ignore),
+        once=_joined(judged, last),
+        orphans=orphans,
+        dry_run=dry_run,
+        note=note,
+        kept_locally=0,
+        kept_config=kept_config,
+        detached=attached,
+    )
 
 
 def _goes(action: Action, local_once: Mapping[str, Template], digests: LocalDigests) -> bool:

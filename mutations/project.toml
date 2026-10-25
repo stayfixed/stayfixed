@@ -867,7 +867,7 @@ reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attach
 [[mutation]]
 name = "uninstall takes a committed ledger for an attachment"
 file = "src/stayfixed/project/uninstall.py"
-before = "        return id is not None and fsops.is_dir(delivery_directory(id))"
+before = "        return binding_id is not None and fsops.is_dir(delivery_directory(binding_id))"
 after = "        return True"
 reddens = [
   "tests/project/test_uninstall.py::test_a_ledger_a_clone_committed_detaches_nothing",
