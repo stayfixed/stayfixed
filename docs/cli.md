@@ -1584,7 +1584,7 @@ mode, the profile, the CI mode, the attribution check (`on` or `off`), the commi
 files kept out of git, the agents stayfixed serves among those listed, and `plugins: none`, since
 `init` installs none. Taking every default gives the attribution check `off`, the preset's commit
 types and no plugin. A value a `stayfixed.toml` you wrote holds outside the plain-path grammar
-prints as `<unprintable name; see --json>`.
+prints as `<unprintable; see stayfixed.toml>`.
 
 The parser refuses a value outside its grammar or its choices (`2`), and it refuses a name or
 a branch by naming the rule, never the value. A branch is a name git accepts as one, written in
@@ -1771,9 +1771,8 @@ only the `AGENTS.md` skeleton and its region share a file by design, an `[artifa
 naming a profile artifact, which every pointer at it reads at its committed path, one naming
 `config` or `gitignore`, which only work at the repository root, and a write git would hide, at an
 existing file a `[paths]` value chose, which the refusal names; a `git` that gives no answer about
-one inside a repository, because it timed out or is not installed, is a `note:` line and
-`unanswered` in `--json` instead, while any other failure to answer still refuses (see
-`upgrade`'s boundary).
+one inside a repository, because it timed out or is not installed, is a `note:` line instead,
+while any other failure to answer still refuses (see `upgrade`'s boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `scaffold` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -1788,9 +1787,7 @@ not list the remotes, or that, with no remote, the branch checked out other than
 the base branch; empty otherwise. An answered `--base-branch` replaced nothing, so it leaves
 `head_note` empty.
 `custom_gates` lists the custom gates a `stayfixed.toml` you wrote configures, by name, and is empty
-when this run writes the file. `unanswered` is the sentence of a `git check-ignore` that could not
-answer, or empty. `picked` is what `what I picked:` lists, keyed by question, each value as the
-configuration holds it.
+when this run writes the file.
 
 ---
 
@@ -1999,8 +1996,7 @@ setting asks for; and outside a git work tree there is no guard, because there i
 from. Inside one (a `.git` in the root or a directory above it), a `git` that gives no answer, because
 it timed out or is not installed, is never a pass said in silence: the run goes on and its report
 ends with a `note:` line saying git could not answer and to check those files once
-`git check-ignore` works, and `--json` carries the same sentence as `unanswered` (empty when git
-answered). Any other failure to answer refuses the run (`2`) before anything is written, since a
+`git check-ignore` works. Any other failure to answer refuses the run (`2`) before anything is written, since a
 repository can choose it: git answers a whole batch with exit 128 when one path in it lies inside
 a submodule. Run it on a
 checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
@@ -2035,8 +2031,7 @@ and running the command again re-plans from there.
 `--json` carries `dry_run`, `moved` (each `{key, before, after}`; a `before` outside its grammar
 prints as `(not a version)` or `(not a commit)`), `held` (the note's sentence, or empty),
 `scaffold` (the plan's rendered report), `writes`, `skipped`, `orphans` (a count), `pin`
-(`{tag, sha}` or `null`), `asked` and `unanswered` (the sentence of a `git check-ignore` that could
-not answer, or empty).
+(`{tag, sha}` or `null`) and `asked`.
 
 ---
 
@@ -2145,8 +2140,8 @@ name git's control directory or stayfixed's own `.stayfixed/`, and a symlinked `
 refused. An existing file git ignores at a place a `[paths]` value chose is never removed or
 rewritten: the run is refused (`2`) before any removal, dry run included, by `upgrade`'s rule,
 naming the files; a run inside a repository whose `git` gives no answer, because it timed out or is
-not installed, goes on with a `note:` line and `unanswered` in `--json`, and one whose `git` fails
-to answer otherwise is refused, as `upgrade`'s are. Take
+not installed, goes on with a `note:` line, and one whose `git` fails to answer otherwise is
+refused, as `upgrade`'s are. Take
 stayfixed's part out of them by hand, or take the `[paths]` key out of `stayfixed.toml`; the run
 then leaves those files where they are and lists them. That includes a file stayfixed itself
 created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
@@ -2188,11 +2183,9 @@ one of them.
 
 `--json` carries `dry_run`, `scaffold` and `once` (each the plan's rendered report), `left` (the
 files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's
-order note, or the missing-configuration count, or empty) and `kept_locally` (how many files
+order note, or the missing-configuration count, or empty), `kept_locally` (how many files
 under `.stayfixed/local/` the run would leave, on a dry run and on a run whose plans refuse; `0` on
-a run that removed what it planned), `kept_config`, `unanswered` (the sentence of a
-`git check-ignore` that could not answer, or empty) and `detached` (whether the repository was
-attached, and so detached first, or would be on a dry run).
+a run that removed what it planned) and `kept_config`.
 
 ---
 

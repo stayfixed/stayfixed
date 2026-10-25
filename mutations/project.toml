@@ -3103,7 +3103,7 @@ reddens = [
 [[mutation]]
 name = "init prints an adopted commit type as written"
 file = "src/stayfixed/project/commands.py"
-before = "        value = [printable(item) for item in value]"
+before = "        value = [printable(item, PICKED_WITHHELD) for item in value]"
 after = "        value = list(value)"
 reddens = [
   "tests/project/test_init.py::test_a_commit_type_an_adopted_document_wrote_prints_only_inside_the_grammar",

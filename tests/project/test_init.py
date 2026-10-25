@@ -15,6 +15,7 @@ from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.config.owned import OWNED, OwnedKeyError
 from stayfixed.config.reading import ConfigError
 from stayfixed.errors import Failure, Refusal
+from stayfixed.project.commands import PICKED_WITHHELD
 from stayfixed.project.footprint import LOCAL_ROOT_ONLY
 from stayfixed.project.init import HEADER, InitReport, init
 from stayfixed.project.templates import NOT_ASKED, ONE_FILE, OWN_NAME
@@ -805,7 +806,7 @@ def test_a_commit_type_an_adopted_document_wrote_prints_only_inside_the_grammar(
 ) -> None:
     # `what I picked:` reads the adopted `stayfixed.toml`, whose commit types no grammar holds: a
     # clone's type carrying an escape sequence and `::error::` would drive the terminal and the CI
-    # runner. It prints withheld, and `--json` carries it as written. Mutation (oracle):
+    # runner. It prints withheld, pointing at the file that holds it as written. Mutation (oracle):
     # `mutations/`'s "init prints an adopted commit type as written" -> the first `in` reddens.
     root = _repo(tmp_path)
     hostile = "x\x1b[2J\n::error::forged"
@@ -816,7 +817,5 @@ def test_a_commit_type_an_adopted_document_wrote_prints_only_inside_the_grammar(
     (root / CONFIG_FILE).write_text(document, encoding="utf-8")
     code, printed, _ = cli(root, tmp_path, "init", "--yes", "--dry-run", "--no-ci")
     assert code == 0, printed
-    assert "  commit_messages.types: feat, <unprintable name; see --json>\n" in printed
+    assert f"  commit_messages.types: feat, {PICKED_WITHHELD}\n" in printed
     assert "\x1b" not in printed and "::error::" not in printed
-    code, printed, _ = cli(root, tmp_path, "init", "--yes", "--dry-run", "--no-ci", "--json")
-    assert json.loads(printed)["picked"]["commit_messages.types"] == ["feat", hostile]

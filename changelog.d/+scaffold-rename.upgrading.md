@@ -7,7 +7,8 @@ reads the new name.
 `stayfixed uninstall` no longer refuses a repository attached to an overlay: it runs
 `stayfixed detach` first, which withdraws the overlay's plugin and the allow rules `attach` placed,
 and then takes the scaffold back. Attached means `attach`'s ledger and the render `attach` keeps
-outside the repository, which `detach` removes, so a ledger a clone committed detaches nothing; `--json` carries `detached`, and the dry run says it would. And
+outside the repository, which `detach` removes, so a ledger a clone committed detaches nothing; a
+`note:` line says so, and the dry run says it would. And
 `stayfixed commit strip`, which the commit-message hook runs, now leaves a message as it is when
 your own Claude Code settings (`~/.claude/settings.json`) set `attribution.commit` to text: what
 your commits carry is then the choice you made in the harness. Set empty, it says your commits

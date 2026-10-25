@@ -91,6 +91,7 @@ CUSTOM_GATES = (
 )
 # Heads the list of what the run took for each question, which the skip path took unasked.
 PICKED = "what I picked:"
+PICKED_WITHHELD = "<unprintable; see stayfixed.toml>"
 QUESTIONS_HELP = (
     "print the defaults init would take, where each came from and the flag that changes it; "
     "under --json, as a JSON Schema. Writes nothing"
@@ -141,14 +142,15 @@ def run_questions(args: argparse.Namespace) -> Result:
 
 def _picked_line(key: str, value: object) -> str:
     """One line of what `init --yes` picked. A value an adopted `stayfixed.toml` wrote, a commit
-    type above all, prints through `printable`; `--json` carries it as it is."""
+    type above all, prints through `printable`, withheld as `PICKED_WITHHELD` outside the grammar:
+    the file holds it as it is."""
     from stayfixed.printed import printable
     from stayfixed.project.questions import shown
 
     if isinstance(value, str) and value:
-        value = printable(value)
+        value = printable(value, PICKED_WITHHELD)
     elif isinstance(value, list):
-        value = [printable(item) for item in value]
+        value = [printable(item, PICKED_WITHHELD) for item in value]
     return f"  {key}: {shown(value)}"
 
 
@@ -238,8 +240,6 @@ def run_init(args: argparse.Namespace) -> Result:
         "head_note": report.head_note,
         "stamped": report.stamped,
         "custom_gates": list(report.custom_gates),
-        "unanswered": report.unanswered,
-        "picked": chosen,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
@@ -347,7 +347,6 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         "orphans": report.orphans,
         "pin": _pin(report.resolution.pin),
         "asked": report.resolution.asked,
-        "unanswered": report.unanswered,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
@@ -429,8 +428,6 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         "note": report.note,
         "kept_locally": report.kept_locally,
         "kept_config": report.kept_config,
-        "unanswered": report.unanswered,
-        "detached": report.detached,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

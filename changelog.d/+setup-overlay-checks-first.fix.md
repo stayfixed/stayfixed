@@ -14,5 +14,5 @@ another repository's work tree holds it. `stayfixed attach` no longer runs `pre-
 the overlay; `setup --overlay` installs the commit-time secret scan when it makes one, and
 `doctor`'s `pre-commit` row says when it is missing. And `init`, `upgrade` and `uninstall` go on
 when `git check-ignore` gives no answer, timing out under load or not installed, saying so in a
-`note:` line and in `unanswered` under `--json`, where they used to refuse until it answered; any
+`note:` line, where they used to refuse until it answered; any
 other failure to answer still refuses, since a repository can cause one.

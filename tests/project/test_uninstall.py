@@ -16,7 +16,7 @@ import stayfixed
 from stayfixed.attach.api import detach
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Refusal
-from stayfixed.project.commands import DETACHED
+from stayfixed.project.commands import DETACHED, DETACHED_DRY
 from stayfixed.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
 from stayfixed.project.init import init
 from stayfixed.project.templates import (
@@ -196,9 +196,9 @@ def test_an_attached_repository_is_detached_and_then_uninstalled(
     _grant(store.parents[2], allow=(RULE,), hooks=True)
     _attach(root, store, machine)
     before = snapshot(root)
-    code, printed, _ = cli(root, tmp_path, "uninstall", "--dry-run", "--json", machine=machine)
+    code, printed, _ = cli(root, tmp_path, "uninstall", "--dry-run", machine=machine)
     assert code == 0, printed
-    assert json.loads(printed)["detached"] is True
+    assert f"note: {DETACHED_DRY}\n" in printed
     assert_snapshot_unchanged(root, before)
     code, printed, _ = cli(root, tmp_path, "uninstall", machine=machine)
     assert code == 0, printed
@@ -227,9 +227,9 @@ def test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout(
     _attach(root, store, machine)
     ledger = root / ".stayfixed" / "local" / "attach.json"
     assert ledger.is_file()
-    code, printed, _ = cli(side, tmp_path, "uninstall", "--json", machine=machine)
+    code, printed, _ = cli(side, tmp_path, "uninstall", machine=machine)
     assert code == 0, printed
-    assert json.loads(printed)["detached"] is True
+    assert f"note: {DETACHED}\n" in printed
     assert not ledger.exists() and not (side / MANIFEST_PATH).exists()
 
 
