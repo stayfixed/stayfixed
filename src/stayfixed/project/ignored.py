@@ -44,10 +44,13 @@ footprint's ignore block keeps out of git on purpose.
 
 **No repository, no guard.** Outside a git work tree there is no diff for a change to hide
 from, and every write still goes through `contained()` and the `O_NOFOLLOW` walk. Inside one, a
-`check-ignore` that answers neither "some matched" nor "none matched" — a `git` that timed out, or
-that is not there to run — is a warning the command reports (`UNANSWERED`) and never a pass said
-in silence, and never a refusal: a `git` slow under load stopped every `init`, `upgrade` and
-`uninstall` until it answered. Which of the two this is, is read off the disk
+`check-ignore` that gave no answer — `git_run`'s `-1`, a `git` that timed out under load — is a
+warning the command reports (`UNANSWERED`) and never a pass said in silence, and never a refusal:
+a `git` slow under load stopped every `init`, `upgrade` and `uninstall` until it answered. Any
+other answer that is neither "some matched" nor "none matched" refuses (`DECLINED`), because a
+repository can choose it: git answers a whole batch holding a path inside a submodule with exit
+128, so one `[paths]` value pointed there made the guard a warning for every other target in the
+batch, a git-ignored `.env` among them. Whether this is a work tree at all is read off the disk
 (`gitenv.in_work_tree`) and never asked of the same `git`, which fails the same way under the same
 load: a `rev-parse` that timed out beside the `check-ignore` read as "no repository" and let the
 write through with nothing said.
@@ -83,6 +86,10 @@ IGNORED_REMOVING = (
     "take that [paths] key out of stayfixed.toml: uninstall then leaves those files where they "
     "are and lists them"
 )
+DECLINED = (
+    "git declined to say whether the files this run would write or remove are ignored, so nothing "
+    "was written; run it again once `git check-ignore` answers in this repository"
+)
 UNANSWERED = (
     "git could not say whether the files this run writes or removes are ignored, so one at a "
     "place a [paths] value in stayfixed.toml chose may change with no diff to show it; check them "
@@ -114,7 +121,7 @@ def _preset_places(config: Config) -> Mapping[str, frozenset[str]]:
 def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> str:
     """Refuse when git ignores an existing file a write or removal in `plans` targets at a place
     a `[paths]` value chose; `removing` picks `uninstall`'s remedy. Returns `UNANSWERED` when git
-    could not answer inside a work tree, for the command to report, and `""` otherwise."""
+    gave no answer inside a work tree, for the command to report, and `""` otherwise."""
     existing = [
         action
         for planned in plans
@@ -151,4 +158,8 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
             text = IGNORED_REMOVING if removing else IGNORED
             raise Refusal(text.format(count=len(ignored), names=names))
         return ""
-    return UNANSWERED if in_work_tree(root) else ""
+    if code == -1:
+        return UNANSWERED if in_work_tree(root) else ""
+    if in_work_tree(root):
+        raise Refusal(DECLINED)
+    return ""

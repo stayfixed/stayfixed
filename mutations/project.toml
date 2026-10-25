@@ -1111,7 +1111,18 @@ name = "a guard whose git timed out reads as no repository"
 file = "src/stayfixed/project/ignored.py"
 before = '    return UNANSWERED if in_work_tree(root) else ""'
 after = '    return UNANSWERED if git_run(root, "rev-parse", "--is-inside-work-tree")[0] == 0 else ""'
-reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_is_a_warning[timed-out]"]
+reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_warns_only_when_it_timed_out[timed-out]"]
+
+# Only a `check-ignore` that gave no answer, as one that timed out gives none, is a warning: any
+# other failure refuses, because a repository can choose it. git answers a whole batch holding a
+# path inside a submodule with exit 128, and as a warning that let a pulled commit write past the
+# guard to a git-ignored `.env` beside it.
+[[mutation]]
+name = "a check-ignore that declines is a warning"
+file = "src/stayfixed/project/ignored.py"
+before = "    if code == -1:"
+after = "    if True:"
+reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_warns_only_when_it_timed_out[declined]"]
 
 # Paths are compared for identity case-folded (`fsops.path_key`): on the default macOS and Windows
 # filesystems `claude.md` is `CLAUDE.md`. This entry and the three named for a case variant each put

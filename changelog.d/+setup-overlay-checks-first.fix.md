@@ -11,5 +11,6 @@ where it lives is yours to choose, and `stayfixed doctor`'s `overlay-requires` r
 another repository's work tree holds it. `stayfixed attach` no longer runs `pre-commit install` in
 the overlay; `setup --overlay` installs the commit-time secret scan when it makes one, and
 `doctor`'s `pre-commit` row says when it is missing. And `init`, `upgrade` and `uninstall` go on
-when `git check-ignore` cannot answer, timing out under load or not installed, saying so in a
-`note:` line and in `unanswered` under `--json`, where they used to refuse until it answered.
+when `git check-ignore` gives no answer, timing out under load or not installed, saying so in a
+`note:` line and in `unanswered` under `--json`, where they used to refuse until it answered; any
+other failure to answer still refuses, since a repository can cause one.

@@ -13,7 +13,7 @@ from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import git_run
 from stayfixed.project import ignored as module
-from stayfixed.project.ignored import IGNORED, IGNORED_REMOVING, UNANSWERED
+from stayfixed.project.ignored import DECLINED, IGNORED, IGNORED_REMOVING, UNANSWERED
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
 from stayfixed.project.upgrade import upgrade
@@ -284,16 +284,19 @@ def test_outside_a_repository_there_is_no_diff_to_hide_from(tmp_path: Path) -> N
 
 
 @needs_git
-@pytest.mark.parametrize("timed_out", [False, True], ids=["refused", "timed-out"])
-def test_a_check_ignore_that_cannot_answer_inside_a_repository_is_a_warning(
+@pytest.mark.parametrize("timed_out", [False, True], ids=["declined", "timed-out"])
+def test_a_check_ignore_that_cannot_answer_inside_a_repository_warns_only_when_it_timed_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool
 ) -> None:
-    # A guard that cannot answer must not read as a pass, and a `git` that timed out under load
-    # must not stop the run either: the run goes on and says git could not answer. `timed-out` is
-    # every `git` call ending the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this
-    # is a repository was asked of `rev-parse`, which timed out too, so the guard passed silently.
-    # Mutation (oracle): `mutations/`'s "a guard whose git timed out reads as no repository" (ask
-    # `rev-parse` again) -> the `timed-out` case says nothing and this reddens.
+    # A guard that cannot answer must not read as a pass. A `git` that timed out under load must
+    # not stop the run either: it goes on and says git could not answer. `timed-out` is every `git`
+    # call ending the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this is a
+    # repository was asked of `rev-parse`, which timed out too, so the guard passed silently. Any
+    # other answer refuses: git answers a batch holding a path inside a submodule with exit 128,
+    # so a pulled commit that put one `[paths]` value there made the guard a warning, and
+    # `upgrade` appended to a git-ignored `.env` beside it. Mutations (oracle): `mutations/`'s "a
+    # guard whose git timed out reads as no repository" -> `timed-out`, asking `rev-parse` again;
+    # "a check-ignore that declines is a warning" -> `declined`.
     root = initialised(tmp_path)
 
     def failing(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
@@ -307,10 +310,17 @@ def test_a_check_ignore_that_cannot_answer_inside_a_repository_is_a_warning(
     # An existing file at a place a `[paths]` value chose, so there is something to ask about.
     (root / "notes.md").write_text("ours\n", encoding="utf-8")
     _append(root / CONFIG_FILE, '\n[paths]\nagents_md = "notes.md"\n')
-    report = upgrade(
-        root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=True, force=()
-    )
-    assert report.unanswered == UNANSWERED
+    if timed_out:
+        report = upgrade(
+            root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=True, force=()
+        )
+        assert report.unanswered == UNANSWERED
+        return
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        _upgrade(root, tmp_path)
+    assert str(refused.value) == DECLINED
+    assert_snapshot_unchanged(root, before)
 
 
 @needs_git
