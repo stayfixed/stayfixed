@@ -1832,8 +1832,10 @@ default is exactly what `stayfixed init --yes` writes when that question is not 
 renamed, because git does not refresh one it has. That is why its source is printed: you can
 catch it.
 
-`--json` carries `questions`: a JSON Schema object (draft 2020-12) with ten required
-`properties`, in the order the `init` skill asks them. Each but the last is keyed by the
+`--json` carries `questions`: a JSON Schema object (draft 2020-12) with ten `properties`, and
+`required` naming all ten in the order the `init` skill asks them; read the order there, since
+`--json` prints every object's keys sorted, so the properties arrive by name. Each but the last is
+keyed by the
 `stayfixed.toml` key its answer writes: `project.name`, `project.base_branch`, `memory.mode`,
 `stayfixed.profile`, `ci.mode`, `commit_messages.attribution_check`, `commit_messages.types`,
 `artifacts.local` and `stayfixed.agents`; the last, `plugins`, offers the plugins the preset

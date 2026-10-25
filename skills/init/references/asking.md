@@ -1,10 +1,11 @@
 # Asking across harnesses
 
 The questions come from `stayfixed init --questions --json`: each property under
-`questions.properties` is one question, in the order to ask it; its `oneOf`, `items.enum` or
-`boolean` type gives its options, and its `default` is the recommendation, offered first and
-marked so. `project.name` and `project.base_branch` are free text held to the property's
-`pattern`, and so is each commit type; the command refuses a value outside it, naming the rule.
+`questions.properties` is one question, asked in the order `questions.required` lists them (the
+properties themselves arrive sorted by name); its `oneOf`, `items.enum` or `boolean` type gives
+its options, and its `default` is the recommendation, offered first and marked so.
+`project.name` and `project.base_branch` are free text held to the property's `pattern`, and so is
+each commit type; the command refuses a value outside it, naming the rule.
 Each question's `x-stayfixed-tradeoff` is four lines, relayed as written with the question:
 what you get, what you give up, what it leaves behind, how to undo it.
 

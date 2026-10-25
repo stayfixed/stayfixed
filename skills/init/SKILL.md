@@ -13,10 +13,11 @@ harness's limits. Never run this skill in a forked context: a subagent cannot as
 
 1. Run `stayfixed init --questions --json`. It refuses a repository that already has
    `.stayfixed/manifest.json` (offer `stayfixed upgrade`) or a `stayfixed.toml` (see the first
-   rule). Otherwise `questions.properties` holds ten questions, in the order to ask them, each
-   with its `default` (what `stayfixed init --yes` alone would write), its `x-stayfixed-source`,
-   its `x-stayfixed-flag` and its `x-stayfixed-tradeoff`: four lines, what the answer gives
-   (`get`), what it gives up (`give_up`), what it leaves behind (`trace`) and how to undo it.
+   rule). Otherwise `questions.properties` holds ten questions, asked in the order
+   `questions.required` lists them, each with its `default` (what `stayfixed init --yes` alone
+   would write), its `x-stayfixed-source`, its `x-stayfixed-flag` and its
+   `x-stayfixed-tradeoff`: four lines, what the answer gives (`get`), what it gives up
+   (`give_up`), what it leaves behind (`trace`) and how to undo it.
 2. Offer the skip first: show every default in one list and ask whether to take them all. On a
    yes, go to step 5 with no answer flag. A name with no default is "not derivable": ask for it
    even then.

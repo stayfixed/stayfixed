@@ -3,6 +3,7 @@ writes, each source one of `detect`'s phrases, and no byte a grammar rejected.""
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from stayfixed.project.questions import (
     questions,
 )
 from stayfixed.scaffold import MANIFEST_PATH
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
 from tests.runners import LsRemote
@@ -76,6 +78,32 @@ def test_the_schema_keys_are_the_stayfixed_toml_keys_the_answers_write(tmp_path:
     assert len(PROPERTIES) == 10
     for key, question in schema["properties"].items():
         assert question["x-stayfixed-flag"] == FLAGS[key], key
+
+
+@needs_git
+def test_the_skill_reads_the_order_to_ask_in_from_required_in_the_json(tmp_path: Path) -> None:
+    # The skill and docs/cli.md said each property under `questions.properties` came in the order
+    # to ask it, but `--json` prints with sorted keys, so the properties arrive alphabetically and
+    # a skill walking them asked about the agents first. `required` is a list, which keeps its
+    # order through the printer, so that is where the skill reads the order: here as the skill
+    # reads it, from the printed JSON, in the order the skill and the release notes name.
+    root = repository(tmp_path)
+    code, printed, _ = cli(root, tmp_path, "init", "--questions", "--json")
+    assert code == 0, printed
+    schema = json.loads(printed)["questions"]
+    assert schema["required"] == [
+        "project.name",
+        "project.base_branch",
+        "memory.mode",
+        "stayfixed.profile",
+        "ci.mode",
+        "commit_messages.attribution_check",
+        "commit_messages.types",
+        "artifacts.local",
+        "stayfixed.agents",
+        "plugins",
+    ]
+    assert sorted(schema["properties"]) == sorted(schema["required"])
 
 
 @needs_git
