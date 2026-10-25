@@ -3166,7 +3166,7 @@ reddens = [
 ]
 
 
-# `init`'s `what I picked:` list prints the adopted `stayfixed.toml`'s commit types, which no
+# `init`'s `picked:` list prints the adopted `stayfixed.toml`'s commit types, which no
 # grammar holds, so an escape sequence or `::error::` in one would reach the terminal and the CI
 # runner as written.
 [[mutation]]

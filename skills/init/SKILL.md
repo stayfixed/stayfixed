@@ -30,8 +30,8 @@ harness's limits. Never run this skill in a forked context: a subagent cannot as
 5. Build the command: `--yes --dry-run`, then each answer that differs from its default as its
    `x-stayfixed-flag`, once per item for a list, such as
    `stayfixed init --yes --dry-run --name widget --local roadmap-history`. Leave the plugins out:
-   they are not `init`'s. Run it and relay both reports, the `CI:` line, the `what I picked:`
-   list and every `note:` line. Ask for a final yes. **Silence, a timeout or an empty answer is a
+   they are not `init`'s. Run it and relay both reports, the `CI:` line, the `picked:` list
+   and every `note:` line. Ask for a final yes. **Silence, a timeout or an empty answer is a
    no.**
 6. On a yes, run the same command without `--dry-run`, and relay the real run the same way.
 7. If plugins were chosen, run the plugins question's `x-stayfixed-flag` with each one. It is a

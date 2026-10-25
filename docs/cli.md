@@ -1586,7 +1586,7 @@ Each answer flag replaces one default and writes one key:
 `--no-ci` answers the CI question (below). The recommended plugins are not `init`'s to install:
 `init --questions` asks about them, and the answer is `stayfixed setup`'s.
 
-After the CI line the run prints `what I picked:`, one line per question in the order
+After the CI line the run prints `picked:`, one line per question in the order
 `init --questions` asks them, with the value this run took: the name, the base branch, the memory
 mode, the profile, the CI mode, the attribution check (`on` or `off`), the commit types, the
 files kept out of git, the agents stayfixed serves among those listed, and `plugins: none`, since
