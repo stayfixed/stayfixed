@@ -558,12 +558,14 @@ def commit_gate(root: Path, config: Config, base: str) -> list[Finding]:
 
 def harness_says_what_commits_carry(home: Path | None) -> bool:
     """Whether the machine owner's Claude Code settings set `attribution.commit`, the harness's own
-    word on what a commit it makes carries, to any value, the empty one that adds nothing included.
+    word on what a commit it makes carries, to text.
 
     `commit strip` gives way to it: the trailer is then the person's choice, made in the harness,
-    and the hook undid it. Only the owner's settings file under `home` is read, never one a
-    repository commits, because a clone could otherwise turn the hook off. A file that is not
-    there, cannot be read or is not one JSON object sets nothing, and the strip goes on.
+    and the hook undid it. Set empty, it says commits carry nothing, so a trailer that arrives
+    anyway is the one the hook strips, and giving way to it would invert that choice. Only the
+    owner's settings file under `home` is read, never one a repository commits, because a clone
+    could otherwise turn the hook off. A file that is not there, cannot be read or is not one JSON
+    object sets nothing, and the strip goes on.
     """
     from stayfixed.errors import Failure
     from stayfixed.harnesses import CLAUDE, lenient_settings
@@ -578,4 +580,5 @@ def harness_says_what_commits_carry(home: Path | None) -> bool:
     except (OSError, UnicodeDecodeError, Failure):
         return False
     attribution = document.get("attribution")
-    return isinstance(attribution, dict) and "commit" in attribution
+    commit = attribution.get("commit") if isinstance(attribution, dict) else None
+    return isinstance(commit, str) and commit != ""

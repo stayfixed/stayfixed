@@ -868,7 +868,7 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     ("document", "strips"),
     [
         ({"attribution": {"commit": "Co-Authored-By: Claude <noreply@anthropic.com>"}}, False),
-        ({"attribution": {"commit": ""}}, False),
+        ({"attribution": {"commit": ""}}, True),
         ({"attribution": {"pr": ""}}, True),
         ({}, True),
     ],
@@ -878,11 +878,13 @@ def test_commit_strip_gives_way_to_the_harness_attribution_setting(
     tmp_path: Path, document: dict[str, object], strips: bool
 ) -> None:
     # Claude Code's `attribution.commit` in the user's own settings is the person saying what
-    # their commits carry. The hook stripping it anyway undid a choice made in the harness, so
-    # with the setting there the message is left as it was; with it unset, or set only for pull
-    # requests, the trailer the harness adds by default is stripped as before. The suite's `HOME`
-    # is a directory of its own (`tests/conftest.py`). Mutation (oracle): `mutations/`'s "commit
-    # strip strips a trailer the harness's attribution setting asked for" -> the first two cases.
+    # their commits carry. The hook stripping the text they set undid a choice made in the
+    # harness, so with text there the message is left as it was. Set empty, it says commits carry
+    # nothing, and a trailer that arrives anyway is the one the hook exists to strip: giving way
+    # to it inverted the choice. Unset, or set only for pull requests, the trailer the harness
+    # adds by default is stripped as before. The suite's `HOME` is a directory of its own
+    # (`tests/conftest.py`). Mutation (oracle): `mutations/`'s "commit strip strips a trailer the
+    # harness's attribution setting asked for" -> `commit-text`.
     settings = Path.home() / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(json.dumps(document), encoding="utf-8")

@@ -531,8 +531,9 @@ Rewrite a commit-message file in place with the attribution lines of its trailin
 block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
 says which; a message that is *only* attribution is left alone, because emptying it aborts the
 commit with a confusing error and CI explains better. It strips nothing where your own Claude Code
-settings, `~/.claude/settings.json`, set `attribution.commit` to any value, the empty one
-included: what a commit carries is then your choice in the harness, and the run says so. A
+settings, `~/.claude/settings.json`, set `attribution.commit` to text: what a commit carries is
+then your choice in the harness, and the run says so. Set empty, it says your commits carry
+nothing, so a trailer that arrives anyway is stripped as it is with the setting unset. A
 repository's own `.claude/settings.json` is not read for it, since a clone could then turn the
 hook off. Refuses a symlink, and fails (`1`) on a
 file it cannot read, a file that is not UTF-8 included.

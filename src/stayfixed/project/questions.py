@@ -101,7 +101,8 @@ TRADE_OFFS: dict[str, tuple[str, str, str, str]] = {
         "the commit gate fails a pull request whose commit messages end in an AI tool's "
         "attribution trailer or footer",
         "every such trailer has to come out before a merge; the git hook `stayfixed setup "
-        "--git-hooks` installs strips it as you commit",
+        "--git-hooks` installs strips it as you commit, except where your Claude Code settings "
+        "set attribution.commit to text, which the hook then leaves for the gate to fail",
         "[commit_messages] attribution_check in stayfixed.toml",
         "set it to false in stayfixed.toml",
     ),
