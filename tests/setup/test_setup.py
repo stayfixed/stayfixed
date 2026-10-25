@@ -341,6 +341,24 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
     assert not any(argv and argv[0] == "codex" for argv in runner.calls)
 
 
+def test_a_run_that_names_no_plugin_asks_no_harness_anything(tmp_path: Path) -> None:
+    # A third-party plugin runs in every session of its harness, so none is installed unasked, and
+    # a run that names none registers no marketplace and says nothing of one: a harness with no
+    # declared marketplace is noted only for a plugin somebody asked for. Mutation: `mutations/`'s
+    # "setup reaches the plugin commands with no plugin named".
+    runner = Recorder()
+    report = setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        overlay=None,
+    )
+    assert runner.calls == []
+    assert report.plugins_installed == ()
+    assert not [note for note in report.notes if "marketplace" in note], report.notes
+
+
 def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
     tmp_path: Path,
 ) -> None:

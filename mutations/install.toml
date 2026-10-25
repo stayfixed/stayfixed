@@ -107,6 +107,16 @@ before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not 
 after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
 reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
 
+# A plugin is installed only when it is named: a run naming none registered the preset's
+# marketplace on every harness that declares one and noted the rest, for a person who asked for no
+# plugin at all.
+[[mutation]]
+name = "setup reaches the plugin commands with no plugin named"
+file = "src/stayfixed/setup/run.py"
+before = "    if not selectors:\n        return (), ()"
+after = "    if False:\n        return (), ()"
+reddens = ["tests/setup/test_setup.py::test_a_run_that_names_no_plugin_asks_no_harness_anything"]
+
 # The creation gate, restated in code: `--overlay create:` runs `gh repo create ... --private` on
 # GitHub, and a default that reaches it is the one default this command may not have. Without this
 # guard, every ordinary run with no `--overlay` flag at all would still reach the overlay branch,

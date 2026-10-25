@@ -230,11 +230,10 @@ def _install_plugins(
     for agent in agents:
         market = _marketplace(preset, agent)
         if market is None:
-            if selectors:
-                notes.append(
-                    f"{agent}: no verified marketplace for {', '.join(selectors)}; "
-                    f"install manually if this harness supports it (see README)"
-                )
+            notes.append(
+                f"{agent}: no verified marketplace for {', '.join(selectors)}; "
+                f"install manually if this harness supports it (see README)"
+            )
             continue
         source, marketplace = market
         add_argv_of, install_argv_of = _MARKETPLACE_ADD.get(agent), _PLUGIN_INSTALL.get(agent)
