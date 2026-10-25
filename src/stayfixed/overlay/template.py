@@ -29,7 +29,7 @@ from functools import partial
 from pathlib import Path
 
 from stayfixed.errors import Failure
-from stayfixed.overlay.layout import OVERLAY_FILES, RETIRED_MEMORY_README
+from stayfixed.overlay.layout import COMMON_CLAUDE, OVERLAY_FILES, RETIRED_MEMORY_README
 from stayfixed.scaffold import Kind, Template
 from stayfixed.templates import tree
 
@@ -72,8 +72,9 @@ _RETIRED = {
     ),
     "hooks/hooks.json": (
         frozenset({"78922a784ee78e9e50587e93628cd3b9d4dfbe49087adc4514e6781cea38cbb9"}),
-        "the overlay is no plugin any more and nothing reads this file; `stayfixed attach` renders "
-        "the hook entries in `common/claude/hooks.json`, so move yours there and delete this copy",
+        "the overlay is no plugin any more and nothing reads this file; `stayfixed attach` "
+        f"renders the hook entries in `{COMMON_CLAUDE}/hooks.json`, so move yours there and "
+        "delete this copy",
     ),
 }
 
