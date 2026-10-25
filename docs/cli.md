@@ -2087,16 +2087,17 @@ empty directory, and to `init` its presence means the project uses that harness.
 detects that harness and lists it in `[stayfixed] agents` until you remove the directory.
 
 **An attached repository is detached first.** When `attach`'s ledger is in this checkout or in the
-main checkout, where `attach` keeps it from every worktree, and the repository carries the binding
-id `attach` draws into its git common directory, which no commit can put there, the run asks every
-refusal below, then
+main checkout, where `attach` keeps it from every worktree, and the render `attach` writes for the
+repository's binding id is in `~/.local/share/stayfixed/delivery/`, outside the work tree where no
+commit reaches, the run asks every refusal below, then
 runs [`stayfixed detach`](#stayfixed-detach---root-path---machine-path) before its first write,
 which withdraws what `attach` placed, the overlay's plugin and the allow rules among it, and takes
 the ledger; a `note:` line says so, and a dry run says it would. A `detach` that refuses or stops
 part-way stops the run there with nothing of its own done, its own sentence and exit code given,
 and running `uninstall` again finishes from what is left. The ledger is not counted among the
-files `.stayfixed/local/` holds. A ledger with no binding id, which a clone can commit, detaches
-nothing: it is a file the run would not remove, and refused as one.
+files `.stayfixed/local/` holds. A ledger with no render, which a clone can commit and a pull
+request can commit after a `detach`, detaches nothing: it is a file the run would not remove, and
+refused as one.
 
 **Refused before any write** (`2`): the repository is not initialised; `stayfixed.toml` is missing
 while the manifest records it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so

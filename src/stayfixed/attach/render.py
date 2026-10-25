@@ -54,15 +54,12 @@ import stayfixed
 from stayfixed import fsops
 from stayfixed.attach.permissions import HOOKS_FILE, PROJECT_CLAUDE, hook_groups
 from stayfixed.attach.rules import scoped_exist
-from stayfixed.binding import short, unwritten
-from stayfixed.config.paths import data_directory
+from stayfixed.binding import delivery_directory, short, unwritten
 from stayfixed.errors import Failure
 from stayfixed.memory.api import PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE
 from stayfixed.printed import quoted
 
-# Under the machine's data directory: one render per binding id.
-DELIVERY = "delivery"
 MARKETPLACE_PREFIX = "stayfixed-delivery-"
 PLUGIN_PREFIX = "overlay-"
 # The plugin's directory inside the marketplace, as the marketplace's `source` names it.
@@ -129,11 +126,6 @@ def marketplace_name(id: str) -> str:
 
 def plugin_name(id: str) -> str:
     return f"{PLUGIN_PREFIX}{id}"
-
-
-def delivery_directory(id: str) -> Path:
-    """`<data>/delivery/<id>/`, derived from the id and nothing else."""
-    return data_directory() / DELIVERY / id
 
 
 def filled(table: tuple[str, ...], value: str) -> list[str]:

@@ -102,7 +102,7 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
 def _render_of(root: Path) -> tuple[str, Path]:
     """The binding id of `root`'s repository and the render directory it names."""
     from stayfixed import binding
-    from stayfixed.attach.render import delivery_directory
+    from stayfixed.binding import delivery_directory
 
     id = binding.read_id(root)
     assert id is not None

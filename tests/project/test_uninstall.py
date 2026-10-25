@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 import stayfixed
+from stayfixed.attach.api import detach
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Refusal
 from stayfixed.project.commands import DETACHED
@@ -232,16 +233,9 @@ def test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout(
     assert not ledger.exists() and not (side / MANIFEST_PATH).exists()
 
 
-@needs_git
-def test_a_ledger_a_clone_committed_detaches_nothing(tmp_path: Path) -> None:
-    # Whether a repository is attached is the binding id's to say, in the git common directory,
-    # which no commit reaches, and never the ledger's, which a clone can commit with `git add -f`.
-    # Read off the ledger, `uninstall` in a never-attached clone ran `detach`, which deleted the
-    # owner's untracked rule file and took their allow rule and `autoMemoryDirectory` out of their
-    # settings. The committed ledger is a file under `.stayfixed/local/` the run would not remove,
-    # so the run refuses with nothing touched. Mutation (oracle): `mutations/`'s "uninstall takes a
-    # committed ledger for an attachment" -> the owner's files go and this reddens.
-    root = initialised(tmp_path)
+def _forge_a_ledger(root: Path) -> None:
+    """A ledger a clone commits, naming the owner's untracked rule file, an allow rule and a
+    settings key, and the owner's own copies of all three."""
     ledger = {
         "store": "",
         "allow": ["Bash(npm test)"],
@@ -252,14 +246,48 @@ def test_a_ledger_a_clone_committed_detaches_nothing(tmp_path: Path) -> None:
     }
     (root / ".stayfixed" / "local").mkdir(parents=True, exist_ok=True)
     (root / ".stayfixed" / "local" / "attach.json").write_text(json.dumps(ledger), encoding="utf-8")
-    (root / ".codex" / "rules").mkdir(parents=True)
+    (root / ".codex" / "rules").mkdir(parents=True, exist_ok=True)
     (root / ".codex" / "rules" / "team.rules").write_text("# the owner's\n", encoding="utf-8")
     (root / ".claude").mkdir(exist_ok=True)
     settings = {"permissions": {"allow": ["Bash(npm test)"]}, "autoMemoryDirectory": "/notes"}
     (root / ".claude" / "settings.local.json").write_text(json.dumps(settings), encoding="utf-8")
+
+
+@needs_git
+def test_a_ledger_a_clone_committed_detaches_nothing(tmp_path: Path) -> None:
+    # Whether a repository is attached is the binding id's to say, in the git common directory,
+    # which no commit reaches, and never the ledger's, which a clone can commit with `git add -f`.
+    # Read off the ledger, `uninstall` in a never-attached clone ran `detach`, which deleted the
+    # owner's untracked rule file and took their allow rule and `autoMemoryDirectory` out of their
+    # settings. The committed ledger is a file under `.stayfixed/local/` the run would not remove,
+    # so the run refuses with nothing touched. Mutation (oracle): `mutations/`'s "uninstall takes a
+    # committed ledger for an attachment" -> the owner's files go and this reddens.
+    root = initialised(tmp_path)
+    _forge_a_ledger(root)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
         _uninstall(root, tmp_path)
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_a_ledger_committed_after_a_detach_detaches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `detach` keeps the binding id, so a checkout attached once and detached since still carries
+    # one: read as "attached", the id let a ledger a pull request committed later have `uninstall`
+    # run `detach` over the owner's untracked rule file and settings again. Attached is the
+    # render `attach` writes and `detach` removes, outside the work tree.
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    _attach(root, store, machine)
+    detach(root, runner=Recorder())
+    _forge_a_ledger(root)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
     assert str(refused.value) == KEPT_LOCALLY.format(count=1)
     assert_snapshot_unchanged(root, before)
 

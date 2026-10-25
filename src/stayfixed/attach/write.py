@@ -79,7 +79,6 @@ from stayfixed.attach.render import (
     PLUGIN_UNINSTALL_LOCAL,
     Part,
     Rendered,
-    delivery_directory,
     filled,
     marketplace_name,
     plugin_name,
@@ -89,6 +88,7 @@ from stayfixed.attach.render import (
 from stayfixed.attach.render import write as write_render
 from stayfixed.binding import (
     bound_project,
+    delivery_directory,
     ensure_id,
     main_checkout_or_none,
     read_id,
