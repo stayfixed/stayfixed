@@ -540,7 +540,8 @@ def test_a_tree_without_the_identity_record_is_no_overlay_and_is_told_what_to_ad
 def test_a_record_that_is_not_a_layout_1_record_is_no_overlay(tmp_path: Path, body: str) -> None:
     # The one layout this stayfixed reads is 1; a record naming another, or one that does not
     # parse, names nothing it can act on. `true` is no 1, though Python compares them equal.
-    # Mutation: `mutations/`'s "the overlay probe takes any record for an overlay".
+    # Mutations: `mutations/`'s "the overlay probe takes any record for an overlay" ->
+    # `another-layout`; "the overlay probe takes true for layout 1" -> `a-boolean`.
     rendered = _render_into(tmp_path)
     (rendered / IDENTITY_RECORD).write_text(body, encoding="utf-8")
     assert overlay_fault(rendered) == NOT_A_RECORD.format(root=quoted(str(rendered)))

@@ -164,6 +164,53 @@ reddens = [
   "tests/overlay/test_template.py::test_a_record_that_is_not_a_layout_1_record_is_no_overlay[another-layout]",
 ]
 
+# The other half of the same line: `true` is an `int` equal to 1 in Python, and names no layout.
+[[mutation]]
+name = "the overlay probe takes true for layout 1"
+file = "src/stayfixed/overlay/identity.py"
+before = "    if type(layout) is not int or layout != LAYOUT:"
+after = "    if layout != LAYOUT:"
+reddens = [
+  "tests/overlay/test_template.py::test_a_record_that_is_not_a_layout_1_record_is_no_overlay[a-boolean]",
+]
+
+# Generating is idempotent by rule: a second `create:` finds the overlay the first one cloned and
+# asks GitHub nothing, where it would generate the repository again and fail on its name.
+[[mutation]]
+name = "create: generates again over the overlay an earlier run cloned"
+file = "src/stayfixed/overlay/create.py"
+before = "    if overlay_fault(target) is None:"
+after = "    if False:"
+reddens = [
+  "tests/overlay/test_create.py::test_an_existing_overlay_at_the_destination_is_left_alone",
+  "tests/setup/test_setup.py::test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_names_no_template",
+]
+
+# What a clone left is an overlay only when its identity record parses: taken for one, a tree cut
+# short or a template that is no overlay's was recorded as the machine's trust anchor.
+[[mutation]]
+name = "create: records whatever a clone left"
+file = "src/stayfixed/overlay/create.py"
+before = """    if fault is not None:
+        raise Refusal(f"{fault}. {_unrecorded(slug, target)}")"""
+after = """    if False:
+        raise Refusal(f"{fault}. {_unrecorded(slug, target)}")"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists",
+  "tests/overlay/test_create.py::test_every_refusal_after_gh_repo_create_says_the_repository_may_exist_and_how_to_record_it[cut-short]",
+]
+
+# Where the overlay lives is the owner's choice, and the one word about a work tree that holds it
+# is this warning: another repository can put files into the overlay from there.
+[[mutation]]
+name = "doctor says nothing of the work tree that holds the overlay"
+file = "src/stayfixed/overlay/doctor.py"
+before = "    if holder is None or row.status not in (OK, SKIP):"
+after = "    if True:"
+reddens = [
+  "tests/overlay/test_doctor.py::test_an_overlay_root_inside_another_repositorys_work_tree_is_a_warning",
+]
+
 # The record has one reader, `identity.identity_record`, for the probe and the version floor. A
 # record nested past the parser or holding an integer longer than it converts is valid TOML that
 # `tomllib` meets with no `TOMLDecodeError`, and either would end `stayfixed setup --overlay` in an

@@ -9,6 +9,7 @@ by the lazy value its `register()` creates. The fixtures are the doctor area's o
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -239,6 +240,8 @@ def test_an_overlay_root_inside_another_repositorys_work_tree_is_a_warning(tmp_p
     # `setup --overlay` no longer refuses where the owner puts the overlay: where it lives is the
     # owner's choice. A work tree that holds it is still a place another repository can put files
     # into, so the row says so, as a warning and never red, and names that work tree.
+    #
+    # Mutation: `mutations/`'s "doctor says nothing of the work tree that holds the overlay".
     from stayfixed.overlay.doctor import NESTED
     from stayfixed.printed import quoted
 
@@ -249,7 +252,13 @@ def test_an_overlay_root_inside_another_repositorys_work_tree_is_a_warning(tmp_p
     machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
     row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
     assert (row.status, row.detail) == (WARN, NESTED.format(holder=quoted(str(outer))))
-    # The same overlay outside any work tree is the floor's row again.
+    # Without that `.git`, the next work tree up holds it, if any does: a temporary directory under
+    # a checkout (a `TMPDIR` inside one) is in that checkout's work tree, and the row names it.
+    # With none, the row is the floor's again.
     shutil.rmtree(outer / ".git")
+    above = next((d for d in tmp_path.parents if os.path.lexists(d / ".git")), None)
     row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
-    assert row.status == OK
+    if above is None:
+        assert row.status == OK, row
+    else:
+        assert (row.status, row.detail) == (WARN, NESTED.format(holder=quoted(str(above))))
