@@ -233,3 +233,23 @@ def test_a_machine_file_that_does_not_load_is_not_reported_as_one_that_records_n
     for name in ("pre-commit", "overlay-requires"):
         row = _by_name(rows, name)
         assert (row.status, row.detail, row.remedy) == (SKIP, unread, ""), row
+
+
+def test_an_overlay_root_inside_another_repositorys_work_tree_is_a_warning(tmp_path: Path) -> None:
+    # `setup --overlay` no longer refuses where the owner puts the overlay: where it lives is the
+    # owner's choice. A work tree that holds it is still a place another repository can put files
+    # into, so the row says so, as a warning and never red, and names that work tree.
+    from stayfixed.overlay.doctor import NESTED
+    from stayfixed.printed import quoted
+
+    outer = tmp_path / "dotfiles"
+    (outer / ".git").mkdir(parents=True)
+    overlay = overlay_with(outer / "overlay", ">=0.0.1")
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert (row.status, row.detail) == (WARN, NESTED.format(holder=quoted(str(outer))))
+    # The same overlay outside any work tree is the floor's row again.
+    shutil.rmtree(outer / ".git")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert row.status == OK

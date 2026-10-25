@@ -182,6 +182,8 @@ class UninstallReport:
     kept_locally: int
     # `stayfixed.toml` is one a person wrote, which no record names and nothing here removes.
     kept_config: bool = False
+    # `ignored.UNANSWERED` when git could not say whether a file this run removes is ignored.
+    unanswered: str = ""
 
     @property
     def refused(self) -> bool:
@@ -400,7 +402,9 @@ def uninstall(
     unlinked |= {a.target for a in once.actions if unlinks(a)}
     kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS})
     kept_config = CONFIG_ARTIFACT not in manifest.records
-    report = UninstallReport(footprint, once, orphans, dry_run, note, kept, kept_config)
+    report = UninstallReport(
+        footprint, once, orphans, dry_run, note, kept, kept_config, passes.unanswered
+    )
     if dry_run or report.refused:
         return report
     if kept:
@@ -428,7 +432,7 @@ def uninstall(
     _apply(root, last)
     _remove_ledger(root)
     joined = _joined(body, ignore), _joined(judged, last)
-    return UninstallReport(*joined, orphans, dry_run, note, 0, kept_config)
+    return UninstallReport(*joined, orphans, dry_run, note, 0, kept_config, passes.unanswered)
 
 
 def _goes(action: Action, local_once: Mapping[str, Template], digests: LocalDigests) -> bool:

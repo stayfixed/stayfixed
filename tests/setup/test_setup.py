@@ -1,7 +1,6 @@
 # tests/setup/test_setup.py
 from __future__ import annotations
 
-import contextlib
 import errno
 import json
 import os
@@ -9,13 +8,11 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from stayfixed import gitenv
 from stayfixed.attach.api import read_binding
 from stayfixed.config.overlay import overlay_root
 from stayfixed.errors import Failure, Refusal
@@ -28,7 +25,7 @@ from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests import parserlimits
 from tests.gitfixture import git as _git
-from tests.gitfixture import needs_git, stand_in_git
+from tests.gitfixture import needs_git
 from tests.parserlimits import overflowing
 from tests.pathfaults import (
     ROOT_SEARCHES_EVERYTHING,
@@ -110,9 +107,7 @@ def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> Non
         home=home,
         machine=machine,
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     written = read_machine(machine)
     assert written["personal"]["preset"] == "recommended"
@@ -141,9 +136,7 @@ def test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules(
         home=home,
         machine=tmp_path / "config.toml",
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     deny = json.loads(path.read_text(encoding="utf-8"))["permissions"]["deny"]
     preset = load_preset("recommended")["deny"]
@@ -163,9 +156,7 @@ def test_a_mistyped_preset_names_the_flag_and_never_quotes_it(tmp_path: Path) ->
             home=home,
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     message = str(caught.value)
     assert message.startswith("--preset is not a plain identifier"), message
@@ -187,9 +178,7 @@ def test_an_existing_user_settings_file_keeps_the_owners_own_rules(tmp_path: Pat
         home=home,
         machine=tmp_path / "config.toml",
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
     assert "Read(/etc/shadow)" in settings["permissions"]["deny"]
@@ -215,9 +204,7 @@ def test_an_owners_settings_file_opening_with_a_byte_order_mark_is_merged_and_ke
             home=home,
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay=None,
-            project_root=tmp_path / "project",
         )
 
     run()
@@ -252,9 +239,7 @@ def test_a_user_settings_file_past_the_parsers_reach_is_a_failure_naming_it(
             home=home,
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     assert str(caught.value) == f"{home / USER_SETTINGS} {clause}"
     assert (home / USER_SETTINGS).read_text(encoding="utf-8") == document
@@ -277,9 +262,7 @@ def test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_wor
             home=home,
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     assert (
         str(caught.value) == f"{home / USER_SETTINGS} cannot be read ({os.strerror(errno.EACCES)})"
@@ -297,9 +280,7 @@ def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     preset = load_preset("recommended")
     claude = preset["plugins"]["claude"]
@@ -350,9 +331,7 @@ def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert ["claude", "plugin", "marketplace", "add", claude["source"]] in runner.calls
     assert ["claude", "plugin", "install", full] in runner.calls
@@ -377,9 +356,7 @@ def test_what_a_plugin_command_prints_cannot_drive_a_terminal(tmp_path: Path, st
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     said = " ".join(report.notes)
     assert "forged" in said
@@ -398,9 +375,7 @@ def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     expected = (
         f"codex: no verified marketplace for {', '.join(preset['plugins']['install'])}; "
@@ -425,18 +400,15 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert any("claude" in note for note in report.notes)
     assert report.plugins_installed == ()
 
 
 def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) -> None:
-    # `create:` runs `gh repo create` only after explicit confirmation. A default that
-    # creates a GitHub repository is the one default this command may not have — and `--yes`, which
-    # confirms creating one, must not stand in for naming one.
+    # `create:` runs `gh repo create` only when it is named. A default that creates a GitHub
+    # repository is the one default this command may not have.
     #
     # Mutation: `setup`'s `if overlay is not None:` changed to `if True:` → reddens (the call
     # then reaches `_apply_overlay(None, ...)`, which is exactly the "taken without being
@@ -447,9 +419,7 @@ def test_the_overlay_offer_is_never_taken_without_being_asked(tmp_path: Path) ->
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert report.overlay is None
     assert not any(argv[:2] == ["gh", "repo"] for argv in runner.calls)
@@ -462,7 +432,7 @@ _ASK_WITH_NO_OVERLAY = (
     "from pathlib import Path\n"
     "from stayfixed.setup.run import _requested_overlay\n"
     "here = Path(sys.argv[1])\n"
-    "assert _requested_overlay(None, home=here, yes=True) is None\n"
+    "assert _requested_overlay(None, home=here) is None\n"
     "print(' '.join(m for m in sorted(sys.modules) if m.startswith('stayfixed.overlay')))\n"
 )
 
@@ -502,9 +472,7 @@ def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
         home=tmp_path / "home",
         machine=machine,
         runner=runner,
-        yes=True,
         overlay=str(existing),
-        project_root=tmp_path / "project",
     )
     assert report.overlay == existing
     assert not any(argv[:2] == ["gh", "repo"] for argv in runner.calls)
@@ -526,39 +494,7 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay=str(empty),
-            project_root=tmp_path / "project",
-        )
-
-
-@needs_git
-def test_an_overlay_inside_the_project_root_is_refused(tmp_path: Path) -> None:
-    # The other half, and the control that actually binds: a path outside the repository that
-    # already carries a real overlay layout is not something a hostile clone can create, but a path
-    # *inside* the repository is exactly the shape of tree a clone can ship — so recording one there
-    # is refused regardless of how convincing its layout is. A repository, because containment is
-    # judged against the repository `--root` is in: a directory in none ships nothing.
-    #
-    # Mutation (`mutations/`'s "setup stops refusing an overlay root inside the project"):
-    # `_overlaps` stops looking above the candidate -> the path arm and the checkout listing both
-    # pass it, and the refusal that is left, the candidate-side walk's, does not name `--root`, so
-    # this reddens on the match.
-    project = tmp_path / "project"
-    project.mkdir()
-    _git(project, "init", "-q", "-b", "main")
-    nested = project / "vendored-overlay"
-    nested.mkdir()
-    _seed_overlay(nested)
-    with pytest.raises(Refusal, match="holds it, or is it"):
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=str(nested),
-            project_root=project,
         )
 
 
@@ -588,9 +524,7 @@ def test_overlay_create_asks_github_and_records_the_new_root(
         home=home,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay="create:octo/stayfixed-private",
-        project_root=tmp_path / "project",
     )
     assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert report.overlay == home / "stayfixed-private"
@@ -622,9 +556,7 @@ def test_overlay_create_generates_from_the_template_overlay_create_would_choose(
         home=home,
         machine=tmp_path / "config.toml",
         runner=runner,
-        yes=True,
         overlay="create:octo/stayfixed-private",
-        project_root=tmp_path / "project",
     )
     creating = next(argv for argv in runner.calls if argv[:3] == ["gh", "repo", "create"])
     assert creating[creating.index("--template") + 1] == template
@@ -646,9 +578,7 @@ def test_overlay_create_that_cannot_ask_gh_whose_template_creates_nothing(
             home=home,
             machine=tmp_path / "config.toml",
             runner=runner,
-            yes=True,
             overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
         )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
 
@@ -670,9 +600,7 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
         home=home,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay="create:octo/stayfixed-private",
-        project_root=tmp_path / "project",
     )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert not any(argv[:3] == ["gh", "repo", "view"] for argv in runner.calls)
@@ -680,27 +608,6 @@ def test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_n
     assert "None" not in text
     assert "already" in " ".join(report.notes)
     assert overlay_root(machine) == destination
-
-
-def test_creating_an_overlay_without_yes_is_refused(tmp_path: Path) -> None:
-    # Creating a repository on GitHub is the one irreversible, outward-facing act `setup` performs,
-    # and `gh repo create` runs only after explicit confirmation. Naming `create:<owner>/<name>` is
-    # not that confirmation by itself — `--yes` is.
-    #
-    # Mutation: `_apply_overlay`'s `if not yes:` line changed to `if False:` → reddens (the
-    # repository would then be created without `--yes`).
-    runner = Recorder(on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="explicit confirmation"):
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "config.toml",
-            runner=runner,
-            yes=False,
-            overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
-        )
-    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
 
 
 def test_the_recorded_overlay_root_is_accepted_inside_and_refused_outside_by_attach(
@@ -726,9 +633,7 @@ def test_the_recorded_overlay_root_is_accepted_inside_and_refused_outside_by_att
         home=tmp_path / "home",
         machine=machine,
         runner=Recorder(),
-        yes=True,
         overlay=str(existing),
-        project_root=tmp_path / "project",
     )
     project = _initialised_project(tmp_path)
 
@@ -756,18 +661,14 @@ def test_a_second_run_is_idempotent(tmp_path: Path) -> None:
         home=home,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     second = setup(
         "recommended",
         home=home,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert sorted(first.plugins_installed) == sorted(second.plugins_installed)
     settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
@@ -791,9 +692,7 @@ def test_a_second_run_does_not_reset_a_personal_value_the_owner_set(tmp_path: Pa
         home=home,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     # The owner sets a personal value by hand between two runs.
     write_machine(machine, personal={"preset": "mine"}, overlay_root=None, machine={})
@@ -802,9 +701,7 @@ def test_a_second_run_does_not_reset_a_personal_value_the_owner_set(tmp_path: Pa
         home=home,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert read_machine(machine)["personal"]["preset"] == "mine"
 
@@ -823,9 +720,7 @@ def test_a_malformed_overlay_spec_is_refused(tmp_path: Path) -> None:
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay="create:no-slash-here",
-            project_root=tmp_path / "project",
         )
 
 
@@ -842,9 +737,7 @@ def test_a_missing_stayfixed_on_path_is_a_note(
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert report.cli_on_path is False
     assert any(
@@ -888,9 +781,7 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
             home=home,
             machine=machine,
             runner=runner,
-            yes=True,
             overlay=str(tmp_path / "no-such-directory" / "typo"),
-            project_root=tmp_path / "project",
         )
     assert _wrote_anything(home, machine) == []
     assert runner.calls == [], "no plugin was installed for a run that refuses its own arguments"
@@ -922,9 +813,7 @@ def test_an_overlay_root_a_utf_8_file_cannot_record_is_refused_before_the_first_
             home=home,
             machine=machine,
             runner=runner,
-            yes=True,
             overlay=overlay,
-            project_root=tmp_path / "project",
         )
     assert _wrote_anything(home, machine) == []
     assert runner.calls == []
@@ -944,171 +833,10 @@ def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> 
         home=home,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay=str(existing),
-        project_root=tmp_path / "project",
     )
     assert _wrote_anything(home, machine) == [str(machine), str(home / USER_SETTINGS)]
     assert runner.calls != []
-
-
-@needs_git
-def test_a_created_overlay_is_refused_before_the_repository_exists(tmp_path: Path) -> None:
-    # The most serious of the structural checks that used to run too late: the documented command
-    # run from `$HOME` — `--root` defaulting to `.` — created the private repository on GitHub,
-    # cloned it, renamed both manifests and installed the secret scan, and *then* refused, because
-    # `home/<name>` lies inside the "project root" that `--root` had defaulted to. The machine file
-    # was left with no `[overlay]` table and nothing told the owner the repository now existed.
-    # `home/<name>` needs no created tree: it is `overlay.api.target_root`'s answer, known from the
-    # arguments alone.
-    #
-    # The refusal is for a home that is a repository — a dotfiles work tree, which could ship the
-    # tree `create:` would clone into it. A home in no repository is not refused at all:
-    # `test_an_overlay_created_from_a_directory_in_no_repository_passes_containment`.
-    #
-    # Mutation (`mutations/`'s "setup computes where a created overlay lands only after creating
-    # it"): `_before_the_first_write` asks where the overlay lies only for `--overlay <path>`,
-    # leaving `_apply_overlay`'s floor → `gh repo create` runs, and this reddens on the argv
-    # assertion.
-    home = tmp_path / "home"
-    home.mkdir()
-    _git(home, "init", "-q", "-b", "main")
-    machine = tmp_path / "config.toml"
-    # The template probe answered, so under the mutation `gh repo create` really runs and the
-    # floor's refusal follows it, as it did on the owner's machine.
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="is inside"):
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=runner,
-            yes=True,
-            overlay="create:octo/stayfixed-private",
-            project_root=home,
-        )
-    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
-    assert not (home / "stayfixed-private").exists()
-    assert _wrote_anything(home, machine) == []
-
-
-@needs_git
-def test_an_overlay_created_from_a_directory_in_no_repository_passes_containment(
-    tmp_path: Path,
-) -> None:
-    # The owner's own documented command, `stayfixed setup --overlay create:<owner>/<name> --yes`
-    # run in `~`: `--root` defaults to `.`, the home directory, and `home/<name>` lies inside it, so
-    # the path comparison refused it — although `~` is in no repository and the destination is
-    # one this run makes, which nothing can have shipped. With `--root` in no repository a
-    # `create:` destination that is not there yet is not compared with it. Mutation
-    # (`mutations/`'s "setup compares a created overlay's place with --root outside any
-    # repository"): the path arm compares every overlay, as it did before -> refused, and this
-    # reddens.
-    #
-    # Run again, the clone it made is a checkout of its own, as `gh repo create --clone` leaves
-    # it, and the overlay root the machine file records: that checkout is not a repository
-    # holding the overlay, and the recorded root is not compared with `--root` either, so the
-    # second run creates nothing and records the same root. Mutations (`mutations/`'s "setup asks
-    # whether an overlay lies in another repository from the overlay itself" -> the clone
-    # answers for itself and the second run is refused; "setup stops exempting the overlay root
-    # the machine file records" -> the second run is refused by the path arm).
-    home = tmp_path / "home"
-    home.mkdir()
-    machine = tmp_path / "config.toml"
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=runner,
-        yes=True,
-        overlay="create:octo/stayfixed-private",
-        project_root=home,
-    )
-    assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
-    clone = home / "stayfixed-private"
-    _git(clone, "init", "-q", "-b", "main")
-    again = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=again,
-        yes=True,
-        overlay="create:octo/stayfixed-private",
-        project_root=home,
-    )
-    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in again.calls)
-    assert overlay_root(machine) == clone
-
-
-@needs_git
-@pytest.mark.parametrize("planted", ["plain", "own-checkout", "root-inside-it"])
-def test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root(
-    tmp_path: Path, planted: str
-) -> None:
-    # `create:` leaves a populated destination alone and records it, so a tree someone else put at
-    # `<home>/<name>` — an archive's, a checkout of its own — was recorded with no comparison when
-    # `--root` is in no repository, and `overlay init` ran in it. The destination is exempt only
-    # when this run makes it (it is not there when the phase asks) or when it is the overlay root
-    # the machine file already records; anything else is compared as `--overlay <path>` is.
-    # Mutation (`mutations/`'s "setup exempts a created overlay's destination that is already
-    # there") -> each is recorded and reddens.
-    home = tmp_path / "home"
-    destination = home / "stayfixed-private"
-    _seed_overlay(destination)
-    if planted == "own-checkout":
-        _git(destination, "init", "-q", "-b", "main")
-    root = destination / "sub" if planted == "root-inside-it" else home
-    root.mkdir(exist_ok=True)
-    machine = tmp_path / "config.toml"
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="holds it, or is it"):
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=runner,
-            yes=True,
-            overlay="create:octo/stayfixed-private",
-            project_root=root,
-        )
-    assert runner.calls == [] and not machine.exists()
-
-
-def test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The phase found nothing at `<home>/<name>`, and a tree arrived before `create:` reached it:
-    # `create` leaves it alone, so this run did not make it, and the exemption the phase gave an
-    # absent destination does not carry over to it. It is compared where the overlay is first
-    # touched, before `overlay init` writes in it or runs `pre-commit` there. Mutations
-    # (`mutations/`'s "setup exempts a destination create left alone" -> recorded; "setup
-    # initialises a created overlay before asking where it lies" -> `init` renames its manifest).
-    home = tmp_path / "home"
-    home.mkdir()
-    destination = home / "stayfixed-private"
-    real = write_machine
-
-    def planting(*args: Any, **kwargs: Any) -> None:
-        if not destination.exists():
-            _seed_overlay(destination)
-        real(*args, **kwargs)
-
-    monkeypatch.setattr("stayfixed.setup.run.write_machine", planting)
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="holds it, or is it"):
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "config.toml",
-            runner=runner,
-            yes=True,
-            overlay="create:octo/stayfixed-private",
-            project_root=home,
-        )
-    assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
-    assert ["pre-commit", "install"] not in runner.calls, "overlay init ran in the planted tree"
 
 
 @needs_git
@@ -1139,9 +867,7 @@ def test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_lead
         home=repository,
         machine=machine,
         runner=runner,
-        yes=True,
         overlay="create:octo/stayfixed-private",
-        project_root=repository,
     )
     assert overlay_root(machine) == outside.resolve()
     # The repository points the link into its own tree; the record does not move with it.
@@ -1151,257 +877,35 @@ def test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_lead
     assert overlay_root(machine) == outside.resolve()
 
 
-@pytest.mark.parametrize("leads", ["inside-the-root", "outside-the-root"])
 def test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything(
-    tmp_path: Path, leads: str
+    tmp_path: Path,
 ) -> None:
-    # A link at `<home>/<name>` whose target is not there: read as absent, the destination was
-    # exempt from the comparison and `gh repo create` cloned through the link to wherever it
-    # pointed; compared at its target, a target outside `--root` still passed and `gh` created a
-    # repository before the clone failed on the link. It is refused where the overlay's place is
-    # asked, before anything is written or run. Mutation (`mutations/`'s "setup plans a created
-    # overlay through a link that leads nowhere") -> `gh` runs and each reddens.
-    home = tmp_path / "home"
-    home.mkdir()
-    target = home / "later" / "ov" if leads == "inside-the-root" else tmp_path / "later" / "ov"
-    (home / "stayfixed-private").symlink_to(target)
-    machine = tmp_path / "config.toml"
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="which is not there"):
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=runner,
-            yes=True,
-            overlay="create:octo/stayfixed-private",
-            project_root=home,
-        )
-    assert runner.calls == [] and _wrote_anything(home, machine) == []
+    # A link at `<home>/<name>` whose target is not there: read as absent, `gh repo create` made a
+    # repository and then cloned through the link to wherever it pointed, or failed on it. It is
+    # there and is not a directory, and refused before anything is written or run.
+    from stayfixed.setup.run import DESTINATION_NOT_A_DIRECTORY
 
-
-@pytest.mark.parametrize("swap", ["recorded-link-repointed", "absent-then-a-link"])
-def test_a_created_overlays_destination_swapped_after_the_phase_is_compared(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, swap: str
-) -> None:
-    # The phase exempted the destination — the overlay root the machine file records, reached
-    # through a link, or nothing there yet — and between the phase and `create` something put a
-    # link there into `--root`. The exemption holds only for the directory the phase judged, and
-    # an absent destination only when `create` made a directory there and not a link to one, so
-    # the swapped destination is compared and refused before `overlay init`. Out of the threat
-    # model `setup` defends (a party writing `<home>/<name>` mid-run can write the machine file
-    # too); defence in depth. Mutations (`mutations/`'s "setup honours an exemption for a
-    # directory the phase did not judge" -> `recorded-link-repointed`; "setup honours an absent
-    # destination's exemption for a link create cloned through" -> `absent-then-a-link`).
     home = tmp_path / "home"
     home.mkdir()
     destination = home / "stayfixed-private"
-    evil = home / "evil"
-    evil.mkdir()
+    destination.symlink_to(tmp_path / "later" / "ov")
     machine = tmp_path / "config.toml"
-    if swap == "recorded-link-repointed":
-        recorded = tmp_path / "outside-ov"
-        _seed_overlay(recorded)
-        _seed_overlay(evil)
-        destination.symlink_to(recorded)
-        write_machine(machine, personal={}, overlay_root=recorded.resolve(), machine={})
-    real = write_machine
-    swapped: list[bool] = []
-
-    def swapping(*args: Any, **kwargs: Any) -> None:
-        if not swapped:
-            swapped.append(True)
-            if destination.is_symlink():
-                destination.unlink()
-            destination.symlink_to(evil)
-        real(*args, **kwargs)
-
-    monkeypatch.setattr("stayfixed.setup.run.write_machine", swapping)
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="holds it, or is it"):
+    with pytest.raises(Refusal) as refused:
         setup(
             "recommended",
             home=home,
             machine=machine,
             runner=runner,
-            yes=True,
             overlay="create:octo/stayfixed-private",
-            project_root=home,
         )
-    assert swapped
-    assert ["pre-commit", "install"] not in runner.calls, "overlay init ran in the swapped tree"
-
-
-@needs_git
-def test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository(
-    tmp_path: Path,
-) -> None:
-    # The other half of judging only against a repository: with `--root` in none, the overlay's own
-    # side is still asked. A directory inside some other repository's work tree is a tree that
-    # repository can ship, whichever repository `--root` is in. Mutation (`mutations/`'s "setup
-    # stops refusing an overlay inside another repository's checkout"): the arm's condition
-    # becomes `False` -> this overlay is recorded and this reddens.
-    repository = tmp_path / "code" / "R"
-    repository.mkdir(parents=True)
-    _git(repository, "init", "-q", "-b", "main")
-    candidate = repository / "ov"
-    candidate.mkdir()
-    _seed_overlay(candidate)
-    # `--root` beside the overlay, in no repository: one that held it would refuse it first, in
-    # the path arm's words.
-    with pytest.raises(Refusal, match="inside a checkout of another repository"):
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=str(candidate),
-            project_root=tmp_path / "elsewhere",
-        )
-
-
-@pytest.mark.parametrize("place", ["inside", "holding", "equal"])
-def test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused(
-    tmp_path: Path, place: str
-) -> None:
-    # A `--root` git finds no repository for can still hold a tree someone else made: a project
-    # downloaded as an archive, a checkout of another version control system, a `vendor/ov`
-    # shipped inside either. Only a `create:` destination, which the run itself makes, is
-    # exempt from the comparison with `--root` there; an overlay that is already on disk is
-    # compared as it is inside a repository.
-    #
-    # Mutation (`mutations/`'s "setup exempts an existing overlay from the comparison with a
-    # --root in no repository"): the exemption covers every overlay -> each place is recorded
-    # and reddens.
-    if place == "inside":
-        root, candidate = tmp_path / "project", tmp_path / "project" / "vendor" / "ov"
-    elif place == "holding":
-        root, candidate = tmp_path / "ov" / "sub", tmp_path / "ov"
-    else:
-        root = candidate = tmp_path / "ov"
-    candidate.mkdir(parents=True)
-    root.mkdir(parents=True, exist_ok=True)
-    _seed_overlay(candidate)
-    home, machine = tmp_path / "home", tmp_path / "config.toml"
-    with pytest.raises(Refusal, match="holds it, or is it") as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            yes=True,
-            overlay=str(candidate),
-            project_root=root,
-        )
-    assert "in no git repository" in str(refused.value)
-    assert _wrote_anything(home, machine) == []
-
-
-@needs_git
-def test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_refused(
-    tmp_path: Path,
-) -> None:
-    # Its own `.git` does not take it out of the outer work tree: measured on git 2.54, a merge in
-    # the outer repository of a commit that tracks `ov/extra` writes that file into the nested
-    # checkout's directory. So the question is asked from above the candidate, where the
-    # candidate's own repository cannot be the answer. Mutation (`mutations/`'s "setup stops
-    # refusing an overlay inside another repository's checkout"): the arm's condition becomes
-    # `False` -> this overlay is recorded and this reddens.
-    repository = tmp_path / "code" / "R"
-    repository.mkdir(parents=True)
-    _git(repository, "init", "-q", "-b", "main")
-    candidate = repository / "ov"
-    candidate.mkdir()
-    _git(candidate, "init", "-q", "-b", "main")
-    _seed_overlay(candidate)
-    # `--root` beside the overlay, in no repository: one that held it would refuse it first, in
-    # the path arm's words.
-    with pytest.raises(Refusal, match="inside a checkout of another repository"):
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=str(candidate),
-            project_root=tmp_path / "elsewhere",
-        )
-
-
-@needs_git
-@pytest.mark.parametrize("whose", ["the-projects", "another-repositorys"])
-def test_a_git_directory_git_names_reaches_a_containment_refusal_quoted(
-    tmp_path: Path, whose: str
-) -> None:
-    # Both refusals name a git directory as git answers it, and a submodule's lies at
-    # `.git/modules/<name>`, the name `.gitmodules` chose: an escape sequence and a bell in it
-    # reached the terminal. Here a separate git directory carries them. Each is printed through
-    # `printed.quoted` now. Mutations (`mutations/`'s "setup prints the project's git directory
-    # raw in a containment refusal" -> `the-projects` reddens; "setup prints another
-    # repository's git directory raw in a containment refusal" -> `another-repositorys`).
-    gitdir = tmp_path / "git\x1b]0;owned\x07"
-    checkout = tmp_path / "checkout"
-    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(gitdir), str(checkout))
-    candidate = checkout / "ov"
-    candidate.mkdir()
-    _seed_overlay(candidate)
-    root = checkout if whose == "the-projects" else tmp_path / "elsewhere"
-    with pytest.raises(Refusal) as refused:
-        _record(tmp_path, candidate, root)
-    said = str(refused.value)
-    assert "\x1b" not in said and "\x07" not in said, said
-    assert "\\x1b]0;owned\\x07" in said, said
+    assert str(refused.value) == DESTINATION_NOT_A_DIRECTORY.format(
+        destination=quoted(str(destination))
+    )
+    assert runner.calls == [] and _wrote_anything(home, machine) == []
 
 
 _DRIVES_A_TERMINAL = "x\x1b]0;owned\x07"
-
-
-@needs_git
-@pytest.mark.parametrize("printed", ["the-overlay", "where-git-was-asked", "the-floor"])
-def test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, printed: str
-) -> None:
-    # A path resolved through a link a repository commits is spelled in bytes the repository
-    # chose, and the overlay, `--root`, the directory git was asked from and the path the floor
-    # could not ask about each reached a refusal raw: an escape sequence and a bell in a name drove
-    # the terminal that read it. Each is printed through `printed.quoted`. Mutations
-    # (`mutations/`'s "setup prints the overlay root raw in a containment refusal" ->
-    # `the-overlay`; "setup prints the directory git was asked from raw" ->
-    # `where-git-was-asked`; "the floor prints the path it could not ask about raw" ->
-    # `the-floor`).
-    if printed == "the-floor" and os.geteuid() == 0:
-        pytest.skip("root searches every directory")
-    root = tmp_path / "project"
-    root.mkdir()
-    overlay = tmp_path / "overlay"
-    _seed_overlay(overlay)
-    if printed == "the-overlay":
-        shipped = root / _DRIVES_A_TERMINAL
-        _seed_overlay(shipped)
-        (root / "link").symlink_to(shipped)
-        overlay = root / "link"
-    elif printed == "where-git-was-asked":
-        checkout = tmp_path / _DRIVES_A_TERMINAL
-        checkout.mkdir()
-        _git(checkout, "init", "-q", "-b", "main")
-        (tmp_path / "link").symlink_to(checkout)
-        root = tmp_path / "link"
-        _quiet_git(tmp_path, monkeypatch, "exit 1")
-    else:
-        locked = tmp_path / _DRIVES_A_TERMINAL
-        _seed_overlay(locked / "overlay")
-        overlay = locked / "overlay"
-    with (
-        unsearchable(tmp_path / _DRIVES_A_TERMINAL)
-        if printed == "the-floor"
-        else (contextlib.nullcontext()),
-        pytest.raises(Refusal) as refused,
-    ):
-        _record(tmp_path, overlay, root)
-    said = str(refused.value)
-    assert "\x1b" not in said and "\x07" not in said, said
-    assert "\\x1b]0;owned\\x07" in said, said
 
 
 @pytest.mark.parametrize("printed", ["not-an-overlay", "the-note", "the-summary"])
@@ -1440,54 +944,6 @@ def test_an_overlay_path_a_repository_spells_is_printed_quoted(
     assert "\\x1b]0;owned\\x07" in said, said
 
 
-@needs_git
-def test_an_overlay_that_is_a_worktree_nested_in_its_own_checkout_is_refused_as_its_own(
-    tmp_path: Path,
-) -> None:
-    # A linked worktree of the overlay's own repository, nested in that repository's main
-    # checkout, lies where the main checkout can write: a branch there that tracks `.wt/ov/x`
-    # writes it into the worktree's directory. It stays refused, and the refusal says it is the
-    # overlay's own repository, where it said "another repository" of the one it belongs to.
-    # Mutation (`mutations/`'s "setup calls the overlay's own repository another one") -> the
-    # refusal says "another repository" and this reddens.
-    main = tmp_path / "overlay"
-    main.mkdir()
-    _git(main, "init", "-q", "-b", "main")
-    (main / "README.md").write_text("x", encoding="utf-8")
-    _git(main, "add", "-A")
-    _git(main, "commit", "-qm", "init")
-    candidate = main / ".wt" / "ov"
-    _git(main, "worktree", "add", "-q", str(candidate), "-b", "ov")
-    _seed_overlay(candidate)
-    with pytest.raises(Refusal, match="inside another checkout of its own repository"):
-        _record(tmp_path, candidate, tmp_path / "elsewhere")
-    assert overlay_root(tmp_path / "config.toml") is None
-
-
-@needs_git
-def test_an_overlay_that_is_a_checkout_of_its_own_is_recorded(tmp_path: Path) -> None:
-    # The owner's own layout: the overlay is a clone of a private repository, in a directory no
-    # other repository holds. That it is a checkout is not what refuses an overlay; where it lies
-    # is. Mutation (`mutations/`'s "setup asks whether an overlay lies in another repository from
-    # the overlay itself"): the walk starts at the candidate -> it answers for itself and is
-    # refused, and this reddens.
-    candidate = tmp_path / "overlay"
-    candidate.mkdir()
-    _git(candidate, "init", "-q", "-b", "main")
-    _seed_overlay(candidate)
-    machine = tmp_path / "config.toml"
-    setup(
-        "recommended",
-        home=tmp_path / "home",
-        machine=machine,
-        runner=Recorder(),
-        yes=True,
-        overlay=str(candidate),
-        project_root=tmp_path / "project",
-    )
-    assert overlay_root(machine) == candidate
-
-
 def test_a_directory_whose_record_names_another_layout_is_not_an_overlay(tmp_path: Path) -> None:
     # The probe was once two manifest *files* existing, which the stayfixed checkout itself
     # satisfied, and any Claude Code plugin repository with them. The identity record is read now,
@@ -1504,785 +960,8 @@ def test_a_directory_whose_record_names_another_layout_is_not_an_overlay(tmp_pat
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay=str(impostor),
-            project_root=tmp_path / "project",
         )
-
-
-@needs_git
-def test_an_overlay_that_holds_the_project_root_is_refused(tmp_path: Path) -> None:
-    # The containment refused `candidate == project` or `project in candidate.parents` and nothing
-    # else, so a *parent* passed — and `git worktree add .worktrees/x`, which is how feature work is
-    # ordinarily started, puts `--root` exactly there. A
-    # clone shipping its two manifests at its own root was then accepted as the machine's trust
-    # anchor. `--root` is a repository of its own here, so the path arm is the only one that can
-    # see the clone above it: a real worktree of the clone is refused by the checkout listing too.
-    #
-    # Mutation (`mutations/`'s "setup stops refusing an overlay root that holds the project"):
-    # `_overlaps` stops asking whether `a` holds `b` -> the clone's own root is recorded and this
-    # reddens.
-    clone = tmp_path / "clone"
-    clone.mkdir()
-    _seed_overlay(clone)
-    worktree = clone / ".worktrees" / "feature"
-    worktree.mkdir(parents=True)
-    _git(worktree, "init", "-q", "-b", "main")
-    with pytest.raises(Refusal, match="holds it, or is it"):
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=str(clone),
-            project_root=worktree,
-        )
-
-
-def test_a_sibling_checkout_of_the_project_is_never_the_trust_anchor(tmp_path: Path) -> None:
-    # The case no path comparison can see: `git worktree add ../side` is git's own documented layout
-    # and this repository's own convention, and a worktree beside the checkout is neither inside it
-    # nor above it. The clone's manifests sit in the *other* checkout of the same repository, so
-    # both path arms passed and the tree a clone ships was recorded. `git worktree list`, asked from
-    # the project, is what tells two checkouts of one repository apart from two repositories.
-    #
-    # No mutation reddens this alone: the project's listing and the candidate-side walk both
-    # refuse it. Each is proven by a test only it catches — the bare-shaped directory that
-    # claims to be a checkout, and the separate-git-dir checkout.
-    clone = tmp_path / "clone"
-    clone.mkdir()
-    _git(clone, "init", "-q", "-b", "main")
-    _seed_overlay(clone)
-    (clone / "README.md").write_text("x", encoding="utf-8")
-    _git(clone, "add", "-A")
-    _git(clone, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
-    worktree = tmp_path / "clone.worktrees" / "feature"
-    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "feature")
-    assert clone.resolve() not in worktree.resolve().parents, "beside the checkout, not under it"
-    with pytest.raises(Refusal, match="same repository"):
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=str(clone),
-            project_root=worktree,
-        )
-
-
-def test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The case above with a common directory whose path is not UTF-8, an ordinary latin-1
-    # directory name on Linux. Decoded strictly, git's answer was a traceback; read as no answer,
-    # `_repository` answered `None`, the `git` arms went silent, and the sibling checkout of the
-    # project was recorded as the machine's trust anchor. Decoded losslessly, the answer is read
-    # and the checkout is refused.
-    #
-    # APFS refuses to create such a directory, so a stand-in `git` on `PATH` runs the real one
-    # and appends one latin-1 byte to the first line of what `--git-common-dir` prints — the
-    # common directory, not the `--is-inside-work-tree` answer after it — for every directory
-    # alike, exactly as a common directory really named so would read. Every other `git` call
-    # passes through untouched.
-    #
-    # Mutation (declared, on `gitenv`): the answer read as no answer again -> the guard, which
-    # refuses git's silence inside a checkout, refuses for that silence rather than naming the
-    # sibling checkout, and this reddens on the `same repository` match alone.
-    clone = tmp_path / "clone"
-    clone.mkdir()
-    _git(clone, "init", "-q", "-b", "main")
-    _seed_overlay(clone)
-    (clone / "README.md").write_text("x", encoding="utf-8")
-    _git(clone, "add", "-A")
-    _git(clone, "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "init")
-    worktree = tmp_path / "clone.worktrees" / "feature"
-    _git(clone, "worktree", "add", "-q", str(worktree), "-b", "feature")
-    real_git = shutil.which("git")
-    assert real_git is not None
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "git").write_text(
-        "#!/bin/sh\n"
-        'case "$*" in\n'
-        f'  *--git-common-dir*) out=$("{real_git}" "$@") || exit $?\n'
-        '    printf "%s\\351\\n" "$(printf "%s\\n" "$out" | head -n 1)"\n'
-        '    printf "%s\\n" "$out" | tail -n +2 ;;\n'
-        f'  *) exec "{real_git}" "$@" ;;\n'
-        "esac\n",
-        encoding="utf-8",
-    )
-    (bin_dir / "git").chmod(0o755)
-    stand_in_git(monkeypatch, bin_dir / "git")
-    with pytest.raises(Refusal, match="same repository"):
-        setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=tmp_path / "config.toml",
-            runner=Recorder(),
-            yes=True,
-            overlay=str(clone),
-            project_root=worktree,
-        )
-
-
-def test_an_overlay_outside_every_checkout_is_still_recorded(tmp_path: Path) -> None:
-    # The other side of the two tests above, and the reason they are not simply "refuse
-    # everything": a real overlay is a repository of its own, beside the project and unrelated
-    # to it, and `git` answering for both must not make them the same tree.
-    project = tmp_path / "project"
-    project.mkdir()
-    _git(project, "init", "-q", "-b", "main")
-    overlay = tmp_path / "stayfixed-private"
-    overlay.mkdir()
-    _git(overlay, "init", "-q", "-b", "main")
-    _seed_overlay(overlay)
-    machine = tmp_path / "config.toml"
-    report = setup(
-        "recommended",
-        home=tmp_path / "home",
-        machine=machine,
-        runner=Recorder(),
-        yes=True,
-        overlay=str(overlay),
-        project_root=project,
-    )
-    assert report.overlay == overlay
-    assert overlay_root(machine) == overlay
-
-
-def _commit_a_bare_shaped_directory(checkout: Path) -> Path:
-    """Commit `ov/` into `checkout`, shaped like a bare repository and carrying the overlay's
-    two manifests; `ov/`.
-
-    `HEAD`, `objects/` and `refs/` are three paths any repository can commit, and `git`'s
-    discovery reads a directory holding all three as a bare repository of its own when
-    `safe.bareRepository` is unset. With the manifests beside them, `ov/` in every checkout is a
-    tree the clone shipped and that reads as an overlay.
-    """
-    shaped = checkout / "ov"
-    (shaped / "objects").mkdir(parents=True)
-    (shaped / "refs").mkdir()
-    (shaped / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
-    (shaped / "objects" / ".keep").write_text("", encoding="utf-8")
-    (shaped / "refs" / ".keep").write_text("", encoding="utf-8")
-    _seed_overlay(shaped)
-    _git(checkout, "add", "-A")
-    _git(checkout, "commit", "-qm", "init")
-    return shaped
-
-
-def _clone_with_a_bare_shaped_directory(tmp_path: Path, ov_config: str = "") -> tuple[Path, Path]:
-    """A project repository that commits a bare-shaped `ov/` (and `ov_config` as its `config`,
-    when given), plus two sibling worktrees of it; `(main checkout, the worktrees' parent)`."""
-    project = tmp_path / "proj"
-    project.mkdir()
-    _git(project, "init", "-q", "-b", "main")
-    if ov_config:
-        (project / "ov").mkdir()
-        (project / "ov" / "config").write_text(ov_config, encoding="utf-8")
-    _commit_a_bare_shaped_directory(project)
-    worktrees = tmp_path / "proj.wt"
-    _git(project, "worktree", "add", "-q", str(worktrees / "feature"), "-b", "feature")
-    _git(project, "worktree", "add", "-q", str(worktrees / "bugfix"), "-b", "bugfix")
-    return project, worktrees
-
-
-# `safe.bareRepository` arrived in git 2.38, and an older git ignores a `-c` key it does not
-# know. "ignores-safe-bare" stands that git in by emptying the pair, so the refusals that must not
-# depend on it are proven on the git CI has.
-GITS = ["current", "ignores-safe-bare"]
-
-
-def _as(git_version: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    if git_version == "ignores-safe-bare":
-        monkeypatch.setattr("stayfixed.setup.run._EXPLICIT_BARE", ())
-
-
-def _record(tmp_path: Path, overlay: Path, project_root: Path) -> None:
-    setup(
-        "recommended",
-        home=tmp_path / "home",
-        machine=tmp_path / "config.toml",
-        runner=Recorder(),
-        yes=True,
-        overlay=str(overlay),
-        project_root=project_root,
-    )
-
-
-@pytest.mark.parametrize("git_version", GITS)
-@pytest.mark.parametrize("root", ["proj", "proj.wt/bugfix", "proj.wt/bugfix/no/such/dir"])
-def test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, root: str, git_version: str
-) -> None:
-    # The sibling-checkout arm asked `git rev-parse --git-common-dir` *from inside the
-    # candidate*, and git answered for the committed `ov/` rather than for the checkout it sits
-    # in: `proj.wt/feature/ov` reported itself as its own common directory, so it was "not the
-    # same repository" and was recorded — while `proj.wt/feature` itself was refused. The
-    # checkouts are now listed from the project's side, which the candidate's bytes cannot reach.
-    #
-    # The listing and the candidate-side arm each refuse this layout, so breaking either one
-    # leaves it refused: the test below proves the listing alone, and the separate-git-dir test
-    # the candidate side alone. A `--root` that does not exist is asked about from its nearest
-    # directory that does, where it used to be asked from its parent and nothing else.
-    #
-    # Mutation (`mutations/`'s "setup asks git about --root from a directory that does not exist"):
-    # the walk up becomes one step → `no/such` does not exist, git gives no answer, only the path
-    # arm stands and the third root reddens.
-    _as(git_version, monkeypatch)
-    _clone_with_a_bare_shaped_directory(tmp_path)
-    with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, tmp_path / "proj.wt" / "feature" / "ov", tmp_path / root)
-    assert not (tmp_path / "config.toml").exists(), "refused above the first write"
-
-
-@pytest.mark.parametrize("git_version", GITS)
-def test_a_bare_shaped_directory_that_claims_to_be_a_checkout_is_still_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
-) -> None:
-    # A committed `ov/config` saying `core.bare = false` makes a git that ignores
-    # `safe.bareRepository` answer from inside `ov/` with `ov/` as a repository that is *not*
-    # bare. The listing refuses the sibling regardless, and the candidate-side walk takes only
-    # an answer from inside a work tree, which `ov/` never gives, so both arms refuse it; the
-    # test below proves the listing alone, and the separate-git-dir test's `claims-a-checkout`
-    # case proves the walk alone.
-    _as(git_version, monkeypatch)
-    project = tmp_path / "proj"
-    project.mkdir()
-    _git(project, "init", "-q", "-b", "main")
-    (project / "ov").mkdir()
-    (project / "ov" / "config").write_text("[core]\n\tbare = false\n", encoding="utf-8")
-    _commit_a_bare_shaped_directory(project)
-    linked = tmp_path / "proj.wt" / "feature"
-    _git(project, "worktree", "add", "-q", str(linked), "-b", "feature")
-    with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, linked / "ov", project)
-
-
-@pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout"])
-@pytest.mark.parametrize("git_version", GITS)
-def test_a_root_inside_a_bare_shaped_directory_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str, ov_config: str
-) -> None:
-    # The same shape from the project's side: run from `proj/ov`, git's own discovery stops at
-    # `ov/` and names *it* as the repository, whose only "checkout" is itself — so the sibling
-    # `proj.wt/feature/ov` lies outside every listed checkout and every path arm. git's answer
-    # says `ov/` is not inside a work tree — even when a committed `ov/config` says
-    # `core.bare = false` (`claims-a-checkout`) — and on every git version that is what refuses:
-    # a project root with no checkout of its own to compare against is not one.
-    #
-    # Mutation (`mutations/`'s "setup stops refusing a root git does not read as inside a
-    # checkout"): the `--is-inside-work-tree` refusal becomes `if False:` → the current-git cases
-    # fall to the retry's refusal, which does not say "bare repository", and the other cases are
-    # recorded.
-    _as(git_version, monkeypatch)
-    config = "[core]\n\tbare = false\n" if ov_config == "claims-a-checkout" else ""
-    project, _ = _clone_with_a_bare_shaped_directory(tmp_path, config)
-    with pytest.raises(Refusal, match="bare repository"):
-        _record(tmp_path, tmp_path / "proj.wt" / "feature" / "ov", project / "ov")
-    assert not (tmp_path / "config.toml").exists(), "refused above the first write"
-
-
-def test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_the_candidate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Why the listing stays the arm that decides: it does not depend on git answering from the
-    # candidate's side at all. Here every question asked from anywhere but the project root
-    # times out, so the candidate-side walk finds nothing, and the sibling's `ov/` is refused by
-    # the project's own record of its checkouts alone.
-    #
-    # Mutation (`mutations/`'s "setup stops asking git whether the overlay is a checkout of the
-    # project"): the per-checkout comparison becomes `if False:` → the sibling is recorded.
-    project, worktrees = _clone_with_a_bare_shaped_directory(tmp_path)
-    real = gitenv.git_run
-
-    def silent_off_the_project(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
-        if "rev-parse" in args and root.resolve() != project.resolve():
-            return -1, ""
-        return real(root, *args, **kwargs)
-
-    monkeypatch.setattr("stayfixed.setup.run.git_run", silent_off_the_project)
-    with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, worktrees / "feature" / "ov", project)
-
-
-@pytest.mark.parametrize("ov_config", ["none", "claims-a-checkout", "points-elsewhere"])
-@pytest.mark.parametrize("git_version", GITS)
-def test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str, ov_config: str
-) -> None:
-    # `git worktree list` does not name every checkout. With `--separate-git-dir` the main
-    # worktree is listed as the git directory (`sep.git`), which does not record where its work
-    # tree is, so from the linked worktree `s.wt/w` the main checkout `s` is on no list and its
-    # `ov/` passed every listed arm. The candidate-side arm walks up from the candidate to the
-    # first repository git answers for that is not bare — `s`, through its `.git` file — and
-    # refuses when that is the project's. It can only add a refusal: whatever the candidate's
-    # bytes make git answer, the listing's refusals still stand.
-    #
-    # Mutation (`mutations/`'s "setup stops asking git from the candidate's side"): the
-    # candidate-side refusal becomes `if False:` → `s/ov` is recorded and both cases redden.
-    # Mutation (`mutations/`'s "the candidate-side walk stops at the first directory git will not
-    # answer for"): the step to the parent becomes `return None` → git refuses `ov/` as a bare
-    # repository, the walk never reaches `s`, and the current-git case reddens.
-    #
-    # On a git that ignores the key, `ov/` answers for itself, and what it commits can shape
-    # that answer: `claims-a-checkout` commits `ov/config` saying `core.bare = false`, and
-    # `points-elsewhere` commits `ov/commondir` naming a second bare-shaped `ov2/` whose config
-    # says the same, so the answer is "not bare" with a common directory off the walk. Neither
-    # can make git say `ov/` is inside a work tree, and the walk goes on past it.
-    # Mutation (`mutations/`'s "the candidate-side walk takes an answer from outside a work tree as
-    # the candidate's"): the `answer[1] == "true"` condition is dropped → the walk stops at `ov/`
-    # and every `ignores-safe-bare` case reddens.
-    _as(git_version, monkeypatch)
-    main, sep = tmp_path / "s", tmp_path / "sep.git"
-    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
-    not_bare = "[core]\n\tbare = false\n"
-    if ov_config == "claims-a-checkout":
-        (main / "ov").mkdir()
-        (main / "ov" / "config").write_text(not_bare, encoding="utf-8")
-    if ov_config == "points-elsewhere":
-        other = main / "ov2"
-        (other / "objects").mkdir(parents=True)
-        (other / "refs").mkdir()
-        (other / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
-        (other / "objects" / ".keep").write_text("", encoding="utf-8")
-        (other / "refs" / ".keep").write_text("", encoding="utf-8")
-        (other / "config").write_text(not_bare, encoding="utf-8")
-        (main / "ov").mkdir()
-        (main / "ov" / "commondir").write_text("../ov2\n", encoding="utf-8")
-    _commit_a_bare_shaped_directory(main)
-    linked = tmp_path / "s.wt" / "w"
-    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
-    with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, main / "ov", linked)
-
-
-@pytest.mark.parametrize("git_version", GITS)
-def test_a_submodule_checkout_is_refused_from_a_worktree_of_the_submodule(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
-) -> None:
-    # The second layout the listing names by its git directory: a submodule's own checkout is
-    # listed as `sup/.git/modules/sub`, so from a linked worktree of the submodule `sup/sub` is
-    # on no list. The candidate-side walk reaches it through `sup/sub/.git`.
-    #
-    # Mutation (`mutations/`'s "setup stops asking git from the candidate's side"): as above, both
-    # cases.
-    _as(git_version, monkeypatch)
-    sub = tmp_path / "sub"
-    sub.mkdir()
-    _git(sub, "init", "-q", "-b", "main")
-    _commit_a_bare_shaped_directory(sub)
-    sup = tmp_path / "sup"
-    sup.mkdir()
-    _git(sup, "init", "-q", "-b", "main")
-    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "sub")
-    _git(sup, "commit", "-qm", "add the submodule")
-    linked = tmp_path / "sup.wt"
-    _git(sup / "sub", "worktree", "add", "-q", str(linked), "-b", "w")
-    with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, sup / "sub" / "ov", linked)
-
-
-def test_a_sibling_checkout_spelled_in_another_case_is_still_refused(tmp_path: Path) -> None:
-    # On a volume that folds case — macOS's default — `PROJ.WT/feature/ov` is the sibling
-    # checkout's `ov/`, and `Path.resolve()` keeps the case it was given, so a string comparison
-    # against the listed `proj.wt/feature` said "outside". Directories are now compared as the
-    # filesystem sees them.
-    #
-    # No mutation entry: the oracle runs on Linux, where this layout cannot exist and the test
-    # skips, so an entry would be reported as proving nothing. `_overlaps`' own arms are pinned
-    # by the entries on the inside and holds tests.
-    project, _ = _clone_with_a_bare_shaped_directory(tmp_path)
-    candidate = tmp_path / "PROJ.WT" / "feature" / "ov"
-    if not candidate.is_dir():
-        pytest.skip("this filesystem is case-sensitive")
-    with pytest.raises(Refusal, match="same repository"):
-        _record(tmp_path, candidate, project)
-
-
-FAILURES: dict[str, Callable[[tuple[str, ...]], tuple[int, str] | None]] = {
-    # What the listing call answers.
-    "listing-exit": lambda args: (128, "") if "worktree" in args else None,
-    "listing-empty": lambda args: (0, "") if "worktree" in args else None,
-    # What the project-side `rev-parse` answers.
-    "answers-only-without-the-key": (
-        lambda args: (128, "") if "rev-parse" in args and "-c" in args else None
-    ),
-}
-
-
-@pytest.mark.parametrize("failure", sorted(FAILURES))
-def test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
-) -> None:
-    # Once git has said the project is a repository, "no answer" about its checkouts is not
-    # "none of them holds the candidate". It used to be: a `git` that gave no answer for the
-    # candidate returned `None`, `None` differed from the project's common directory, and the
-    # candidate was recorded. (A path git prints in bytes that are not UTF-8 is not among these:
-    # `gitenv.git_run` decodes it losslessly, so it is an answer, and the test of a non-UTF-8
-    # common directory above holds that.)
-    #
-    # Mutation (`mutations/`'s "setup stops refusing an overlay when git cannot list the project's
-    # checkouts"): the listing's refusal becomes `return _Repository(common, [])` → the
-    # legitimate-looking overlay below is recorded and `listing-exit` reddens. An empty listing
-    # with exit 0 is refused before it is read, as a git that printed nothing inside a checkout
-    # (`_ask`), so it says that instead.
-    # Mutation (`mutations/`'s "setup takes an answer git gave only without the key"): the refusal
-    # after the retry becomes `pass` → `answers-only-without-the-key` is recorded and reddens.
-    project = tmp_path / "project"
-    project.mkdir()
-    _git(project, "init", "-q", "-b", "main")
-    overlay = tmp_path / "stayfixed-private"
-    overlay.mkdir()
-    _git(overlay, "init", "-q", "-b", "main")
-    _seed_overlay(overlay)
-    real = gitenv.git_run
-
-    def failing(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
-        answer = FAILURES[failure](args)
-        if answer is None:
-            return real(root, *args, **kwargs)
-        return answer
-
-    monkeypatch.setattr("stayfixed.setup.run.git_run", failing)
-    said = "git exited 0 and printed nothing" if failure == "listing-empty" else "could not list"
-    with pytest.raises(Refusal, match=said):
-        _record(tmp_path, overlay, project)
-
-
-# Which `git` calls give no answer — `gitenv.git_run`'s `(-1, "")`, for a git that could not be
-# run or ran past its time limit — keyed by what was asked and from where.
-SILENT: dict[str, Callable[[Path, Path, tuple[str, ...]], bool]] = {
-    "every-call": lambda main, root, args: True,
-    "the-listing": lambda main, root, args: "worktree" in args,
-    # Only the walk up from the candidate: `main` is the checkout the listing names by its git
-    # directory, so this arm alone can refuse it.
-    "the-candidate-side": lambda main, root, args: main in (root, *root.parents),
-}
-
-
-@pytest.mark.parametrize("silent", sorted(SILENT))
-def test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, silent: str
-) -> None:
-    # `git_run` answers `(-1, "")` when git could not be run or ran past its time limit, and the
-    # guard read that as it reads git's own "no repository": `_repository` answered `None` and
-    # only the path arm stood, and the candidate-side walk went on past it and found nothing. A
-    # git that timed out on `rev-parse` let the main checkout of the project be recorded as the
-    # trust anchor from one of its worktrees. Inside a checkout, which the disk says without
-    # asking git, that silence is now a refusal.
-    #
-    # The layout is the separate-git-dir one, whose main checkout `s` only the candidate-side
-    # walk can refuse, so each of the three places git is asked is the one that decides.
-    #
-    # Mutation (`mutations/`'s "setup reads git giving no answer inside a checkout as no repository
-    # again"): the refusal in `_ask` becomes `if False:` → `every-call` and `the-candidate-side`
-    # record `s/ov`, and `the-listing` is refused for an empty listing, a message that names the
-    # wrong cause; all three redden.
-    main, sep = tmp_path / "s", tmp_path / "sep.git"
-    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
-    (main / "README.md").write_text("x", encoding="utf-8")
-    _git(main, "add", "-A")
-    _git(main, "commit", "-qm", "init")
-    linked = tmp_path / "s.wt" / "w"
-    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
-    candidate = main / "ov"
-    candidate.mkdir()
-    _seed_overlay(candidate)
-    real = gitenv.git_run
-    resolved_main = main.resolve()
-
-    def silent_git(root: Path, *args: str, **kwargs: Any) -> tuple[int, str]:
-        if SILENT[silent](resolved_main, root.resolve(), args):
-            return -1, ""
-        return real(root, *args, **kwargs)
-
-    monkeypatch.setattr("stayfixed.setup.run.git_run", silent_git)
-    with pytest.raises(Refusal, match="gave no answer") as refused:
-        _record(tmp_path, candidate, linked)
-    assert gitenv.NO_ANSWER in str(refused.value)
-
-
-def test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The other side of the test above: where no `.git` is at or above the directory git was
-    # asked from, there is no checkout for it to have named, so a git that cannot run at all
-    # costs nothing and the path arm stands, as it did before.
-    #
-    # Mutation (`mutations/`'s "setup refuses an overlay whenever git gives no answer, checkout or
-    # not"): the `in_work_tree` condition is dropped → this overlay is refused and this reddens.
-    project = tmp_path / "project"
-    project.mkdir()
-    overlay = tmp_path / "stayfixed-private"
-    overlay.mkdir()
-    _seed_overlay(overlay)
-    monkeypatch.setattr("stayfixed.setup.run.git_run", lambda root, *args, **kwargs: (-1, ""))
-    machine = tmp_path / "config.toml"
-    report = setup(
-        "recommended",
-        home=tmp_path / "home",
-        machine=machine,
-        runner=Recorder(),
-        yes=True,
-        overlay=str(overlay),
-        project_root=project,
-    )
-    assert report.overlay == overlay
-    assert overlay_root(machine) == overlay
-
-
-# A `git` that runs the real one as though another user owned every repository it opens, which
-# is how git's own suite drives `safe.directory`: git then refuses the repository with exit 128.
-# `where` limits it to the directories one arm of the guard asks from. Where it applies it reads
-# neither the system nor the global configuration, as `tests/ledger/test_write.py`'s wrapper does:
-# a machine whose either file sets `safe.directory = *` — GitHub's Ubuntu images write it into
-# `/etc/gitconfig`, which the product's `git` reads — trusts every repository, so git described
-# the one this wrapper exists to have refused and only the path arm was left to be tested.
-DUBIOUS: dict[str, Callable[[Path], str]] = {
-    "every-call": lambda main: "true",
-    # Only the walk up from the candidate: `main` is the checkout the listing names by its git
-    # directory, so this arm alone can refuse it.
-    "the-candidate-side": lambda main: (
-        f'case "$2" in "{main}"|"{main}"/*) true ;; *) false ;; esac'
-    ),
-}
-
-
-def _dubious_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str) -> None:
-    real_git = shutil.which("git")
-    assert real_git is not None
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "git").write_text(
-        "#!/bin/sh\n"
-        f"if {where}; then\n"
-        "  GIT_TEST_ASSUME_DIFFERENT_OWNER=1\n"
-        "  GIT_CONFIG_NOSYSTEM=1\n"
-        f"  GIT_CONFIG_GLOBAL={os.devnull}\n"
-        "  export GIT_TEST_ASSUME_DIFFERENT_OWNER GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL\n"
-        "fi\n"
-        f'exec "{real_git}" "$@"\n',
-        encoding="utf-8",
-    )
-    (bin_dir / "git").chmod(0o755)
-    stand_in_git(monkeypatch, bin_dir / "git")
-
-
-@pytest.mark.parametrize("dubious", sorted(DUBIOUS))
-def test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dubious: str
-) -> None:
-    # Exit 128 inside a checkout is git saying there is a repository it will not describe —
-    # another user's under `safe.directory`, or one whose `.git` it cannot read — and the guard
-    # read it as git's "no repository": on every call only the path arm stood and the main
-    # checkout's `ov/` was recorded from a linked worktree; on the candidate side the walk went
-    # past it. The layout is the separate-git-dir one of the silent-git case above.
-    #
-    # Mutations (declared): the 128 refusal in `_ask` made `if False:` -> both cases record
-    # `s/ov`; the walk's question without the key dropped -> the candidate-side case records it.
-    main, sep = tmp_path / "s", tmp_path / "sep.git"
-    _git(tmp_path, "init", "-q", "-b", "main", "--separate-git-dir", str(sep), str(main))
-    (main / "README.md").write_text("x", encoding="utf-8")
-    _git(main, "add", "-A")
-    _git(main, "commit", "-qm", "init")
-    linked = tmp_path / "s.wt" / "w"
-    _git(main, "worktree", "add", "-q", str(linked), "-b", "w")
-    candidate = main / "ov"
-    candidate.mkdir()
-    _seed_overlay(candidate)
-    _dubious_git(tmp_path, monkeypatch, DUBIOUS[dubious](main.resolve()))
-    # The premise, asked of the `git` the product runs: it refuses the main checkout. A runner
-    # whose configuration defeats the fake owner fails here, at the setup, and not at the
-    # verdict below, where the path arm's refusal reads as a different message.
-    assert gitenv.git_run(main.resolve(), "rev-parse", "--git-dir")[0] == 128
-    with pytest.raises(Refusal, match="refused to describe the repository"):
-        _record(tmp_path, candidate, linked)
-    assert overlay_root(tmp_path / "config.toml") is None
-
-
-def test_git_refusing_every_repository_where_no_checkout_is_still_records_the_overlay(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The other side: outside every checkout git's 128 is its ordinary "not a git repository",
-    # and no `.git` at or above the directory says there was nothing for it to describe.
-    # Mutation (declared): the `in_work_tree` condition dropped from the 128 arm -> refused.
-    project = tmp_path / "project"
-    project.mkdir()
-    overlay = tmp_path / "stayfixed-private"
-    overlay.mkdir()
-    _seed_overlay(overlay)
-    _dubious_git(tmp_path, monkeypatch, "true")
-    _record(tmp_path, overlay, project)
-    assert overlay_root(tmp_path / "config.toml") == overlay
-
-
-# How a `git` that runs can still say nothing about a repository, each a line of shell run in
-# place of `rev-parse`: a wrapper that exits 1 (asdf or mise with no version chosen), one the
-# kernel ends with a signal, and one that exits 0 having printed nothing.
-QUIET = {
-    "exits-1": "exit 1",
-    "killed-by-a-signal": "kill -KILL $$",
-    "answers-nothing": "exit 0",
-}
-# Where the overlay lies, in a checkout git is asked about: inside `--root`, which the path arm
-# would still see with no repository, and in a sibling checkout of `--root`'s repository, which
-# only git's answers can show.
-QUIET_LAYOUTS = ["inside-the-root", "in-a-sibling-checkout"]
-
-
-def _quiet_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rev_parse: str) -> None:
-    real_git = shutil.which("git")
-    assert real_git is not None
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "git").write_text(
-        "#!/bin/sh\n"
-        'for arg in "$@"; do\n'
-        f'  if [ "$arg" = rev-parse ]; then {rev_parse}; fi\n'
-        "done\n"
-        f'exec "{real_git}" "$@"\n',
-        encoding="utf-8",
-    )
-    (bin_dir / "git").chmod(0o755)
-    stand_in_git(monkeypatch, bin_dir / "git")
-
-
-# Two ways a `git` that runs answers `rev-parse` in a shape git does not give, each a stand-in's
-# body: git 2.30 and older echo the `--path-format=absolute` they do not know as an extra line
-# (stood in for by renaming the flag, which a current git echoes the same way), and a wrapper
-# prints a banner of its own on standard output before git's answer.
-MISSHAPEN = {
-    "an-extra-line": (
-        'for a in "$@"; do shift; '
-        'if [ "$a" = --path-format=absolute ]; then set -- "$@" --path-formatx=absolute; '
-        'else set -- "$@" "$a"; fi; done\n'
-    ),
-    "a-banner": "echo 'welcome to the managed toolchain'\n",
-}
-
-
-@needs_git
-@pytest.mark.parametrize("form", ["path", "create", "root"])
-@pytest.mark.parametrize("shape", sorted(MISSHAPEN))
-def test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str, form: str
-) -> None:
-    # The walk up from the overlay took only `<path>`, `true` as an answer and stepped past every
-    # other exit-0 answer, inside a work tree too, so with `--root` in no repository — where the
-    # walk is the only arm — an overlay, or a `create:` destination, inside another repository's
-    # work tree was recorded. Inside a work tree an answer that is not a path and `true` or
-    # `false` refuses; `root` is the same rule asked of `--root`'s own repository, which refused
-    # such an answer as an unlisted one. Mutations (`mutations/`'s "the candidate walk steps past
-    # an answer of the wrong shape inside a work tree" -> `path` and `create` are recorded;
-    # "setup reads --root's repository from an answer of the wrong shape" -> `root` is refused in
-    # other words).
-    repository = tmp_path / "code" / "R"
-    repository.mkdir(parents=True)
-    _git(repository, "init", "-q", "-b", "main")
-    root = tmp_path / "project"
-    root.mkdir()
-    real_git = shutil.which("git")
-    assert real_git is not None
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "git").write_text(
-        f'#!/bin/sh\n{MISSHAPEN[shape]}exec "{real_git}" "$@"\n', encoding="utf-8"
-    )
-    (bin_dir / "git").chmod(0o755)
-    stand_in_git(monkeypatch, bin_dir / "git")
-    if form == "root":
-        root, overlay, home = repository, tmp_path / "ov", tmp_path / "home"
-        _seed_overlay(overlay)
-        spelled = str(overlay)
-    elif form == "path":
-        overlay, home = repository / "ov", tmp_path / "home"
-        _seed_overlay(overlay)
-        spelled = str(overlay)
-    else:
-        overlay, home, spelled = (
-            repository / "stayfixed-private",
-            repository,
-            "create:octo/stayfixed-private",
-        )
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    with pytest.raises(Refusal, match="in a shape it does not give"):
-        setup(
-            "recommended",
-            home=home,
-            machine=tmp_path / "config.toml",
-            runner=runner,
-            yes=True,
-            overlay=spelled,
-            project_root=root,
-        )
-    assert runner.calls == [] and overlay_root(tmp_path / "config.toml") is None
-
-
-@needs_git
-@pytest.mark.parametrize("layout", QUIET_LAYOUTS)
-@pytest.mark.parametrize("quiet", sorted(QUIET))
-def test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, quiet: str, layout: str
-) -> None:
-    # Only a `git` that could not be run or ran out of time refused; every other way of saying
-    # nothing — an exit of 1, 126 or 127, a signal, an empty answer — read as "no repository",
-    # so the comparisons with `--root` were skipped and the walk up from the candidate stepped
-    # past every directory: the clone's own `ov/` was recorded as the machine's trust anchor,
-    # exit 0. Inside a checkout, which the disk says without asking git, any of them refuses.
-    #
-    # Mutation (`mutations/`'s "setup reads git giving no answer inside a checkout as no
-    # repository again"): the silent arm of `_ask` answers `None` -> `in-a-sibling-checkout` is
-    # recorded and `inside-the-root` is refused by the path arm in other words; all redden.
-    project = tmp_path / "proj"
-    project.mkdir()
-    _git(project, "init", "-q", "-b", "main")
-    (project / "README.md").write_text("x", encoding="utf-8")
-    _git(project, "add", "-A")
-    _git(project, "commit", "-qm", "init")
-    candidate = project / "ov"
-    candidate.mkdir()
-    _seed_overlay(candidate)
-    root = project
-    if layout == "in-a-sibling-checkout":
-        root = tmp_path / "proj.wt" / "feature"
-        _git(project, "worktree", "add", "-q", str(root), "-b", "feature")
-    _quiet_git(tmp_path, monkeypatch, QUIET[quiet])
-    with pytest.raises(Refusal, match="gave no answer"):
-        _record(tmp_path, candidate, root)
-    assert overlay_root(tmp_path / "config.toml") is None
-
-
-@pytest.mark.parametrize("git_version", GITS)
-def test_an_overlay_beside_a_project_with_worktrees_is_still_recorded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, git_version: str
-) -> None:
-    # The legitimate user the tests above must not lose: a project with a main checkout and a
-    # sibling worktree, as this project's own preset lays it out, and an overlay that is a
-    # repository of its own beside both. Its root is under no checkout and holds none, and git
-    # asked from inside it answers with its own repository, so it is recorded — from either
-    # checkout, and on either git.
-    _as(git_version, monkeypatch)
-    project, worktrees = _clone_with_a_bare_shaped_directory(tmp_path)
-    overlay = tmp_path / "stayfixed-private"
-    overlay.mkdir()
-    _git(overlay, "init", "-q", "-b", "main")
-    _seed_overlay(overlay)
-    for root in (project, worktrees / "feature"):
-        machine = tmp_path / f"{root.name}.toml"
-        report = setup(
-            "recommended",
-            home=tmp_path / "home",
-            machine=machine,
-            runner=Recorder(),
-            yes=True,
-            overlay=str(overlay),
-            project_root=root,
-        )
-        assert report.overlay == overlay
-        assert overlay_root(machine) == overlay
 
 
 def test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where_it_leads(
@@ -2300,9 +979,7 @@ def test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where
         home=home,
         machine=machine,
         runner=Recorder(),
-        yes=False,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert machine.is_file()
     assert (real / USER_SETTINGS).is_file()
@@ -2319,14 +996,14 @@ _ROOT_WRITES_EVERYWHERE = pytest.mark.skipif(
 def _setup_through_the_cli(
     monkeypatch: pytest.MonkeyPatch, home: Path, machine: Path
 ) -> tuple[int, Recorder]:
-    """`stayfixed setup --preset recommended --yes --home H --machine M`, through `cli.run`, with
+    """`stayfixed setup --preset recommended --home H --machine M`, through `cli.run`, with
     the runner a recorder: the frame is what turns an `OSError` into `internal error`, so a test
     about what the owner reads has to go through it."""
     from stayfixed.cli import build_parser, discover_registrars, run
 
     runner = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
-    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+    argv = ["setup", "--preset", "recommended", "--home", str(home)]
     code = run([*argv, "--machine", str(machine)], parser=build_parser(discover_registrars()))
     return code, runner
 
@@ -2384,9 +1061,7 @@ def test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_befo
             home=home,
             machine=machine,
             runner=runner,
-            yes=False,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     said = str(refused.value)
     assert f"{directory} is not readable, and the settings write opens it to read" in said, said
@@ -2415,9 +1090,7 @@ def test_a_home_mkdir_that_fails_is_a_refusal(
             home=home,
             machine=machine,
             runner=Recorder(),
-            yes=True,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     assert str(refused.value) == f"--home {home} could not be created (Permission denied)"
     assert not machine.exists()
@@ -2442,9 +1115,7 @@ def test_a_read_only_home_whose_claude_directory_is_writable_is_set_up(tmp_path:
             home=home,
             machine=machine,
             runner=Recorder(),
-            yes=False,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     assert machine.is_file()
     assert (home / USER_SETTINGS).is_file()
@@ -2467,9 +1138,7 @@ def test_a_created_overlay_already_in_a_read_only_home_is_set_up(tmp_path: Path)
             home=home,
             machine=machine,
             runner=runner,
-            yes=True,
             overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
         )
     assert not any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
     assert machine.is_file()
@@ -2492,9 +1161,7 @@ def test_a_home_that_is_a_regular_file_is_refused_as_one(tmp_path: Path, below: 
             home=home,
             machine=machine,
             runner=Recorder(),
-            yes=False,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     reason = "Not a directory" if below else "File exists"
     assert str(refused.value) == f"--home {home} could not be created ({reason})"
@@ -2518,9 +1185,7 @@ def test_a_created_overlay_in_a_read_only_home_is_refused_before_gh_runs(tmp_pat
             home=home,
             machine=machine,
             runner=runner,
-            yes=True,
             overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
         )
     assert str(refused.value) == f"--home {home} cannot be used: {home} is not writable"
     assert runner.calls == []
@@ -2557,9 +1222,7 @@ def test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anyt
             home=home,
             machine=machine,
             runner=runner,
-            yes=True,
             overlay="create:octo/stayfixed-private",
-            project_root=project,
         )
     assert str(refused.value) == (
         f"{quoted(str(home / 'stayfixed-private'))} cannot be checked (Permission denied), so "
@@ -2569,46 +1232,30 @@ def test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anyt
     assert not machine.exists()
 
 
-def _below_a_locked_directory(tmp_path: Path, what: str) -> tuple[dict[str, Any], Path]:
-    """`setup`'s keyword arguments with `what` — `--overlay` or `--root` —
-    below `tmp_path/locked`, and the path below it that cannot be asked about once it is locked."""
+def _below_a_locked_directory(tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    """`setup`'s keyword arguments with `--overlay` below `tmp_path/locked`, and the path below it
+    that cannot be asked about once it is locked."""
     locked = tmp_path / "locked"
     locked.mkdir()
-    overlay = tmp_path / "overlay"
-    _seed_overlay(overlay)
-    arguments: dict[str, Any] = {
-        "home": tmp_path / "home",
-        "overlay": str(overlay),
-        "project_root": tmp_path / "project",
-    }
-    if what == "overlay":
-        asked = locked / "overlay"
-        _seed_overlay(asked)
-        arguments["overlay"] = str(asked)
-    else:
-        asked = locked / "project"
-        asked.mkdir()
-        arguments["project_root"] = asked
-    return arguments, asked
+    asked = locked / "overlay"
+    _seed_overlay(asked)
+    return {"home": tmp_path / "home", "overlay": str(asked)}, asked
 
 
 @ROOT_SEARCHES_EVERYTHING
-@pytest.mark.parametrize("what", ["overlay", "root"])
 def test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it(
-    tmp_path: Path, what: str
+    tmp_path: Path,
 ) -> None:
-    # Each of these ended in `stayfixed: internal error: PermissionError`, with the path in a
-    # traceback's words: `--overlay` from the overlay probe's `is_dir`, `--root` from the walk to
-    # the nearest directory git is asked from. Neither step words that fault itself, so the phase's
-    # floor
-    # does, naming the path the predicate was handed. Mutation (`mutations/`'s "setup lets a path
-    # it cannot ask about before its first write reach the frame"): the floor's `except` dropped
-    # -> `PermissionError` leaves `setup`, and every case reddens.
-    arguments, asked = _below_a_locked_directory(tmp_path, what)
+    # This ended in `stayfixed: internal error: PermissionError`, with the path in a traceback's
+    # words, from the overlay probe's `is_dir`. The step does not word that fault itself, so the
+    # phase's floor does, naming the path the predicate was handed. Mutation (`mutations/`'s
+    # "setup lets a path it cannot ask about before its first write reach the frame"): the floor's
+    # `except` dropped -> `PermissionError` leaves `setup`, and this reddens.
+    arguments, asked = _below_a_locked_directory(tmp_path)
     machine = tmp_path / "config.toml"
     runner = Recorder()
     with unsearchable(tmp_path / "locked"), pytest.raises(Refusal) as refused:
-        setup("recommended", machine=machine, runner=runner, yes=True, **arguments)
+        setup("recommended", machine=machine, runner=runner, **arguments)
     assert str(refused.value) == (
         f"{quoted(str(asked))} cannot be checked (Permission denied), so nothing was written"
     )
@@ -2640,9 +1287,7 @@ def test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_befor
             home=home,
             machine=machine,
             runner=runner,
-            yes=True,
             overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
         )
     assert str(refused.value) == f"--home {home} cannot be used: {destination} cannot be searched"
     assert runner.calls == []
@@ -2654,7 +1299,6 @@ _THE_PHASE = (
     "_requested_overlay",
     "load_preset",
     "_check_home_usable",
-    "_outside_the_project",
 )
 
 
@@ -2663,9 +1307,7 @@ def test_every_question_before_the_first_write_is_asked_in_the_documented_order(
 ) -> None:
     # The order is what makes "refused before anything was written" true of every step: a step
     # that ran after a write or a program would have that write behind its refusal. Each step,
-    # each write and each program run is logged as it happens. Mutation (`mutations/`'s "setup
-    # asks where the overlay lies before it asks about --home") -> the order differs, and this
-    # reddens.
+    # each write and each program run is logged as it happens.
     from stayfixed.setup import run
 
     events: list[str] = []
@@ -2698,9 +1340,7 @@ def test_every_question_before_the_first_write_is_asked_in_the_documented_order(
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=ran),
-        yes=True,
         overlay="create:octo/stayfixed-private",
-        project_root=tmp_path / "project",
     )
     phase = len(_THE_PHASE)
     assert tuple(events[:phase]) == _THE_PHASE, events
@@ -2708,7 +1348,7 @@ def test_every_question_before_the_first_write_is_asked_in_the_documented_order(
     assert {"write_machine", "_write_user_settings", "run"} <= set(events[phase:]), events
 
 
-@pytest.mark.parametrize("place", ["claude", "home", "root", "overlay"])
+@pytest.mark.parametrize("place", ["claude", "home", "overlay"])
 def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2717,58 +1357,35 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
 ) -> None:
     # Python 3.11 and 3.12 raise `RuntimeError` resolving a path through a symlink loop, which the
     # floor under `setup`'s questions before its first write, an `except OSError`, did not catch:
-    # a loop at `~/.claude`, `--home`, `--root` or `--overlay` was
-    # `stayfixed: internal error: RuntimeError` there, while 3.13 refused some in other words and
-    # recorded the overlay past a looping `--root`. Every resolve in `setup` goes through
+    # a loop at `~/.claude`, `--home` or `--overlay` was `stayfixed: internal error: RuntimeError`
+    # there, while 3.13 refused some in other words. Every resolve in `setup` goes through
     # `fsops.resolved`, so each is the floor's refusal, naming the path, on every interpreter, with
-    # nothing written and nothing run. Mutations (`mutations/`'s "setup's command resolves --root
-    # past fsops" -> `root`; "setup resolves --overlay past fsops" -> `overlay`; "fsops.resolved
-    # answers a loop with a path where the interpreter does" -> `home`).
+    # nothing written and nothing run. Mutations (`mutations/`'s "setup resolves --overlay past
+    # fsops" -> `overlay`; "fsops.resolved answers a loop with a path where the interpreter does"
+    # -> `home`).
     from stayfixed.cli import build_parser, discover_registrars, run
 
     home, machine = tmp_path / "home", tmp_path / "config.toml"
-    root, overlay = tmp_path / "project", tmp_path / "overlay"
+    overlay = tmp_path / "overlay"
     home.mkdir()
-    root.mkdir()
     _seed_overlay(overlay)
-    looped = {
-        "claude": home / ".claude",
-        "home": home,
-        "root": root,
-        "overlay": overlay,
-    }[place]
+    looped = {"claude": home / ".claude", "home": home, "overlay": overlay}[place]
     if looped.is_dir():
         shutil.rmtree(looped)
     looped.parent.mkdir(parents=True, exist_ok=True)
     looped.symlink_to(looped)
-    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
-    argv += ["--machine", str(machine), "--root", str(root), "--overlay", str(overlay)]
+    argv = ["setup", "--preset", "recommended", "--home", str(home)]
+    argv += ["--machine", str(machine), "--overlay", str(overlay)]
     runner = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
     code = run(argv, parser=build_parser(discover_registrars()))
     said = capsys.readouterr().err
     assert code == 2, said
     assert said.startswith("stayfixed: refused: "), said
-    # `--root` is resolved by the command before `setup` is called, and named as the flag.
     # A loop at `~/.claude` or `--home` is met resolving the settings file below it, named.
     asked = home / USER_SETTINGS if place in ("claude", "home") else looped
-    named = f"--root {quoted(str(looped))}" if place == "root" else quoted(str(asked))
-    assert f"{named} cannot be checked (" in said, said
+    assert f"{quoted(str(asked))} cannot be checked (" in said, said
     assert not machine.exists() and runner.calls == []
-
-
-def test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused(tmp_path: Path) -> None:
-    # The command resolves `--root` before it calls `setup`, and `setup` resolves the root it is
-    # handed again where it compares the overlay with it, under the floor: a caller of the
-    # library that hands it a loop gets the floor's refusal, on every interpreter. Mutation
-    # (`mutations/`'s "setup resolves the project root past fsops") -> 3.13 records the overlay,
-    # and 3.11 raises `RuntimeError`.
-    root, overlay = tmp_path / "project", tmp_path / "overlay"
-    root.symlink_to(root)
-    _seed_overlay(overlay)
-    with pytest.raises(Refusal, match="cannot be checked"):
-        _record(tmp_path, overlay, root)
-    assert not (tmp_path / "config.toml").exists()
 
 
 def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> None:
@@ -2791,9 +1408,7 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
             home=home,
             machine=machine,
             runner=Recorder(),
-            yes=True,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     write_machine(machine, personal={"preset": "mine"}, overlay_root=None, machine={})
     setup(
@@ -2801,9 +1416,7 @@ def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> No
         home=home,
         machine=machine,
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
     options = settings["pluginConfigs"]["stayfixed@stayfixed-marketplace"]["options"]
@@ -2833,9 +1446,7 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
             home=home,
             machine=tmp_path / "config.toml",
             runner=Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_wrong_tree),
-            yes=True,
             overlay="create:octo/stayfixed-private",
-            project_root=tmp_path / "project",
         )
     message = str(refused.value)
     assert "is not a layout-1 record" in message
@@ -2867,9 +1478,7 @@ def test_a_symlinked_settings_file_or_claude_directory_is_written_through(
         home=home,
         machine=tmp_path / "config.toml",
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert "permissions" in json.loads(leads_to.read_text(encoding="utf-8"))
     assert (home / (USER_SETTINGS if per_file else ".claude")).is_symlink()
@@ -2897,9 +1506,7 @@ def test_a_machine_file_linked_into_a_directory_that_cannot_be_written_names_tha
                 home=home,
                 machine=machine,
                 runner=Recorder(),
-                yes=True,
                 overlay=None,
-                project_root=tmp_path / "project",
             )
     finally:
         leads_to.parent.chmod(0o755)
@@ -2923,9 +1530,7 @@ def test_a_symlinked_machine_file_is_written_through_and_stays_a_link(tmp_path: 
         home=home,
         machine=machine,
         runner=Recorder(),
-        yes=True,
         overlay=None,
-        project_root=tmp_path / "project",
     )
     assert machine.is_symlink()
     written = read_machine(leads_to)
@@ -2953,9 +1558,7 @@ def test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_
             home=home,
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            yes=True,
             overlay=None,
-            project_root=tmp_path / "project",
         )
     assert str(caught.value) == f"{home / USER_SETTINGS} {NESTED}"
     assert (home / USER_SETTINGS).read_text(encoding="utf-8") == '{"theme": "dark"}'
@@ -2980,9 +1583,7 @@ def test_setup_renders_an_overlay_at_an_absent_path_and_records_it(tmp_path: Pat
         home=tmp_path / "home",
         machine=machine,
         runner=runner,
-        yes=False,
         overlay=str(destination),
-        project_root=tmp_path / "project",
     )
     assert overlay_fault(destination) is None
     head = (destination / ".git" / "HEAD").read_text(encoding="utf-8")
@@ -2991,3 +1592,59 @@ def test_setup_renders_an_overlay_at_an_absent_path_and_records_it(tmp_path: Pat
     assert not [argv for argv in runner.calls if argv[0] == "gh"], runner.calls
     assert overlay_root(machine) == destination
     assert report.overlay == destination
+
+
+# --- the destination `create:` clones into, asked before GitHub is -------------------------------
+
+
+@pytest.mark.parametrize("shape", ["a-file", "not-an-overlay", "empty"])
+def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called(
+    tmp_path: Path, shape: str
+) -> None:
+    # `create:` clones into `<home>/<name>`, and the destination was asked only whether it could
+    # be searched: a file there, or a directory holding something else, was met by the clone,
+    # after `gh repo create` had made a repository on the owner's account that nothing recorded.
+    # Both refuse before any `gh` argv now, naming what is there. Mutation: `mutations/`'s
+    # "setup asks about the create: destination after GitHub" -> the `gh` calls come first.
+    from stayfixed.setup.run import DESTINATION_NOT_A_DIRECTORY, DESTINATION_NOT_AN_OVERLAY
+
+    home = tmp_path / "home"
+    home.mkdir()
+    destination = home / "stayfixed-private"
+    if shape == "a-file":
+        destination.write_text("mine\n", encoding="utf-8")
+    else:
+        destination.mkdir()
+        if shape == "not-an-overlay":
+            (destination / "notes.md").write_text("mine\n", encoding="utf-8")
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=home,
+            machine=machine,
+            runner=runner,
+            overlay="create:octo/stayfixed-private",
+        )
+    sentence = DESTINATION_NOT_A_DIRECTORY if shape == "a-file" else DESTINATION_NOT_AN_OVERLAY
+    assert str(refused.value) == sentence.format(destination=quoted(str(destination)))
+    assert not [argv for argv in runner.calls if argv[0] == "gh"], runner.calls
+    assert not machine.exists()
+
+
+def test_create_needs_no_yes_and_makes_an_absent_destination(tmp_path: Path) -> None:
+    # `--yes` stood in front of `create:` as a consent a model-written command line types as
+    # easily as the command itself. Naming `create:<owner>/<name>` is the request.
+    home = tmp_path / "home"
+    machine = tmp_path / "config.toml"
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    setup(
+        "recommended",
+        home=home,
+        machine=machine,
+        runner=runner,
+        overlay="create:octo/stayfixed-private",
+    )
+    assert overlay_root(machine) == home / "stayfixed-private"
+    assert [argv[:3] for argv in runner.calls if argv[0] == "gh"][-1] == ["gh", "repo", "create"]

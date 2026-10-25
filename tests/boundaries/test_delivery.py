@@ -37,7 +37,7 @@ CORE_TO_DELIVERY = (
     (
         "setup/run.py",
         "stayfixed.overlay.api",
-        frozenset({"require_overlay", "target_root"}),
+        frozenset({"overlay_fault", "require_overlay", "target_root"}),
     ),
     (
         "setup/run.py",

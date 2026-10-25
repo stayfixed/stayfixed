@@ -51,7 +51,6 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
             "setup",
             "--preset",
             "recommended",
-            "--yes",
             "--home",
             str(home),
             "--machine",
@@ -78,7 +77,7 @@ def test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup(
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    argv = ["setup", "--uninstall", "--yes", "--home", str(home), "--machine", str(machine)]
+    argv = ["setup", "--uninstall", "--home", str(home), "--machine", str(machine)]
     assert invoke(argv) == 2
     assert "--git-hooks" in capsys.readouterr().err
     assert not machine.exists()
@@ -107,7 +106,7 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
-    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 0
+    assert invoke(["setup", "--preset", "recommended", "--home", str(home)]) == 0
     assert (home / ".config" / "stayfixed" / "config.toml").is_file()
     assert not (xdg / "stayfixed" / "config.toml").exists()
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
@@ -152,7 +151,7 @@ def test_a_relative_home_is_no_default_for_home_from_any_directory(
     for name in ("a", "b"):
         (tmp_path / name).mkdir()
         monkeypatch.chdir(tmp_path / name)
-        assert invoke(["setup", "--preset", "recommended", "--yes"]) == 1
+        assert invoke(["setup", "--preset", "recommended"]) == 1
         assert capsys.readouterr().err == (
             "stayfixed: failed: HOME names no home directory, so there is no default for --home "
             "or --machine; set HOME to your home directory, or pass --home PATH and --machine "
@@ -205,7 +204,7 @@ def test_an_overlay_record_past_the_parser_is_refused_as_unreadable_through_the_
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     machine = tmp_path / "config.toml"
-    argv = ["setup", "--yes", "--overlay", str(overlay), "--home", str(tmp_path / "home")]
+    argv = ["setup", "--overlay", str(overlay), "--home", str(tmp_path / "home")]
     code = invoke([*argv, "--machine", str(machine), "--root", str(tmp_path / "project")])
     err = capsys.readouterr().err
     assert "internal error" not in err
@@ -226,7 +225,7 @@ def test_setup_with_no_home_names_machine_and_writes_nothing(
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
     home.mkdir()
-    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 1
+    assert invoke(["setup", "--preset", "recommended", "--home", str(home)]) == 1
     assert "--machine PATH" in capsys.readouterr().err
     assert not stub.calls
     assert list(tmp_path.rglob("config.toml")) == []
@@ -242,7 +241,7 @@ def test_setup_where_the_home_cannot_be_written_fails_naming_the_directory(
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
     try:
         monkeypatch.setenv("HOME", str(locked))
-        assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 1
+        assert invoke(["setup", "--preset", "recommended", "--home", str(home)]) == 1
     finally:
         locked.chmod(0o755)
     err = capsys.readouterr().err
@@ -265,7 +264,7 @@ def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_runnin
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
     named = locked / "stayfixed" / "config.toml"
     try:
-        argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+        argv = ["setup", "--preset", "recommended", "--home", str(home)]
         assert invoke([*argv, "--machine", str(named)]) == 1
     finally:
         locked.chmod(0o755)
@@ -304,7 +303,7 @@ def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
         monkeypatch.setattr(
             fsops, "creatable", lambda path: path.parent != home / ".claude" and real(path)
         )
-    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+    argv = ["setup", "--preset", "recommended", "--home", str(home)]
     assert invoke([*argv, "--machine", str(machine)]) == 2
     assert capsys.readouterr().err == f"stayfixed: refused: {SETUP_SANDBOXED}\n"
     assert (

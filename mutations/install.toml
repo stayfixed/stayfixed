@@ -1176,7 +1176,7 @@ file = "src/stayfixed/setup/commands.py"
 before = "        return fsops.resolved(Path(given))"
 after = "        return Path(given).resolve()"
 reddens = [
-  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
+  "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it",
 ]
 
 [[mutation]]

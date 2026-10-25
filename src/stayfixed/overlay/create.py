@@ -25,7 +25,7 @@ from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
 from stayfixed.errors import Failure
 from stayfixed.jsonobject import json_object
-from stayfixed.overlay.identity import segment
+from stayfixed.overlay.identity import overlay_fault, segment
 from stayfixed.overlay.layout import IDENTITY_RECORD, OVERLAY_FILES
 from stayfixed.overlay.template import templates
 from stayfixed.printed import answered
@@ -46,11 +46,6 @@ TEMPLATE_PUBLISHER = "stayfixed"
 # The owner's own `<owner>/…` probe stays host-relative: that repository is on the owner's host.
 TEMPLATE_PUBLISHER_HOST = "github.com"
 PUBLISHED_TEMPLATE = f"{TEMPLATE_PUBLISHER_HOST}/{TEMPLATE_PUBLISHER}/{TEMPLATE_REPOSITORY}"
-# The file whose presence says a generated repository actually arrived: the identity record, the
-# one thing a repository created from this template always carries. Deliberately weaker than
-# `identity.overlay_fault`: this one answers "did a tree arrive here", which is the question
-# idempotence asks of a clone `gh` gave up on half way through.
-PROBE = IDENTITY_RECORD
 # How long to wait before the one retry, when `gh` says the repository exists and the clone brought
 # nothing down. The spike record's *template creation race and renaming* trial did not reproduce
 # that race in its one attempt, so this is carried on the strength of reasoning rather than of a
@@ -113,21 +108,16 @@ def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
     return root / name, account
 
 
-def _populated(target: Path) -> bool:
-    return fsops.exists(target / PROBE)
-
-
 def render_template(root: Path, name: str) -> Path:
     """Render the shipped template at `root/<name>` through the scaffold engine, and nothing
     else: `render` makes a repository of it, and `scripts/publish_template.py` copies it into the
     template repository's clone."""
     target = root / name
     # **Everything that can refuse runs before anything is created**, and the order is
-    # load-bearing rather than tidy. A render that failed after writing `PROBE` (`templates()` on
-    # a stayfixed installed without the tree, a refused path) would leave behind the one file that
-    # makes a later `create:` answer "already exists and was left alone" and never create the
-    # repository at all. The idempotence rule would silently swallow the real command. A refusal
-    # has to cost nothing on disk.
+    # load-bearing rather than tidy. A render that failed after writing the identity record
+    # (`templates()` on a stayfixed installed without the tree, a refused path) would leave behind
+    # a tree `create:` takes for an overlay already there, and never create the repository at all.
+    # A refusal has to cost nothing on disk.
     #
     # `plan` reads and decides and writes nothing, and it is happy with a root that does not
     # exist yet: `Manifest.read` finds no file and every artifact reads as absent.
@@ -265,9 +255,10 @@ def generate(
     # One spelling of "where this lands and what the owner is called", shared with the caller
     # that has to ask before it calls (`setup`'s `--overlay create:`); see `target_root`.
     target, owner = target_root(root, owner, name)
-    if _populated(target):
-        # Creating the overlay is idempotent by rule: `gh` may give up on the clone with the
-        # repository already created, so the second run finds a tree and must not re-create.
+    if overlay_fault(target) is None:
+        # Creating the overlay is idempotent by rule: a second run finds the overlay the first
+        # one cloned and must not create it again. Anything else already there is `setup`'s to
+        # refuse, before this is called.
         return Created(target, (f"{target} already exists and was left alone",))
     template = _template_for(owner, root=root, runner=runner)
     slug = f"{owner}/{name}"
@@ -284,7 +275,9 @@ def generate(
         ],
         root,
     )
-    if _populated(target):
+    # Whether a tree arrived, and not whether it is an overlay: what arrived is `setup`'s to judge,
+    # and its refusal of one that is not says the repository now exists.
+    if fsops.exists(target):
         return Created(target, (f"created {slug} from {template}",), template)
     if created.code in (NOT_FOUND, TIMED_OUT):
         # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state two
@@ -319,7 +312,7 @@ def generate(
     # is not proof of absence — a rate limit or an expired token answers the same — and one fast
     # failure is cheaper than refusing to try.
     cloned = runner.launch(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
-    if _populated(target):
+    if fsops.exists(target):
         return Created(
             target, (f"cloned {slug}, generated from {template}, on the second attempt",), template
         )

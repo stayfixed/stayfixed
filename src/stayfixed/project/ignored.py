@@ -44,11 +44,13 @@ footprint's ignore block keeps out of git on purpose.
 
 **No repository, no guard.** Outside a git work tree there is no diff for a change to hide
 from, and every write still goes through `contained()` and the `O_NOFOLLOW` walk. Inside one, a
-`check-ignore` that answers neither "some matched" nor "none matched" is a refusal too, because a
-guard that cannot answer must not read as a pass: a `git` that timed out, or that is not there
-to run. Which of the two this is, is read off the disk (`gitenv.in_work_tree`) and never asked
-of the same `git`, which fails the same way under the same load: a `rev-parse` that timed out
-beside the `check-ignore` read as "no repository" and let the write through.
+`check-ignore` that answers neither "some matched" nor "none matched" — a `git` that timed out, or
+that is not there to run — is a warning the command reports (`UNANSWERED`) and never a pass said
+in silence, and never a refusal: a `git` slow under load stopped every `init`, `upgrade` and
+`uninstall` until it answered. Which of the two this is, is read off the disk
+(`gitenv.in_work_tree`) and never asked of the same `git`, which fails the same way under the same
+load: a `rev-parse` that timed out beside the `check-ignore` read as "no repository" and let the
+write through with nothing said.
 """
 
 from __future__ import annotations
@@ -82,8 +84,9 @@ IGNORED_REMOVING = (
     "are and lists them"
 )
 UNANSWERED = (
-    "git could not say whether the files this run would write or remove are ignored, so nothing "
-    "was written; run it again once `git check-ignore` works in this repository"
+    "git could not say whether the files this run writes or removes are ignored, so one at a "
+    "place a [paths] value in stayfixed.toml chose may change with no diff to show it; check them "
+    "once `git check-ignore` works in this repository"
 )
 
 
@@ -108,9 +111,10 @@ def _preset_places(config: Config) -> Mapping[str, frozenset[str]]:
     return prepared.could_write
 
 
-def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> None:
+def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> str:
     """Refuse when git ignores an existing file a write or removal in `plans` targets at a place
-    a `[paths]` value chose; `removing` picks `uninstall`'s remedy."""
+    a `[paths]` value chose; `removing` picks `uninstall`'s remedy. Returns `UNANSWERED` when git
+    could not answer inside a work tree, for the command to report, and `""` otherwise."""
     existing = [
         action
         for planned in plans
@@ -120,7 +124,7 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
         and os.path.lexists(root / action.target)
     ]
     if not existing:
-        return
+        return ""
     places = _preset_places(config)
     chosen: dict[str, Action] = {}
     for action in existing:
@@ -134,18 +138,17 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
         if action.target not in places.get(action.artifact_id, frozenset()):
             chosen.setdefault(action.target, action)
     if not chosen:
-        return
+        return ""
     # `--stdin -z`: the paths go in NUL-separated and never as arguments, so none is read as an
     # option, and come back unquoted, so the answer compares with what was asked.
     code, out = git_run(root, "check-ignore", "--stdin", "-z", stdin="\0".join(sorted(chosen)))
     if code == 1:
-        return
+        return ""
     if code == 0:
         ignored = sorted({name for name in out.split("\0") if name} & set(chosen))
         if ignored:
             names = ", ".join(sorted({printable(chosen[target]) for target in ignored}))
             text = IGNORED_REMOVING if removing else IGNORED
             raise Refusal(text.format(count=len(ignored), names=names))
-        return
-    if in_work_tree(root):
-        raise Refusal(UNANSWERED)
+        return ""
+    return UNANSWERED if in_work_tree(root) else ""

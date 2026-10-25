@@ -44,12 +44,12 @@ from stayfixed.runner import subprocess_runner
 
 # `--git-hooks` installs a hook into one repository and does nothing of machine setup's, so a flag
 # that asks machine setup to do something has no run to belong to beside it: `--preset` was
-# refused, and `--overlay` and `--yes` were dropped, exit 0, the hook installed, for a person who
-# asked for both. Refused alike. `--home` and `--machine` say only where machine setup
+# refused, and `--overlay` was dropped, exit 0, the hook installed, for a person who asked for
+# both. Refused alike. `--home` and `--machine` say only where machine setup
 # would write, ask nothing done, and are ignored here, as `docs/cli.md` says.
 _HOOKS_ALONE = (
     "--git-hooks installs a hook into one repository and does nothing of machine setup's, so it "
-    "takes no --preset, --overlay or --yes; run `stayfixed setup` with those separately"
+    "takes no --preset or --overlay; run `stayfixed setup` with those separately"
 )
 # `--uninstall` removes the hook `--git-hooks` installed, and means nothing to machine setup: on
 # its own it was dropped and the machine setup ran, exit 0, for a person who asked for a hook to be
@@ -128,10 +128,10 @@ EMPTY_HOME = (
 # and `--machine` name files too, and are taken: the advice names the user settings
 # file and the trust record's directory as they would be written. `--uninstall` was taken and
 # dropped, exit 0, for a person who asked for a hook to be removed. `--root` is taken and unread:
-# it says only where `--git-hooks` and `--overlay` act, and both are refused here.
+# it says only where `--git-hooks` acts, which is refused here.
 _ADVICE_ALONE = (
     "--approval-boundary prints what to set and writes nothing, so it takes no --preset, "
-    "--overlay, --yes, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
+    "--overlay, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
 )
 # What `--approval-boundary` prints: the deny rule over the trust record's directory and the user
 # settings file it belongs in, the setting that turns the sandbox on, and the managed settings that
@@ -148,12 +148,12 @@ BOUNDARY_ADVICE = (
 def run_setup(args: argparse.Namespace) -> Result:
     if args.approval_boundary:
         named = (args.preset, args.overlay)
-        switched = (args.yes, args.git_hooks, args.uninstall)
+        switched = (args.git_hooks, args.uninstall)
         if any(switched) or any(value is not None for value in named):
             raise Refusal(_ADVICE_ALONE)
         return run_boundary_advice(args)
     if args.git_hooks:
-        if args.yes or args.preset is not None or args.overlay is not None:
+        if args.preset is not None or args.overlay is not None:
             raise Refusal(_HOOKS_ALONE)
         return run_git_hooks(args)
     if args.uninstall:
@@ -177,9 +177,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         home=home,
         machine=machine,
         runner=subprocess_runner(),
-        yes=args.yes,
         overlay=args.overlay,
-        project_root=_root(args.root),
     )
     data = {
         "machine_written": report.machine_written,
@@ -260,14 +258,6 @@ def register(groups: SubParsers) -> None:
     setup = groups.add_parser("setup", help="configure this machine from a preset")
     setup.add_argument(
         "--preset", default=None, help="the preset to install (default: recommended)"
-    )
-    setup.add_argument(
-        "--yes",
-        action="store_true",
-        help=(
-            "confirm the one irreversible act: creating an overlay repository on GitHub with "
-            "--overlay create:<owner>/<name>. Nothing else asks"
-        ),
     )
     # Both defaults are `None` and are resolved in `run_setup`. A path computed here is computed
     # when the parser is built, which is every run of every command — and printed by

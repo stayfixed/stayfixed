@@ -42,10 +42,7 @@ CHECK_HELP = "report drift instead of writing, and fail if there is any"
 # flag means something other than the shared thing, not a convenience for a sentence someone
 # liked better.
 OVERLAY_ROOT_HELP = "the overlay root (default: current directory)"
-SETUP_ROOT_HELP = (
-    "the repository --git-hooks installs into, and the project root --overlay must not be "
-    "recorded inside of (default: .)"
-)
+SETUP_ROOT_HELP = "the repository --git-hooks installs into (default: .)"
 SETUP_MACHINE_HELP = (
     "the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the "
     "file every reader reads)"

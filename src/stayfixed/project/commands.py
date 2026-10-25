@@ -200,6 +200,8 @@ def run_init(args: argparse.Namespace) -> Result:
         # Nothing is written by a dry run or a refused one, the stamp included.
         verb = "would write" if report.dry_run or report.refused else "wrote"
         lines.append(STAMPED.format(verb=verb))
+    if report.unanswered:
+        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
@@ -215,6 +217,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "head_note": report.head_note,
         "stamped": report.stamped,
         "custom_gates": list(report.custom_gates),
+        "unanswered": report.unanswered,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
@@ -308,6 +311,8 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         lines.append(ORPHANS.format(count=report.orphans))
     if unmatched := _unmatched(force, report.footprint):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
+    if report.unanswered:
+        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "moved": [
@@ -320,6 +325,7 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         "orphans": report.orphans,
         "pin": _pin(report.resolution.pin),
         "asked": report.resolution.asked,
+        "unanswered": report.unanswered,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
@@ -376,6 +382,8 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         lines.append(f"note: {KEPT_CONFIG}")
     if unmatched := _unmatched(force, report.footprint, report.once):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
+    if report.unanswered:
+        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "footprint": footprint,
@@ -385,6 +393,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         "note": report.note,
         "kept_locally": report.kept_locally,
         "kept_config": report.kept_config,
+        "unanswered": report.unanswered,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

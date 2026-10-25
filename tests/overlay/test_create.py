@@ -80,11 +80,11 @@ def test_a_clone_that_raced_generation_is_retried_once_before_failing(tmp_path: 
     assert ["git", "clone", "--", "git@github.com:octo/stayfixed-private.git"] in verbs
 
 
-def test_an_existing_populated_clone_is_left_alone(tmp_path: Path) -> None:
-    # `create` is idempotent because `gh` may give up on the clone with the repository already
-    # created — so the second run finds a tree and must not re-create.
+def test_an_existing_overlay_at_the_destination_is_left_alone(tmp_path: Path) -> None:
+    # Generating is idempotent: a second run finds the overlay the first one cloned and must not
+    # create it again.
     (tmp_path / "stayfixed-private").mkdir()
-    (tmp_path / "stayfixed-private" / IDENTITY_RECORD).write_text("", encoding="utf-8")
+    (tmp_path / "stayfixed-private" / IDENTITY_RECORD).write_text("layout = 1\n", encoding="utf-8")
     runner = Recorder()
     created = generate("octo", "stayfixed-private", root=tmp_path, runner=runner)
     assert runner.calls == []

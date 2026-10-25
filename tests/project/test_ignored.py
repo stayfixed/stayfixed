@@ -285,14 +285,15 @@ def test_outside_a_repository_there_is_no_diff_to_hide_from(tmp_path: Path) -> N
 
 @needs_git
 @pytest.mark.parametrize("timed_out", [False, True], ids=["refused", "timed-out"])
-def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses(
+def test_a_check_ignore_that_cannot_answer_inside_a_repository_is_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool
 ) -> None:
-    # A guard that cannot answer must not read as a pass. `timed-out` is every `git` call ending
-    # the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this is a repository was
-    # asked of `rev-parse`, which timed out too, so the guard passed. Mutation (oracle):
-    # `mutations/`'s "a guard whose git timed out reads as no repository" (ask `rev-parse` again) ->
-    # the `timed-out` case upgrades and this reddens; returning instead of refusing reddens both.
+    # A guard that cannot answer must not read as a pass, and a `git` that timed out under load
+    # must not stop the run either: the run goes on and says git could not answer. `timed-out` is
+    # every `git` call ending the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this
+    # is a repository was asked of `rev-parse`, which timed out too, so the guard passed silently.
+    # Mutation (oracle): `mutations/`'s "a guard whose git timed out reads as no repository" (ask
+    # `rev-parse` again) -> the `timed-out` case says nothing and this reddens.
     root = initialised(tmp_path)
 
     def failing(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
@@ -306,11 +307,10 @@ def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses(
     # An existing file at a place a `[paths]` value chose, so there is something to ask about.
     (root / "notes.md").write_text("ours\n", encoding="utf-8")
     _append(root / CONFIG_FILE, '\n[paths]\nagents_md = "notes.md"\n')
-    before = snapshot(root)
-    with pytest.raises(Refusal) as refused:
-        _upgrade(root, tmp_path)
-    assert str(refused.value) == UNANSWERED
-    assert_snapshot_unchanged(root, before)
+    report = upgrade(
+        root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=True, force=()
+    )
+    assert report.unanswered == UNANSWERED
 
 
 @needs_git

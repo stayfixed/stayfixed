@@ -104,7 +104,6 @@ from stayfixed.config.session import command_config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import UnsafePath
 from stayfixed.gitenv import without_userinfo
-from stayfixed.guards.api import hooks_dir
 from stayfixed.jsonobject import NESTED, json_object
 from stayfixed.memory.api import (
     BOUND,
@@ -117,8 +116,7 @@ from stayfixed.memory.api import (
     render_missing_index,
     withdraw_composed,
 )
-from stayfixed.overlay.api import PRE_COMMIT_CONFIG, PRE_COMMIT_HOOK
-from stayfixed.printed import answered, quoted
+from stayfixed.printed import quoted
 from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     ParserLimitError,
@@ -199,13 +197,12 @@ class Attached:
     that did not before and what no longer will, then the allow rules added.
 
     Nothing here is repository-authored but `origin`, this checkout's remote, and `project`, the
-    name the binding is recorded under, both of which a caller prints through `printed`, and two
-    notes: what `pre-commit install` printed, which is this
-    machine's tool answering in the overlay, and `memory.store.origin_note`'s, which names the
-    remotes through `printed.quoted`. `binding` is the binding id as `binding.short` prints it,
-    never the whole id; `binding_recorded` says whether this run bound a checkout this machine did
-    not bind before. `added` and `removed` are the executable diff against the render the last
-    run left, and `allow_added` the allow rules this run merged; all three are the overlay's.
+    name the binding is recorded under, both of which a caller prints through `printed`, and one
+    note, `memory.store.origin_note`'s, which names the remotes through `printed.quoted`.
+    `binding` is the binding id as `binding.short` prints it, never the whole id;
+    `binding_recorded` says whether this run bound a checkout this machine did not bind before.
+    `added` and `removed` are the executable diff against the render the last run left, and
+    `allow_added` the allow rules this run merged; all three are the overlay's.
     """
 
     settings_written: bool
@@ -536,39 +533,6 @@ def _first_attach(record: Path) -> str | None:
         return None
 
 
-def _secret_scan(binding: Binding, runner: Runner) -> str | None:
-    """Run `pre-commit install` in the overlay if it is missing.
-
-    `overlay init` runs it on the machine that created the overlay, which is the first attach's
-    happy path — but a second machine clones an overlay initialised elsewhere and never runs
-    `init` again. Doing it twice is free; not doing it at all leaves the commit-time secret scan
-    unarmed on exactly the machine that thinks it is set up. A missing `pre-commit` is a note,
-    never a traceback.
-    """
-    if not fsops.is_file(binding.overlay / PRE_COMMIT_CONFIG):
-        return None
-    try:
-        installed = fsops.exists(hooks_dir(binding.overlay) / PRE_COMMIT_HOOK)
-    except Refusal:
-        # `hooks_dir` shells out to `git`, and a `git` that cannot answer is this area's own
-        # kind of missing optional binary: a note, never a traceback, and never a `pre-commit
-        # install` fired blind at an overlay whose hooks directory nobody could name.
-        return (
-            "`git` could not name the overlay's hooks directory, so whether its commit-time "
-            "secret scan is installed was not checked; the push-time scan still runs"
-        )
-    if installed:
-        return None
-    done = runner.launch(["pre-commit", "install"], binding.overlay)
-    if done.code == 0:
-        return "installed the overlay's commit-time secret scan with `pre-commit install`"
-    detail = answered(done)
-    return (
-        f"`pre-commit install` did not run in the overlay ({detail}), so its commit-time secret "
-        f"scan is not installed; the push-time scan still runs"
-    )
-
-
 def _absent_directories(root: Path) -> tuple[str, ...]:
     """Which of `CREATED_DIRS` this repository does not have, asked before the first write.
 
@@ -854,7 +818,7 @@ def attach(
     the exclude block standing, so a re-run completes.
 
     `runner` is keyword-**required** rather than defaulted so that no test can reach a real
-    `pre-commit` or `claude`. `owner` is the owner's layer the command resolved, which the one load
+    `claude`. `owner` is the owner's layer the command resolved, which the one load
     takes (`config.loader.loads`' own).
     """
     main = main_checkout_of(root)
@@ -1039,8 +1003,6 @@ def _carry_out(
         written = _point(root, build_composed(binding.overlay, project, id)) or written
         render_missing_index(root, config, machine=machine)
     notes: list[str] = []
-    if (note := _secret_scan(binding, runner)) is not None:
-        notes.append(note)
     if binding.fault is not None:
         notes.append(binding.fault)
     if binding.bound is not None and binding.bound != binding.project:

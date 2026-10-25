@@ -117,7 +117,6 @@ def test_a_looping_machine_directory_is_refused_by_name(
     [
         pytest.param(["--preset", "recommended"], id="preset"),
         pytest.param(["--overlay", "elsewhere"], id="overlay"),
-        pytest.param(["--yes"], id="yes"),
         pytest.param(["--git-hooks"], id="git-hooks"),
         pytest.param(["--uninstall"], id="uninstall"),
     ],
@@ -129,8 +128,8 @@ def test_the_advice_beside_a_flag_that_writes_is_refused(
     # nothing: refused, rather than dropped behind the person's back or run beside it.
     # `--uninstall` was dropped, exit 0, for a person who asked for a hook to be removed. Mutations
     # (`mutations/`'s "setup --approval-boundary takes a flag that names a write" -> `preset` and
-    # `overlay` print the advice; "setup --approval-boundary takes --yes or --git-hooks" -> `yes`
-    # and `git-hooks` do; "setup --approval-boundary takes --uninstall" -> `uninstall` does).
+    # `overlay` print the advice; "setup --approval-boundary takes --git-hooks" -> `git-hooks`
+    # does; "setup --approval-boundary takes --uninstall" -> `uninstall` does).
     machine = tmp_path / "machine" / "config.toml"
     assert invoke(_advice(tmp_path, machine, *flag)) == 2
     assert "--approval-boundary prints what to set and writes nothing" in capsys.readouterr().err

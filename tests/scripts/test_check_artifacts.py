@@ -212,9 +212,7 @@ def test_what_setup_renders_at_an_absent_overlay_path_is_what_the_check_expects(
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=Recorder(on_call=real_git),
-        yes=False,
         overlay=str(destination),
-        project_root=tmp_path / "project",
     )
     assert checker().check_render(destination) == []
 

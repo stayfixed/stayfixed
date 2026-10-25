@@ -128,6 +128,8 @@ class UpgradeReport:
     # created, refreshed or already current. It is not when the report lists it `skip_modified`
     # or refuses it, and then it may pin anything, so the CI line must not say it pins the ref.
     workflow_current: bool = False
+    # `ignored.UNANSWERED` when git could not say whether a file this run writes is ignored.
+    unanswered: str = ""
 
     @property
     def refused(self) -> bool:
@@ -239,6 +241,7 @@ def upgrade(
         passes.orphans,
         dry_run,
         _rewrites_the_workflow(footprint),
+        passes.unanswered,
     )
     if dry_run or report.refused:
         return report

@@ -164,6 +164,9 @@ class Passes:
     # Set once `predict`'s ignore guard has passed; out of `__init__`, `__repr__`, `__eq__` and
     # `__hash__`, so a predicted `Passes` compares and hashes as it did before.
     _predicted: bool = field(default=False, init=False, repr=False, compare=False)
+    # `ignored.UNANSWERED` when `predict`'s guard could not get an answer from git, for the
+    # command to report; empty otherwise.
+    unanswered: str = field(default="", init=False, repr=False, compare=False)
 
     def predict(self, *passes: tuple[Sequence[Template], Sequence[str]]) -> tuple[Plan, ...]:
         """Each `(templates, force)` planned, then refused as a whole when git ignores an
@@ -175,9 +178,10 @@ class Passes:
         name every file the run can touch, and its refusal comes before any of them.
         """
         plans = tuple(self._plan(templates, force=force) for templates, force in passes)
-        refuse_ignored(self.root, self.config, *plans, removing=self.removing)
+        unanswered = refuse_ignored(self.root, self.config, *plans, removing=self.removing)
         # Only after the guard passed, so a `predict` it refused leaves `replan` shut. `Passes`
         # is frozen, hence `object.__setattr__`.
+        object.__setattr__(self, "unanswered", unanswered)
         object.__setattr__(self, "_predicted", True)
         return plans
 

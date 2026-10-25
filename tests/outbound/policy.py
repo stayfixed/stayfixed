@@ -130,10 +130,10 @@ LOCAL_WHOLE = frozenset({("git", "remote")})
 # `-c`, whose value is configuration: it is held to `GIT_CONFIG_KEYS`. Any other option there is a
 # finding, because the subcommand the tables match would then follow something unread.
 GIT_GLOBAL_OPTIONS = {"-c": True, "--literal-pathspecs": False}
-# The configuration a launch may set with `git -c`: each changes how git prints a name, or which
-# repository it accepts, and never what it runs or where it reaches, as `core.sshCommand`,
-# `core.fsmonitor` or `url.<base>.insteadOf` would.
-GIT_CONFIG_KEYS = frozenset({"core.quotePath", "safe.bareRepository"})
+# The configuration a launch may set with `git -c`: each changes how git prints a name, and never
+# what it runs or where it reaches, as `core.sshCommand`, `core.fsmonitor` or
+# `url.<base>.insteadOf` would.
+GIT_CONFIG_KEYS = frozenset({"core.quotePath"})
 # Options with which a git command that otherwise reads the local repository asks a remote instead
 # (`git archive --remote=<url>`). Wherever one appears before the options end, the launch is not
 # local. Matched by the start of the whole name, since `git archive` takes neither of its two
