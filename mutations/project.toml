@@ -874,6 +874,24 @@ reddens = [
   "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
 ]
 
+# Without `stayfixed.toml` only the scaffold's ledger goes, and `.stayfixed/` with it once it is
+# empty; on an attached repository that would take `attach`'s ledger, the one record of the
+# overlay's plugin and rules it placed, with the delivery still in place, so the run detaches
+# first, and its dry run writes nothing, the attachment included.
+[[mutation]]
+name = "uninstall without stayfixed.toml leaves the repository attached"
+file = "src/stayfixed/project/uninstall.py"
+before = "            if attached:\n                _detach(root, runner)\n"
+after = ""
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_without_its_stayfixed_toml_is_detached_before_its_ledger_goes[real]"]
+
+[[mutation]]
+name = "an uninstall dry run without stayfixed.toml detaches"
+file = "src/stayfixed/project/uninstall.py"
+before = "        if not dry_run:\n            if attached:"
+after = "        if True:\n            if attached:"
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_without_its_stayfixed_toml_is_detached_before_its_ledger_goes[dry-run]"]
+
 # A plan that refuses stops the run before `detach`, so a refused report that still said the
 # repository was detached told the person `stayfixed detach` had run while the overlay's plugin and
 # rules were all in place; a refused dry run said it would, and the real run would not.
