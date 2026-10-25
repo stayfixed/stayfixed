@@ -56,8 +56,9 @@ the ledger and the render `attach` writes for the binding id, outside the work t
 is a file this run would not remove, and is refused below.
 So once every refusal below has been asked, and before this run's first write, it runs `detach`,
 which takes back exactly what the ledger records and the ledger with it; a dry run says it would.
-A `detach` that refuses or stops part-way stops this run with nothing of its own done, and the
-next run finishes from what is left.
+A `detach` that refuses or stops part-way stops this run with nothing of its own done. While the
+render is there the next run finishes; once it is gone, after a `detach` stopped past it or an
+`attach` stopped before it, the ledger is counted below: `stayfixed detach`, then `uninstall`.
 
 **One refusal comes before any write**: while `.stayfixed/local/` holds a file this run would not
 remove, the local-only memory notes above all, `attach`'s ledger aside, which `detach` takes.

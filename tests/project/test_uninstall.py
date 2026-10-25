@@ -47,7 +47,7 @@ from stayfixed.scaffold import (
     Verb,
     digest,
 )
-from tests.attach.test_detach import RULE, _attach, _bound, _grant
+from tests.attach.test_detach import RULE, _attach, _bound, _grant, _render_of
 from tests.cli import cli
 from tests.gitfixture import needs_git, run_git
 from tests.project.repos import BEFORE, DOCUMENT, initialised, repository, tree
@@ -290,6 +290,53 @@ def test_a_ledger_committed_after_a_detach_detaches_nothing(
         uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
     assert str(refused.value) == KEPT_LOCALLY.format(count=1)
     assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+@pytest.mark.parametrize("stopped", ["detach", "attach"])
+def test_a_ledger_left_without_its_render_is_finished_by_detach_and_then_uninstall(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stopped: str
+) -> None:
+    # A `detach` that stopped after its render went, or an `attach` that stopped after its ledger
+    # and before its render, leaves a ledger with no render. Attachment is the render, so that
+    # ledger is a file this run would not remove, as a forged one is, and the documents said a
+    # second `uninstall` finishes, where it refuses. What they say now: `stayfixed detach`
+    # finishes from the ledger, and `uninstall` then runs to its end.
+    import stayfixed.attach.write as write
+    from stayfixed.attach import exclude
+
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "scaffold")
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+
+    def full_disk(*args: object, **kwargs: object) -> None:
+        raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+    if stopped == "attach":
+        monkeypatch.setattr(write, "write_render", full_disk)
+        with pytest.raises(OSError):
+            _attach(root, store, machine)
+    else:
+        _attach(root, store, machine)
+        monkeypatch.setattr(exclude, "write", full_disk)
+        with pytest.raises(OSError):
+            uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
+    monkeypatch.undo()
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    ledger = root / ".stayfixed" / "local" / "attach.json"
+    assert ledger.is_file() and not _render_of(root)[1].exists()
+    with pytest.raises(Refusal) as refused:
+        uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    block = root / ".git" / "info" / "exclude"
+    assert "stayfixed attach" in block.read_text("utf-8")
+    detach(root, runner=Recorder())
+    assert not ledger.exists() and "stayfixed attach" not in block.read_text("utf-8")
+    uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
+    assert not (root / MANIFEST_PATH).exists()
 
 
 @needs_git

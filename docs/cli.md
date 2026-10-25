@@ -2088,11 +2088,15 @@ commit reaches, the run asks every refusal below, then
 runs [`stayfixed detach`](#stayfixed-detach---root-path---machine-path) before its first write,
 which withdraws what `attach` placed, the overlay's plugin and the allow rules among it, and takes
 the ledger; a `note:` line says so, and a dry run says it would. A `detach` that refuses or stops
-part-way stops the run there with nothing of its own done, its own sentence and exit code given,
-and running `uninstall` again finishes from what is left. The ledger is not counted among the
-files `.stayfixed/local/` holds. A ledger with no render, which a clone can commit and a pull
-request can commit after a `detach`, detaches nothing: it is a file the run would not remove, and
-refused as one.
+part-way stops the run there with nothing of its own done, its own sentence and exit code given.
+While the render is still there, running `uninstall` again finishes from what is left. A `detach`
+that stopped after removing the render, or an `attach` that stopped after writing its ledger and
+before the render, leaves the ledger with no render, which the next `uninstall` refuses as below:
+run `stayfixed detach`, which finishes from the ledger, then `uninstall`. The ledger is not counted
+among the files `.stayfixed/local/` holds while the repository is attached. A ledger with no
+render, which a clone can commit and a pull request can commit after a `detach`, detaches nothing:
+it is a file the run would not remove, and refused as one, so run `stayfixed detach` over a ledger
+only when your own `attach` wrote it.
 
 **Refused before any write** (`2`): the repository is not initialised; `stayfixed.toml` is missing
 while the manifest records it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
