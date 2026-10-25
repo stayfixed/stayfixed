@@ -535,10 +535,13 @@ left alone and reads `nothing to strip`, because emptying it aborts the commit w
 error and CI explains better. It strips nothing where your own Claude Code settings,
 `~/.claude/settings.json`, set `attribution.commit` to text: what a commit carries is then your
 choice in the harness, and when a line would have gone the run says it kept it and why; a message
-with nothing to strip still says `nothing to strip`, which the hook keeps off the terminal. Set
-empty, it says your commits carry nothing, so a trailer that arrives anyway is stripped as it is
-with the setting unset. A repository's own `.claude/settings.json` is not read for it, since a
-clone could then turn the hook off. Refuses a symlink, and fails (`1`) on a file it cannot read, a
+with nothing to strip still says `nothing to strip`, which the hook keeps off the terminal. It is
+all or nothing: with text there, every attribution line the strip would take is kept, not only
+the one the setting names. Set empty, or to whitespace alone, it says your commits carry nothing,
+so a trailer that arrives anyway is stripped as it is with the setting unset. The file is read as
+a regular file only: one that is not there, is not a regular file (a FIFO, which would hold every
+commit), cannot be read or is not one JSON object sets nothing. A repository's own
+`.claude/settings.json` is not read for it, since a clone could then turn the hook off. Refuses a symlink, and fails (`1`) on a file it cannot read, a
 file that is not UTF-8 included.
 
 Git's own trailing comment block is kept, and so is everything below the scissors line that
@@ -549,6 +552,8 @@ commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. In
 hook is `stayfixed setup --git-hooks`, and removing it — restoring whatever it chained to — is
 `stayfixed setup --git-hooks --uninstall`; both are documented below.
 `stayfixed.guards.api.install` is the same call for a caller embedding stayfixed.
+
+**Reads** `FILE` and `~/.claude/settings.json` under your home, and nothing a repository holds.
 
 **Writes** `FILE`.
 

@@ -9,6 +9,7 @@ the shape of a real line from such a repository.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,7 @@ from stayfixed.guards.commit import (
     offending_lines,
     strip_message,
 )
+from tests.floor import developer_free_environ
 from tests.gitfixture import git
 
 # Per test, not module-wide: most of this file is pure functions, and a module-level skip
@@ -870,10 +872,11 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     [
         ({"attribution": {"commit": "Co-Authored-By: Claude <noreply@anthropic.com>"}}, False),
         ({"attribution": {"commit": ""}}, True),
+        ({"attribution": {"commit": " \n\t"}}, True),
         ({"attribution": {"pr": ""}}, True),
         ({}, True),
     ],
-    ids=["commit-text", "commit-empty", "pull-requests-only", "unset"],
+    ids=["commit-text", "commit-empty", "commit-whitespace", "pull-requests-only", "unset"],
 )
 def test_commit_strip_gives_way_to_the_harness_attribution_setting(
     tmp_path: Path, document: dict[str, object], strips: bool
@@ -883,9 +886,11 @@ def test_commit_strip_gives_way_to_the_harness_attribution_setting(
     # harness, so with text there the message is left as it was. Set empty, it says commits carry
     # nothing, and a trailer that arrives anyway is the one the hook exists to strip: giving way
     # to it inverted the choice. Unset, or set only for pull requests, the trailer the harness
-    # adds by default is stripped as before. The suite's `HOME` is a directory of its own
-    # (`tests/conftest.py`). Mutation (oracle): `mutations/`'s "commit strip strips a trailer the
-    # harness's attribution setting asked for" -> `commit-text`.
+    # adds by default is stripped as before. Whitespace alone is no text either: nothing a commit
+    # would carry. The suite's `HOME` is a directory of its own (`tests/conftest.py`). Mutations
+    # (oracle): `mutations/`'s "commit strip strips a trailer the harness's attribution setting
+    # asked for" -> `commit-text`; "commit strip gives way to an attribution of whitespace" ->
+    # `commit-whitespace`.
     settings = Path.home() / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(json.dumps(document), encoding="utf-8")
@@ -896,6 +901,43 @@ def test_commit_strip_gives_way_to_the_harness_attribution_setting(
     stripped = message.read_text(encoding="utf-8")
     assert (stripped == "fix: thing\n") is strips, stripped
     assert (stripped == original) is not strips, stripped
+
+
+# The child's bound: a run of `commit strip` takes well under a second, start-up included; one
+# that waits on a FIFO never ends, so a bound this far above the first tells them apart under load
+# and keeps the mutated run short.
+_STRIP_SECONDS = 20
+
+
+def test_commit_strip_never_waits_on_a_fifo_where_the_settings_file_belongs(
+    tmp_path: Path,
+) -> None:
+    # The hook runs `commit strip` on every commit, and it read the owner's settings with
+    # `Path.read_text`, which opens a FIFO and waits for a writer that never comes, so the commit
+    # hung. Read as a regular file only, a FIFO is a file that sets nothing, and the strip goes
+    # on. In a child under a timeout, so a regression fails this case rather than holding a
+    # worker. Mutation (oracle): `mutations/`'s "commit strip reads the owner's settings through
+    # whatever is there" -> this times out.
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    os.mkfifo(home / ".claude" / "settings.json")
+    message = tmp_path / "COMMIT_EDITMSG"
+    original = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+    message.write_text(original, encoding="utf-8")
+    environment = {**developer_free_environ(), "HOME": str(home)}
+    try:
+        done = subprocess.run(
+            [sys.executable, "-m", "stayfixed", "commit", "strip", str(message)],
+            capture_output=True,
+            text=True,
+            timeout=_STRIP_SECONDS,
+            check=False,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"commit strip waited past {_STRIP_SECONDS} s on a FIFO")
+    assert done.returncode == 0, done.stderr
+    assert message.read_text(encoding="utf-8") == "fix: thing\n"
 
 
 def _set_commit_attribution(text: str) -> None:
