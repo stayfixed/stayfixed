@@ -77,11 +77,12 @@ elif python3 -c 'import stayfixed' >/dev/null 2>&1; then
     runner="python3 -m stayfixed"
 fi
 
-# `commit strip` prints one line on stdout: "stripped N ..." or "nothing to strip". Only a
-# rewrite is worth a line on the terminal, so the quiet one is filtered out and everything
-# else is said. The branch is on the command's own status and never on `grep`'s: `grep -v`
-# exits 1 when it selects no lines, which is exactly the quiet case, so a `||` hung off the
-# pipe announces a failure on every clean commit. No outcome here may fail the commit.
+# `commit strip` prints one line on stdout: "stripped N ...", "nothing to strip", or, where the
+# owner's own harness settings say what a commit carries, "kept N ..." with that reason. A
+# rewrite and a kept trailer are worth a line on the terminal, so only the quiet one is filtered
+# out and everything else is said. The branch is on the command's own status and never on
+# `grep`'s: `grep -v` exits 1 when it selects no lines, which is exactly the quiet case, so a `||`
+# hung off the pipe announces a failure on every clean commit. No outcome here may fail the commit.
 if [ -z "$runner" ]; then
     printf '%s\\n' "$absent" >&2
 elif out=$($runner commit strip "$msg_file"); then

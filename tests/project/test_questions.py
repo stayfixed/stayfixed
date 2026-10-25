@@ -3,6 +3,7 @@ writes, each source one of `detect`'s phrases, and no byte a grammar rejected.""
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -11,9 +12,10 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars
 from stayfixed.config.loader import load, preset_defaults
-from stayfixed.config.schema import MEMORY_MODES
+from stayfixed.config.schema import CI_MODES, MEMORY_MODES
 from stayfixed.errors import Refusal
 from stayfixed.presets import load_preset
+from stayfixed.project import questions as questions_module
 from stayfixed.project.init import init
 from stayfixed.project.questions import (
     BRANCH_PATTERN,
@@ -27,6 +29,7 @@ from stayfixed.project.questions import (
     questions,
 )
 from stayfixed.scaffold import MANIFEST_PATH
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
 from tests.runners import LsRemote
@@ -76,6 +79,32 @@ def test_the_schema_keys_are_the_stayfixed_toml_keys_the_answers_write(tmp_path:
     assert len(PROPERTIES) == 10
     for key, question in schema["properties"].items():
         assert question["x-stayfixed-flag"] == FLAGS[key], key
+
+
+@needs_git
+def test_the_skill_reads_the_order_to_ask_in_from_required_in_the_json(tmp_path: Path) -> None:
+    # The skill and docs/cli.md said each property under `questions.properties` came in the order
+    # to ask it, but `--json` prints with sorted keys, so the properties arrive alphabetically and
+    # a skill walking them asked about the agents first. `required` is a list, which keeps its
+    # order through the printer, so that is where the skill reads the order: here as the skill
+    # reads it, from the printed JSON, in the order the skill and the release notes name.
+    root = repository(tmp_path)
+    code, printed, _ = cli(root, tmp_path, "init", "--questions", "--json")
+    assert code == 0, printed
+    schema = json.loads(printed)["questions"]
+    assert schema["required"] == [
+        "project.name",
+        "project.base_branch",
+        "memory.mode",
+        "stayfixed.profile",
+        "ci.mode",
+        "commit_messages.attribution_check",
+        "commit_messages.types",
+        "artifacts.local",
+        "stayfixed.agents",
+        "plugins",
+    ]
+    assert sorted(schema["properties"]) == sorted(schema["required"])
 
 
 @needs_git
@@ -221,6 +250,35 @@ def test_the_skip_takes_attribution_off_the_preset_types_and_no_plugin(tmp_path:
         "superpowers",
         "context7",
     }
+
+
+@needs_git
+def test_the_plugins_question_names_the_plugins_the_preset_recommends_and_no_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The "what you get" line spelled out superpowers' and context7's while the options came from
+    # the preset, so a preset that recommended another plugin would be offered under a line
+    # describing two it no longer names. The line is filled from the same list as the options.
+    monkeypatch.setattr(questions_module, "_recommended", lambda: ["alpha", "beta"])
+    plugins = _schema(tmp_path, repository(tmp_path))["properties"][PLUGINS]
+    assert plugins["items"]["enum"] == ["alpha", "beta"]
+    get = plugins["x-stayfixed-tradeoff"]["get"]
+    assert "alpha, beta" in get and "superpowers" not in get and "context7" not in get, get
+
+
+@needs_git
+def test_the_ci_question_offers_each_ci_mode_but_the_one_no_flag_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The CI options were a table of their own beside `CI_MODES`, so a mode added there was never
+    # offered and nothing said so. They are read off `CI_MODES` now, `uvx` left out because
+    # `init --yes` has no flag that writes it, and a mode with no title stops the schema loudly.
+    schema = _schema(tmp_path, repository(tmp_path))
+    offered = [option["const"] for option in schema["properties"]["ci.mode"]["oneOf"]]
+    assert offered == [mode for mode in CI_MODES if mode != "uvx"] == ["reusable", "none"]
+    monkeypatch.setattr(questions_module, "CI_MODES", (*CI_MODES, "elsewhere"))
+    with pytest.raises(KeyError, match="elsewhere"):
+        _schema(tmp_path, tmp_path / "widget")
 
 
 def test_the_plugins_question_names_the_machine_setup_its_flag_runs() -> None:

@@ -13,10 +13,11 @@ harness's limits. Never run this skill in a forked context: a subagent cannot as
 
 1. Run `stayfixed init --questions --json`. It refuses a repository that already has
    `.stayfixed/manifest.json` (offer `stayfixed upgrade`) or a `stayfixed.toml` (see the first
-   rule). Otherwise `questions.properties` holds ten questions, in the order to ask them, each
-   with its `default` (what `stayfixed init --yes` alone would write), its `x-stayfixed-source`,
-   its `x-stayfixed-flag` and its `x-stayfixed-tradeoff`: four lines, what the answer gives
-   (`get`), what it gives up (`give_up`), what it leaves behind (`trace`) and how to undo it.
+   rule). Otherwise `questions.properties` holds ten questions, asked in the order
+   `questions.required` lists them, each with its `default` (what `stayfixed init --yes` alone
+   would write), its `x-stayfixed-source`, its `x-stayfixed-flag` and its
+   `x-stayfixed-tradeoff`: four lines, what the answer gives (`get`), what it gives up
+   (`give_up`), what it leaves behind (`trace`) and how to undo it.
 2. Offer the skip first: show every default in one list and ask whether to take them all. On a
    yes, go to step 5 with no answer flag. A name with no default is "not derivable": ask for it
    even then.
@@ -29,8 +30,8 @@ harness's limits. Never run this skill in a forked context: a subagent cannot as
 5. Build the command: `--yes --dry-run`, then each answer that differs from its default as its
    `x-stayfixed-flag`, once per item for a list, such as
    `stayfixed init --yes --dry-run --name widget --local roadmap-history`. Leave the plugins out:
-   they are not `init`'s. Run it and relay both reports, the `CI:` line, the `what I picked:`
-   list and every `note:` line. Ask for a final yes. **Silence, a timeout or an empty answer is a
+   they are not `init`'s. Run it and relay both reports, the `CI:` line, the `picked:` list
+   and every `note:` line. Ask for a final yes. **Silence, a timeout or an empty answer is a
    no.**
 6. On a yes, run the same command without `--dry-run`, and relay the real run the same way.
 7. If plugins were chosen, run the plugins question's `x-stayfixed-flag` with each one. It is a

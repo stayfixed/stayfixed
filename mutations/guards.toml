@@ -1407,8 +1407,50 @@ reddens = [
 [[mutation]]
 name = "commit strip strips a trailer the harness's attribution setting asked for"
 file = "src/stayfixed/guards/commit.py"
-before = '    return isinstance(commit, str) and commit != ""'
+before = '    return isinstance(commit, str) and commit.strip() != ""'
 after = "    return False"
 reddens = [
   "tests/guards/test_commit.py::test_commit_strip_gives_way_to_the_harness_attribution_setting[commit-text]",
+]
+
+# Set empty, or to whitespace alone, `attribution.commit` says commits carry nothing, so a trailer
+# that arrives anyway is the one the hook strips; giving way to it inverted that choice.
+[[mutation]]
+name = "commit strip gives way to an empty attribution"
+file = "src/stayfixed/guards/commit.py"
+before = '    return isinstance(commit, str) and commit.strip() != ""'
+after = "    return isinstance(commit, str)"
+reddens = [
+  "tests/guards/test_commit.py::test_commit_strip_gives_way_to_the_harness_attribution_setting[commit-empty]",
+]
+
+[[mutation]]
+name = "commit strip gives way to an attribution of whitespace"
+file = "src/stayfixed/guards/commit.py"
+before = '    return isinstance(commit, str) and commit.strip() != ""'
+after = '    return isinstance(commit, str) and commit != ""'
+reddens = [
+  "tests/guards/test_commit.py::test_commit_strip_gives_way_to_the_harness_attribution_setting[commit-whitespace]",
+]
+
+# The hook runs `commit strip` on every commit, and the owner's settings read with
+# `Path.read_text` opened a FIFO there and waited for a writer that never came.
+[[mutation]]
+name = "commit strip reads the owner's settings through whatever is there"
+file = "src/stayfixed/guards/commit.py"
+before = "        text = fsops.read_regular_text(home / settings)"
+after = '        text = (home / settings).read_text(encoding="utf-8")'
+reddens = [
+  "tests/guards/test_commit.py::test_commit_strip_never_waits_on_a_fifo_where_the_settings_file_belongs",
+]
+
+# Giving way is news only when a line would have gone: asked before the message was read, it
+# printed its line on every commit, a clean one included, past the hook's one quiet line.
+[[mutation]]
+name = "commit strip gives way before it has read the message"
+file = "src/stayfixed/guards/commands.py"
+before = "    message, comment_block = _split_trailing_comment_block(original)\n"
+after = "    if harness_says_what_commits_carry(owner_home()):\n        return Result(GIVES_WAY, {\"stripped\": 0})\n    message, comment_block = _split_trailing_comment_block(original)\n"
+reddens = [
+  "tests/guards/test_commit.py::test_commit_strip_that_gives_way_over_nothing_it_would_strip_says_nothing_to_strip[no-trailer]",
 ]

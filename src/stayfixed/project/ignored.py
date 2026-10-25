@@ -44,11 +44,14 @@ footprint's ignore block keeps out of git on purpose.
 
 **No repository, no guard.** Outside a git work tree there is no diff for a change to hide
 from, and every write still goes through `contained()` and the `O_NOFOLLOW` walk. Inside one, a
-`check-ignore` that gave no answer — `git_run`'s `-1`, a `git` that timed out under load — is a
-warning the command reports (`UNANSWERED`) and never a pass said in silence, and never a refusal:
-a `git` slow under load stopped every `init`, `upgrade` and `uninstall` until it answered. Any
-other failure refuses (`DECLINED`), since a repository can choose one: git answers a batch holding
-a path inside a submodule with exit 128. Whether this is a work tree at all is read off the disk
+`check-ignore` that answers neither "some matched" nor "none matched" refuses the run before any
+write (`DECLINED`), dry run included, because a guard that cannot answer must not read as a pass,
+and a repository can choose either way of not answering. git reads every `.gitignore` along each
+path it is asked about, so a commit holding a deep path under large `.gitignore` files runs it
+past `git_run`'s bound (`-1`, no answer), and git answers a batch holding a path inside a
+submodule with exit 128; a no-answer that was only a note let a pulled commit write past the guard
+to a git-ignored `.env`. A `git` slow under load or not installed is refused the same way, and
+the refusal says to run the command again. Whether this is a work tree at all is read off the disk
 (`gitenv.in_work_tree`) and never asked of the same `git`, which fails the same way under the same
 load: a `rev-parse` that timed out beside the `check-ignore` read as "no repository" and let the
 write through with nothing said.
@@ -84,14 +87,11 @@ IGNORED_REMOVING = (
     "take that [paths] key out of stayfixed.toml: uninstall then leaves those files where they "
     "are and lists them"
 )
+# One refusal for every answer that is not one, a timeout and a `git` that cannot start included:
+# what the person can do about each is the same, run it again once git answers. 0.3.1's words.
 DECLINED = (
-    "git declined to say whether the files this run would write or remove are ignored, so nothing "
-    "was written; run it again once `git check-ignore` answers in this repository"
-)
-UNANSWERED = (
-    "git could not say whether the files this run writes or removes are ignored, so one at a "
-    "place a [paths] value in stayfixed.toml chose may change with no diff to show it; check them "
-    "once `git check-ignore` works in this repository"
+    "git could not say whether the files this run would write or remove are ignored, so nothing "
+    "was written; run it again once `git check-ignore` works in this repository"
 )
 
 
@@ -116,10 +116,10 @@ def _preset_places(config: Config) -> Mapping[str, frozenset[str]]:
     return prepared.could_write
 
 
-def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> str:
+def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> None:
     """Refuse when git ignores an existing file a write or removal in `plans` targets at a place
-    a `[paths]` value chose; `removing` picks `uninstall`'s remedy. Returns `UNANSWERED` when git
-    gave no answer inside a work tree, for the command to report, and `""` otherwise."""
+    a `[paths]` value chose, or cannot say whether it does inside a work tree; `removing` picks
+    `uninstall`'s remedy."""
     existing = [
         action
         for planned in plans
@@ -129,7 +129,7 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
         and os.path.lexists(root / action.target)
     ]
     if not existing:
-        return ""
+        return
     places = _preset_places(config)
     chosen: dict[str, Action] = {}
     for action in existing:
@@ -143,21 +143,18 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
         if action.target not in places.get(action.artifact_id, frozenset()):
             chosen.setdefault(action.target, action)
     if not chosen:
-        return ""
+        return
     # `--stdin -z`: the paths go in NUL-separated and never as arguments, so none is read as an
     # option, and come back unquoted, so the answer compares with what was asked.
     code, out = git_run(root, "check-ignore", "--stdin", "-z", stdin="\0".join(sorted(chosen)))
     if code == 1:
-        return ""
+        return
     if code == 0:
         ignored = sorted({name for name in out.split("\0") if name} & set(chosen))
         if ignored:
             names = ", ".join(sorted({printable(chosen[target]) for target in ignored}))
             text = IGNORED_REMOVING if removing else IGNORED
             raise Refusal(text.format(count=len(ignored), names=names))
-        return ""
-    if code == -1:
-        return UNANSWERED if in_work_tree(root) else ""
+        return
     if in_work_tree(root):
         raise Refusal(DECLINED)
-    return ""

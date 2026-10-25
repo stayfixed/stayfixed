@@ -89,8 +89,9 @@ CUSTOM_GATES = (
     "`stayfixed gate` and `stayfixed adopt promote` run each one's command from [gates.custom], "
     "so read those commands before running any of the three; each takes --builtin to run none"
 )
-# Heads the list of what the run took for each question, which the skip path took unasked.
-PICKED = "what I picked:"
+# Heads the list of what the run took for each question, which the skip path took unasked. Said
+# of the run, as every other line of the report is, and never in the first person.
+PICKED = "picked:"
 PICKED_WITHHELD = "<unprintable; see stayfixed.toml>"
 QUESTIONS_HELP = (
     "print the defaults init would take, where each came from and the flag that changes it; "
@@ -223,8 +224,6 @@ def run_init(args: argparse.Namespace) -> Result:
         # Nothing is written by a dry run or a refused one, the stamp included.
         verb = "would write" if report.dry_run or report.refused else "wrote"
         lines.append(STAMPED.format(verb=verb))
-    if report.unanswered:
-        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
@@ -333,8 +332,6 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         lines.append(ORPHANS.format(count=report.orphans))
     if unmatched := _unmatched(force, report.footprint):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
-    if report.unanswered:
-        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "moved": [
@@ -417,8 +414,6 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         lines.append(f"note: {KEPT_CONFIG}")
     if unmatched := _unmatched(force, report.footprint, report.once):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
-    if report.unanswered:
-        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "scaffold": footprint,
@@ -450,13 +445,14 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     from stayfixed.config.schema import (
         BRANCH_NAME,
         BRANCH_RULE,
+        COMMIT_TYPE,
+        COMMIT_TYPE_RULE,
         MEMORY_MODES,
         NAME_RULE,
         PROJECT_NAME,
     )
     from stayfixed.harnesses import HARNESSES
     from stayfixed.profiles import shipped
-    from stayfixed.project.questions import COMMIT_TYPE, COMMIT_TYPE_RULE
     from stayfixed.project.templates import LOCAL_ELIGIBLE
 
     answers = parser.add_argument_group(

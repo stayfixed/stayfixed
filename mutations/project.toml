@@ -867,11 +867,67 @@ reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attach
 [[mutation]]
 name = "uninstall takes a committed ledger for an attachment"
 file = "src/stayfixed/project/uninstall.py"
-before = "        return id is not None and fsops.is_dir(delivery_directory(id))"
+before = "        return binding_id is not None and fsops.is_dir(delivery_directory(binding_id))"
 after = "        return True"
 reddens = [
   "tests/project/test_uninstall.py::test_a_ledger_a_clone_committed_detaches_nothing",
   "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
+]
+
+# The render's half alone: `detach` keeps the binding id, so a checkout attached once and detached
+# since still has one, and with the ledger a pull request commits after the `detach`, an id alone
+# read as an attachment had `uninstall` run `detach` over the owner's untracked rule file and
+# settings again.
+[[mutation]]
+name = "uninstall takes a binding id with no render for an attachment"
+file = "src/stayfixed/project/uninstall.py"
+before = "        return binding_id is not None and fsops.is_dir(delivery_directory(binding_id))"
+after = "        return binding_id is not None"
+reddens = ["tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing"]
+
+# `attach`'s ledger is left out of the count of what `.stayfixed/local/` keeps only where the
+# repository is attached and `detach` takes it first; left out everywhere, a ledger a clone
+# committed is counted nowhere, the run goes on past its one refusal before any write, removes the
+# scaffold, and stops part-way with the committed ledger still there.
+[[mutation]]
+name = "uninstall never counts attach's ledger among what it keeps"
+file = "src/stayfixed/project/uninstall.py"
+before = "    detaching = {ATTACH_LEDGER} if attached else set()"
+after = "    detaching = {ATTACH_LEDGER}"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_ledger_a_clone_committed_detaches_nothing",
+  "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
+]
+
+# Without `stayfixed.toml` only the scaffold's ledger goes, and `.stayfixed/` with it once it is
+# empty; on an attached repository that would take `attach`'s ledger, the one record of the
+# overlay's plugin and rules it placed, with the delivery still in place, so the run detaches
+# first, and its dry run writes nothing, the attachment included.
+[[mutation]]
+name = "uninstall without stayfixed.toml leaves the repository attached"
+file = "src/stayfixed/project/uninstall.py"
+before = "            if attached:\n                _detach(root, runner)\n"
+after = ""
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_without_its_stayfixed_toml_is_detached_before_its_ledger_goes[real]"]
+
+[[mutation]]
+name = "an uninstall dry run without stayfixed.toml detaches"
+file = "src/stayfixed/project/uninstall.py"
+before = "        if not dry_run:\n            if attached:"
+after = "        if True:\n            if attached:"
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_without_its_stayfixed_toml_is_detached_before_its_ledger_goes[dry-run]"]
+
+# A plan that refuses stops the run before `detach`, so a refused report that still said the
+# repository was detached told the person `stayfixed detach` had run while the overlay's plugin and
+# rules were all in place; a refused dry run said it would, and the real run would not.
+[[mutation]]
+name = "a refused uninstall reports the repository detached"
+file = "src/stayfixed/project/uninstall.py"
+before = "        report = replace(report, detached=False)"
+after = "        pass"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching[real]",
+  "tests/project/test_uninstall.py::test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching[dry-run]",
 ]
 
 # `uninstall` replans the write-once pass over the body the footprint pass leaves, so an untouched
@@ -1123,20 +1179,35 @@ reddens = ["tests/project/test_ignored.py::test_a_paths_value_naming_another_art
 [[mutation]]
 name = "a guard whose git timed out reads as no repository"
 file = "src/stayfixed/project/ignored.py"
-before = '    return UNANSWERED if in_work_tree(root) else ""'
-after = '    return UNANSWERED if git_run(root, "rev-parse", "--is-inside-work-tree")[0] == 0 else ""'
-reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_warns_only_when_it_timed_out[timed-out]"]
+before = "    if in_work_tree(root):\n        raise Refusal(DECLINED)"
+after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(DECLINED)"
+reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[timed-out-upgrade]"]
 
-# Only a `check-ignore` that gave no answer, as one that timed out gives none, is a warning: any
-# other failure refuses, because a repository can choose it. git answers a whole batch holding a
-# path inside a submodule with exit 128, and as a warning that let a pulled commit write past the
-# guard to a git-ignored `.env` beside it.
+# A `check-ignore` that gives no answer refuses like one that declines: a repository can choose
+# a timeout, since git reads every `.gitignore` along each path it is asked about, and a no-answer
+# that was only a note let a pulled commit append to, or delete, a git-ignored `.env`.
 [[mutation]]
-name = "a check-ignore that declines is a warning"
+name = "a check-ignore that gives no answer lets the run write"
 file = "src/stayfixed/project/ignored.py"
-before = "    if code == -1:"
-after = "    if True:"
-reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_warns_only_when_it_timed_out[declined]"]
+before = "    if in_work_tree(root):"
+after = "    if code != -1 and in_work_tree(root):"
+reddens = [
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[timed-out-upgrade]",
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[timed-out-uninstall]",
+]
+
+# Any other failure refuses too, because a repository can choose it: git answers a whole batch
+# holding a path inside a submodule with exit 128, and let through, that let a pulled commit write
+# past the guard to a git-ignored `.env` beside it.
+[[mutation]]
+name = "a check-ignore that declines lets the run write"
+file = "src/stayfixed/project/ignored.py"
+before = "        raise Refusal(DECLINED)"
+after = "        return"
+reddens = [
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[declined-upgrade]",
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[declined-uninstall]",
+]
 
 # Paths are compared for identity case-folded (`fsops.path_key`): on the default macOS and Windows
 # filesystems `claude.md` is `CLAUDE.md`. This entry and the three named for a case variant each put
@@ -1226,8 +1297,8 @@ reddens = [
 [[mutation]]
 name = "a footprint command predicts its plans without asking the ignore guard"
 file = "src/stayfixed/project/footprint.py"
-before = "        unanswered = refuse_ignored(self.root, self.config, *plans, removing=self.removing)"
-after = '        unanswered = ""'
+before = "        refuse_ignored(self.root, self.config, *plans, removing=self.removing)"
+after = "        pass"
 reddens = [
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-init]",
   "tests/project/test_footprint_invariant.py::test_no_hostile_input_reaches_a_file_git_hides[region-into-an-ignored-file-upgrade]",
@@ -1378,14 +1449,12 @@ reddens = ["tests/project/test_planning_seam.py::test_only_the_seam_calls_its_pr
 [[mutation]]
 name = "a refused prediction opens replan"
 file = "src/stayfixed/project/footprint.py"
-before = '''        unanswered = refuse_ignored(self.root, self.config, *plans, removing=self.removing)
+before = '''        refuse_ignored(self.root, self.config, *plans, removing=self.removing)
         # Only after the guard passed, so a `predict` it refused leaves `replan` shut. `Passes`
         # is frozen, hence `object.__setattr__`.
-        object.__setattr__(self, "unanswered", unanswered)
         object.__setattr__(self, "_predicted", True)'''
 after = '''        object.__setattr__(self, "_predicted", True)
-        unanswered = refuse_ignored(self.root, self.config, *plans, removing=self.removing)
-        object.__setattr__(self, "unanswered", unanswered)'''
+        refuse_ignored(self.root, self.config, *plans, removing=self.removing)'''
 reddens = [
   "tests/project/test_planning_seam.py::test_a_predict_the_ignore_guard_refused_leaves_replanning_refused",
 ]
@@ -3097,7 +3166,7 @@ reddens = [
 ]
 
 
-# `init`'s `what I picked:` list prints the adopted `stayfixed.toml`'s commit types, which no
+# `init`'s `picked:` list prints the adopted `stayfixed.toml`'s commit types, which no
 # grammar holds, so an escape sequence or `::error::` in one would reach the terminal and the CI
 # runner as written.
 [[mutation]]

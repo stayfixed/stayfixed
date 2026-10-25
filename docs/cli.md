@@ -73,6 +73,7 @@ Three things hold everywhere:
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
+- [Terms](#terms)
 - [Configuration](#configuration)
 
 ---
@@ -529,14 +530,20 @@ file is there before it runs the gate.
 
 Rewrite a commit-message file in place with the attribution lines of its trailing attribution
 block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
-says which; a message that is *only* attribution is left alone, because emptying it aborts the
-commit with a confusing error and CI explains better. It strips nothing where your own Claude Code
-settings, `~/.claude/settings.json`, set `attribution.commit` to text: what a commit carries is
-then your choice in the harness, and the run says so. Set empty, it says your commits carry
-nothing, so a trailer that arrives anyway is stripped as it is with the setting unset. A
-repository's own `.claude/settings.json` is not read for it, since a clone could then turn the
-hook off. Refuses a symlink, and fails (`1`) on a
-file it cannot read, a file that is not UTF-8 included.
+prints one line saying which: `stripped N attribution line(s) from FILE`, `nothing to strip`, or
+`kept N attribution line(s): …` with the reason below. A message that is *only* attribution is
+left alone and reads `nothing to strip`, because emptying it aborts the commit with a confusing
+error and CI explains better. It strips nothing where your own Claude Code settings,
+`~/.claude/settings.json`, set `attribution.commit` to text: what a commit carries is then your
+choice in the harness, and when a line would have gone the run says it kept it and why; a message
+with nothing to strip still says `nothing to strip`, which the hook keeps off the terminal. It is
+all or nothing: with text there, every attribution line the strip would take is kept, not only
+the one the setting names. Set empty, or to whitespace alone, it says your commits carry nothing,
+so a trailer that arrives anyway is stripped as it is with the setting unset. The file is read as
+a regular file only: one that is not there, is not a regular file (a FIFO, which would hold every
+commit), cannot be read or is not one JSON object sets nothing. A repository's own
+`.claude/settings.json` is not read for it, since a clone could then turn the hook off. Refuses a symlink, and fails (`1`) on a file it cannot read, a
+file that is not UTF-8 included.
 
 Git's own trailing comment block is kept, and so is everything below the scissors line that
 `commit.verbose = true` puts the staged diff under — the message is what lies above both.
@@ -546,6 +553,8 @@ commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. In
 hook is `stayfixed setup --git-hooks`, and removing it — restoring whatever it chained to — is
 `stayfixed setup --git-hooks --uninstall`; both are documented below.
 `stayfixed.guards.api.install` is the same call for a caller embedding stayfixed.
+
+**Reads** `FILE` and `~/.claude/settings.json` under your home, and nothing a repository holds.
 
 **Writes** `FILE`.
 
@@ -1578,7 +1587,7 @@ Each answer flag replaces one default and writes one key:
 `--no-ci` answers the CI question (below). The recommended plugins are not `init`'s to install:
 `init --questions` asks about them, and the answer is `stayfixed setup`'s.
 
-After the CI line the run prints `what I picked:`, one line per question in the order
+After the CI line the run prints `picked:`, one line per question in the order
 `init --questions` asks them, with the value this run took: the name, the base branch, the memory
 mode, the profile, the CI mode, the attribution check (`on` or `off`), the commit types, the
 files kept out of git, the agents stayfixed serves among those listed, and `plugins: none`, since
@@ -1770,9 +1779,8 @@ either, that resolve to one file (`roadmap` and `roadmap_history` set to one pat
 only the `AGENTS.md` skeleton and its region share a file by design, an `[artifacts] local` list
 naming a profile artifact, which every pointer at it reads at its committed path, one naming
 `config` or `gitignore`, which only work at the repository root, and a write git would hide, at an
-existing file a `[paths]` value chose, which the refusal names; a `git` that gives no answer about
-one inside a repository, because it timed out or is not installed, is a `note:` line instead,
-while any other failure to answer still refuses (see `upgrade`'s boundary).
+existing file a `[paths]` value chose, which the refusal names, or one inside a repository whose
+`git` cannot say whether it is ignored (see `upgrade`'s boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `scaffold` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -1833,8 +1841,10 @@ default is exactly what `stayfixed init --yes` writes when that question is not 
 renamed, because git does not refresh one it has. That is why its source is printed: you can
 catch it.
 
-`--json` carries `questions`: a JSON Schema object (draft 2020-12) with ten required
-`properties`, in the order the `init` skill asks them. Each but the last is keyed by the
+`--json` carries `questions`: a JSON Schema object (draft 2020-12) with ten `properties`, and
+`required` naming all ten in the order the `init` skill asks them; read the order there, since
+`--json` prints every object's keys sorted, so the properties arrive by name. Each but the last is
+keyed by the
 `stayfixed.toml` key its answer writes: `project.name`, `project.base_branch`, `memory.mode`,
 `stayfixed.profile`, `ci.mode`, `commit_messages.attribution_check`, `commit_messages.types`,
 `artifacts.local` and `stayfixed.agents`; the last, `plugins`, offers the plugins the preset
@@ -1993,13 +2003,13 @@ rule) and a preset's own place are never refused, so a `CLAUDE.md` in your globa
 pattern is not ignored, because git shows every change to it; the artifacts `[artifacts] local`
 keeps under `.stayfixed/local/artifacts/` are exempt, since keeping them out of git is what that
 setting asks for; and outside a git work tree there is no guard, because there is no diff to hide
-from. Inside one (a `.git` in the root or a directory above it), a `git` that gives no answer, because
-it timed out or is not installed, is never a pass said in silence: the run goes on and its report
-ends with a `note:` line saying git could not answer and to check those files once
-`git check-ignore` works. Any other failure to answer refuses the run (`2`) before anything is written, since a
-repository can choose it: git answers a whole batch with exit 128 when one path in it lies inside
-a submodule. Run it on a
-checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
+from. Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer refuses
+the run (`2`) before anything is written, dry run included, and the refusal says to run it again
+once `git check-ignore` works: one that timed out, is not installed, or failed on the batch. A
+repository can cause the first and the last: git reads every `.gitignore` along each
+path it is asked about, so a deep enough path under large enough ignore files outlasts its time
+bound, and git answers a whole batch with exit 128 when one path in it lies inside a submodule.
+Run it on a checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
 entries, so an upgrade changes none.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every
@@ -2087,8 +2097,10 @@ repository's binding id is in `~/.local/share/stayfixed/delivery/`, outside the 
 commit reaches, the run asks every refusal below, then
 runs [`stayfixed detach`](#stayfixed-detach---root-path---machine-path) before its first write,
 which withdraws what `attach` placed, the overlay's plugin and the allow rules among it, and takes
-the ledger; a `note:` line says so, and a dry run says it would. A `detach` that refuses or stops
-part-way stops the run there with nothing of its own done, its own sentence and exit code given.
+the ledger; a `note:` line says so, and a dry run says it would. A run whose plans refuse stops
+before `detach`, and neither it nor its dry run says it detached or would. A `detach` that refuses
+or stops part-way stops the run there with nothing of its own done, its own sentence and exit code
+given.
 While the render is still there, running `uninstall` again finishes from what is left. A `detach`
 that stopped after removing the render, or an `attach` that stopped after writing its ledger and
 before the render, leaves the ledger with no render, which the next `uninstall` refuses as below:
@@ -2143,9 +2155,8 @@ commit records, and a region only where its key names; the diff shows both. No `
 name git's control directory or stayfixed's own `.stayfixed/`, and a symlinked `.stayfixed/` is
 refused. An existing file git ignores at a place a `[paths]` value chose is never removed or
 rewritten: the run is refused (`2`) before any removal, dry run included, by `upgrade`'s rule,
-naming the files; a run inside a repository whose `git` gives no answer, because it timed out or is
-not installed, goes on with a `note:` line, and one whose `git` fails to answer otherwise is
-refused, as `upgrade`'s are. Take
+naming the files, and so is a run inside a repository whose `git` cannot answer, as `upgrade`'s
+is. Take
 stayfixed's part out of them by hand, or take the `[paths]` key out of `stayfixed.toml`; the run
 then leaves those files where they are and lists them. That includes a file stayfixed itself
 created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
@@ -2161,7 +2172,10 @@ key `stayfixed trust list --json` prints, withdraws one.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
-`[paths]` value chose, and what is under `.stayfixed/local/`.
+`[paths]` value chose, and what is under `.stayfixed/local/`; and, to tell whether the repository is
+attached, `attach`'s ledger in this checkout and in the main checkout, which `git` names, the binding
+id in the git common directory, and whether `~/.local/share/stayfixed/delivery/<id>/` is there. On an
+attached repository, what `stayfixed detach` reads.
 
 **Writes** only removals, and region removals, through the scaffold engine, and after each pass
 the two records of what is left: `.stayfixed/manifest.json`, which every pass rewrites, whether or
@@ -2173,9 +2187,9 @@ above a file it removed, once that directory is empty. After the write-once pass
 ledger: `.stayfixed/assessment.json`, `.stayfixed/manifest.json`, then `.stayfixed/local/` and
 `.stayfixed/`, each once it is empty. A harness's own directory is never removed. When
 `stayfixed.toml` is gone and nothing records it, only the ledger is removed. On an attached
-repository, before all of that, everything `stayfixed detach` writes and removes, which its section
-names, `attach`'s ledger among them, and through its `claude plugin` commands. Under `--dry-run`,
-nothing.
+repository it first writes and removes what `stayfixed detach` does, which that section names,
+`attach`'s ledger among them, and runs the same `claude plugin` commands, which write what Claude
+Code records about the plugin. Under `--dry-run`, nothing.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
@@ -3518,9 +3532,9 @@ in a parser, which is the whole point of the rule.
 anything differs. `stayfixed bugs index`, `stayfixed docs trail` and `stayfixed memory index` all
 take it with that meaning.
 
-Four commands mean something else by a shared name. Each is a **named exception** — a decision
-that the flag means something else, not a sentence that drifted — and each has its own constant
-beside the six above:
+Three commands mean something else by a shared name, `setup` by two. Each of the four is a
+**named exception** — a decision that the flag means something else, not a sentence that drifted —
+and each has its own constant beside the six above:
 
 | Command and flag | What it means there |
 |---|---|
@@ -3529,7 +3543,7 @@ beside the six above:
 | `stayfixed setup --machine` | the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the file every reader reads) |
 | `stayfixed attach --check` | report the binding and the diff, and write nothing |
 
-`attach --check` reports the way the other four do and exits differently on purpose: never on a
+`attach --check` reports the way the three `--check`s above do and exits differently on purpose: never on a
 non-empty diff. A diff carrying allow rules is the ordinary state of a first attach, which
 `attach` shows and proceeds with. A `--check` that failed on it would make reading the diff first a
 failure.
@@ -3537,11 +3551,27 @@ failure.
 Every command that reads a project's configuration takes `--root` and `--machine`, with the
 meanings in the first table, whether or not its heading spells them.
 Neither flag is taken by `stayfixed commit strip`, `stayfixed hook` and `stayfixed prove`,
-because none of them reads a project's configuration: the first reads only what it is handed,
-`hook` finds the project from the harness's own event, and `prove` runs its command where it is
-typed and answers for that directory's repository. `overlay upgrade` takes `--root` alone, in the sense the second table gives it, and read no
+because none of them reads a project's configuration: the first reads the message file it is
+handed and your own `~/.claude/settings.json`, `hook` finds the project from the harness's own
+event, and `prove` runs its command where it is typed and answers for that directory's repository.
+`overlay upgrade` takes `--root` alone, in the sense the second table gives it, and reads no
 `stayfixed.toml`; `setup` takes both, in its own senses. `tests/test_documents.py` holds both
 lists to the real parser.
+
+---
+
+## Terms
+
+**Scaffold** means three things on this page, and the sentence says which:
+
+- everything `stayfixed init` writes into a repository, which `upgrade` refreshes and `uninstall`
+  takes back: the write-once files (`stayfixed.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton) and
+  the rest;
+- the rest alone, the second of the two passes those commands plan: the report headed `scaffold:`
+  and the `scaffold` key of their `--json`, beside the write-once pass's `write-once:` report and
+  `once` key (`upgrade` plans this pass alone, so it prints no `write-once:`);
+- the scaffold engine, which plans and writes both passes and reports every action in the same
+  verbs, `stayfixed overlay upgrade`'s included.
 
 ---
 

@@ -25,6 +25,8 @@ from typing import Any
 
 from stayfixed.config.schema import (
     BRANCH_NAME,
+    CI_MODES,
+    COMMIT_TYPE,
     HARNESS_MODE,
     IN_REPO_MODE,
     LOCAL_ONLY_MODE,
@@ -53,12 +55,10 @@ FLAGS = {
     PLUGINS: "stayfixed setup --plugin",
 }
 PROPERTIES = tuple(FLAGS)
-# A commit type as `stayfixed assess`'s commit-vocabulary probe reads one off a subject, and the
-# same rule in words for the parser's refusal.
-COMMIT_TYPE = re.compile(r"\A[a-z]+\Z")
-COMMIT_TYPE_RULE = "lowercase ASCII letters"
 # What each answer gives, what it gives up, what it leaves behind and how to take it back, in that
-# order: the four lines the `init` skill relays with each question. Fixed text, and stayfixed's own.
+# order: the four lines the `init` skill relays with each question. Fixed text, and stayfixed's own,
+# but for the plugins' `{plugins}`, which `questions` fills with the names the question offers, so
+# the line cannot name a plugin the preset no longer recommends.
 TRADE_OFFS: dict[str, tuple[str, str, str, str]] = {
     "project.name": (
         "the name stayfixed calls this project by: the heading of AGENTS.md and the overlay "
@@ -125,9 +125,8 @@ TRADE_OFFS: dict[str, tuple[str, str, str, str]] = {
         "edit [stayfixed] agents and run `stayfixed upgrade`",
     ),
     PLUGINS: (
-        "superpowers' working skills (brainstorm, plan, test first, review) and context7's "
-        "library documentation, in every Claude Code session",
-        "both are third-party and unpinned: whatever they ship, hooks included, runs in every "
+        "the plugins the recommended preset names, {plugins}, in every Claude Code session",
+        "each is third-party and unpinned: whatever it ships, hooks included, runs in every "
         "session",
         "a whole machine setup outside this repository: the machine configuration file, the "
         "preset's deny rules and plugin options merged into ~/.claude/settings.json, and a "
@@ -136,10 +135,15 @@ TRADE_OFFS: dict[str, tuple[str, str, str, str]] = {
     ),
 }
 TRADE_OFF_KEYS = ("get", "give_up", "trace", "undo")
+# A title for each `[ci] mode` the CI question offers, read in `CI_MODES`' order: a mode with no
+# title and not in `CI_UNOFFERED` is a `KeyError` when the schema is built, loud in every test.
 CI_TITLES = {
     "reusable": "Gate pull requests with stayfixed's reusable workflow",
     "none": "No CI workflow",
 }
+# `uvx` is not offered: `init --yes` answers the question with `--no-ci` alone, so no flag could
+# give that answer, and a project that wants it sets `[ci] mode` in `stayfixed.toml` itself.
+CI_UNOFFERED = frozenset({"uvx"})
 SCHEMA = "https://json-schema.org/draft/2020-12/schema"
 # The source of a default that nothing in the repository chose.
 PRESET = "the preset's default"
@@ -205,6 +209,7 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
     precheck(root, answering=True)
     found = detect(root, lenient=True)
     preset = preset_defaults(found.name or "project")
+    offered = _recommended()
     titles = {
         **MEMORY_TITLES,
         OVERLAY_MODE: OVERLAY_RECORDED if _overlay_recorded(machine) else OVERLAY_NEXT,
@@ -243,7 +248,11 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
         "ci.mode": {
             "type": "string",
             "title": "Gate pull requests in CI",
-            "oneOf": [{"const": mode, "title": title} for mode, title in CI_TITLES.items()],
+            "oneOf": [
+                {"const": mode, "title": CI_TITLES[mode]}
+                for mode in CI_MODES
+                if mode not in CI_UNOFFERED
+            ],
             "default": preset.ci.mode,
             "x-stayfixed-source": PRESET,
         },
@@ -279,7 +288,7 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
         PLUGINS: {
             "type": "array",
             "title": "Recommended plugins to install on this machine",
-            "items": {"type": "string", "enum": _recommended()},
+            "items": {"type": "string", "enum": offered},
             # None unasked: a third-party plugin runs in every session, so it is installed only
             # when a person names it.
             "default": [],
@@ -288,7 +297,10 @@ def questions(root: Path, *, machine: Path | None) -> dict[str, Any]:
     }
     for key, flag in FLAGS.items():
         properties[key]["x-stayfixed-flag"] = flag
-        lines = zip(TRADE_OFF_KEYS, TRADE_OFFS[key], strict=True)
+        texts = TRADE_OFFS[key]
+        if key == PLUGINS:
+            texts = (texts[0].format(plugins=", ".join(offered)), *texts[1:])
+        lines = zip(TRADE_OFF_KEYS, texts, strict=True)
         properties[key]["x-stayfixed-tradeoff"] = dict(lines)
     return {
         "$schema": SCHEMA,
