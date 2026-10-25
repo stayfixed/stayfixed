@@ -751,6 +751,18 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-no-ledger]",
 ]
 
+# The hooks file the overlay fired while it was a plugin, which nothing reads now: with no digest
+# held for it, a generated overlay's unedited copy stayed for good, and an edited one went unnamed.
+[[mutation]]
+name = "the plugin hooks file a release shipped is kept where no ledger records it"
+file = "src/stayfixed/overlay/template.py"
+before = '        frozenset({"78922a784ee78e9e50587e93628cd3b9d4dfbe49087adc4514e6781cea38cbb9"}),'
+after = "        frozenset(),"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[plugin-hooks-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[plugin-hooks-no-ledger]",
+]
+
 # A kept copy of the template's `attach` skill is named with the skill that replaces it, so the
 # owner knows the copy is safe to delete.
 [[mutation]]

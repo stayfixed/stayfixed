@@ -2228,24 +2228,27 @@ file is empty, both held by a test. `--dry-run` first is how you read them befor
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.stayfixed/manifest.json`. It also **removes** three files a release no longer ships:
+`.stayfixed/manifest.json`. It also **removes** four files a release no longer ships:
 `common/memory/README.md`, which is `_README.md` now because the note reader reads every other `.md`
 there as a note; `skills/attach/SKILL.md`, the template's own copy of the `attach` skill, which the
-plugin's own replaces, since it covers detaching and a moved remote as well; and
-`common/rules/README.md`, the README of a directory nothing read. It does so only when a file holds
+plugin's own replaces, since it covers detaching and a moved remote as well;
+`common/rules/README.md`, the README of a directory nothing read; and `hooks/hooks.json`, the hooks
+file the overlay fired while it was a plugin of its own. It does so only when a file holds
 what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, in an overlay with
 no manifest (one generated from a template, since `scripts/publish_template.py` leaves it out), a file a
 release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
-other two. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
+skill and the rules README, and any release up to 0.3.1 for the hooks file. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
 nothing is removed, and its record is dropped. An unrecorded one that is gone is not listed at all,
 nor counted as unchanged, so a run after the removal, or on an overlay that never had the file,
 does not name it. Any other copy may hold your own words, so it is
 listed as `skip_modified` with the way out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
 template's, so delete your copy once you no longer need your edits; a standing rule is a note with
-`metadata.startup`, so move your rules into such notes and delete the README. Until then each run
+`metadata.startup`, so move your rules into such notes and delete the README; `stayfixed attach`
+renders the hook entries in `common/claude/hooks.json`, so move yours there and delete the hooks
+file. Until then each run
 lists the copy again. Each directory above a file it removed then goes once that leaves it empty,
 up to the first that still holds anything and never the overlay root: `skills/attach/` and
-`skills/`, and `common/rules/`. A directory that is a symbolic link is left, and so is one above a
+`skills/`, `common/rules/`, and `hooks/`. A directory that is a symbolic link is left, and so is one above a
 file that was already gone when the run began. Exits `0`; `1` when the report
 carries a REFUSED section, because nothing would be written while one of those stands; `2` when
 `--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused

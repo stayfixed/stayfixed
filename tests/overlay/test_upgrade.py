@@ -400,12 +400,18 @@ SHIPPED_RULES_README_0_2 = (
     "is\n"
     "about one project only, it belongs in that project's `projects/<name>/memory/`, not here.\n"
 )
+# The hooks file the overlay fired while it was a plugin of its own, the same bytes from 0.1.0 to
+# 0.3.1. `attach` renders the overlay's hook entries from `common/claude/hooks.json` now, and
+# nothing reads this one.
+SHIPPED_PLUGIN_HOOKS = '{\n  "hooks": {}\n}\n'
 ATTACH_SKILL = "skills/attach/SKILL.md"
 RULES_README = "common/rules/README.md"
+PLUGIN_HOOKS = "hooks/hooks.json"
 RELEASED_COPIES = [
     pytest.param(ATTACH_SKILL, SHIPPED_ATTACH_SKILL, "0.2.0", id="attach-skill"),
     pytest.param(RULES_README, SHIPPED_RULES_README_0_1, "0.1.1", id="rules-readme-v0.1"),
     pytest.param(RULES_README, SHIPPED_RULES_README_0_2, "0.2.0", id="rules-readme-v0.2.0"),
+    pytest.param(PLUGIN_HOOKS, SHIPPED_PLUGIN_HOOKS, "0.3.1", id="plugin-hooks"),
 ]
 
 
@@ -420,10 +426,14 @@ def test_each_released_copy_of_a_retired_file_is_removed(
     # rendered it, unrecorded where a template generated it, and there the bytes a release
     # shipped are the only evidence that a copy is stayfixed's. `overlay upgrade` removes them.
     #
+    # The overlay's own `hooks/hooks.json`, which it fired as a plugin, went the same way when the
+    # overlay stopped being one.
+    #
     # Mutation: `mutations/`'s "the rules README 0.2.0 shipped is kept where no ledger records
-    # it", "the rules README 0.1.x shipped is kept where no ledger records it" and "the attach
-    # skill a release shipped is kept where no ledger records it", each dropping a digest held for
-    # the file. A recorded copy is removed by its record, so only the unrecorded case reddens.
+    # it", "the rules README 0.1.x shipped is kept where no ledger records it", "the attach skill a
+    # release shipped is kept where no ledger records it" and "the plugin hooks file a release
+    # shipped is kept where no ledger records it", each dropping a digest held for the file. A
+    # recorded copy is removed by its record, so only the unrecorded case reddens.
     root = _an_overlay(tmp_path)
     path = _with_a_retired_file(
         root, relative, ledger=ledger, text=shipped, shipped=shipped, version=version
@@ -457,6 +467,14 @@ def test_each_released_copy_of_a_retired_file_is_removed(
             "notes and delete this copy",
             id="rules-readme",
         ),
+        pytest.param(
+            PLUGIN_HOOKS,
+            SHIPPED_PLUGIN_HOOKS,
+            "the overlay is no plugin any more and nothing reads this file; `stayfixed attach` "
+            "renders the hook entries in `common/claude/hooks.json`, so move yours there and "
+            "delete this copy",
+            id="plugin-hooks",
+        ),
     ],
 )
 def test_an_edited_retired_file_is_kept_and_named(
@@ -467,7 +485,7 @@ def test_an_edited_retired_file_is_kept_and_named(
     # left by `upgrade`, which names it with the way out. The verdict and the
     # way out are the scaffold engine's, held by `mutations/`'s "a retired overlay file with no
     # ledger is removed whatever it holds" and "a kept retired overlay file is named without its
-    # way out"; this holds that the two files reach them with a way out of their own, and
+    # way out"; this holds that the three files reach them with a way out of their own, and
     # `mutations/`'s "a kept attach skill is not told the plugin's own replaces it" breaks one.
     root = _an_overlay(tmp_path)
     edited = shipped + "\nMy own line.\n"
