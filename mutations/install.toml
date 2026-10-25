@@ -136,11 +136,11 @@ after = """    if overlay is None:
 reddens = ["tests/setup/test_setup.py::test_the_overlay_offer_is_never_taken_without_being_asked"]
 
 # The overlay root is the machine's trust anchor: every later `attach` derives `permitted_roots`
-# from it. Without this guard, `--overlay /tmp/whatever` — any directory that merely exists —
-# would be recorded and trusted exactly as a real overlay is. The probe lives in
-# `overlay.identity`, the one module that answers "is this an overlay" for `setup` and for
-# `overlay upgrade` alike, and it asks for the identity record first, naming it in full for an
-# overlay made before the record shipped.
+# from it. The probe lives in `overlay.identity`, the one module that answers "is this an overlay"
+# for `setup` and for `overlay upgrade` alike, and it asks for the identity record first, so the
+# refusal of a tree without one names the file to add in full, for an overlay made before the
+# record shipped. Without the question, a tree with no record is still refused, as a record that
+# does not parse (`NOT_A_RECORD`), which names nothing to add.
 [[mutation]]
 name = "the overlay probe stops asking for the identity record"
 file = "src/stayfixed/overlay/identity.py"
@@ -554,8 +554,8 @@ reddens = [
 ]
 
 # The walkthrough runs the launcher, so what it asserts about `pre-commit` is what a real `PATH`
-# lookup ran and not what a stub recorded. `overlay init` installs the overlay's commit-time secret
-# scan, and a verb that is not `install` installs nothing while every exit code stays 0 -- the quiet
+# lookup ran and not what a stub recorded. `setup --overlay` installs the overlay's commit-time
+# secret scan, and a verb that is not `install` installs nothing while every exit code stays 0 -- the quiet
 # half of the failure, which is why the assertion is on the logged command rather than on the
 # command's success.
 [[mutation]]

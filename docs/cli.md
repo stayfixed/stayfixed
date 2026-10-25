@@ -2723,57 +2723,67 @@ nothing here is vendored on a guessed marketplace name — and a missing binary 
 failed call is a reported note, never a failure.
 
 **The overlay is touched only when `--overlay` names an answer.** It is the one entry for an
-overlay, in three forms. `--overlay <path>` naming an overlay records its root. `--overlay <path>`
-naming nothing, or an empty directory you can list and write, renders the shipped template there,
-with no network call: the directory it is made in has to be one you can write, and a path whose
-parent is missing or not writable, or a directory you cannot both list and write that is not an
-overlay, is refused before the first write. So a mistyped path is not refused: it is rendered
-at and recorded, and a run that records a root other than the one the machine file held says so
-in a note naming the root it replaced, and how to record that one again. A leading `~` is the home
-`HOME` names, as in the machine file's `[overlay] root`; where `HOME` is empty or relative, such a
-path is refused (`2`) rather than read against `/` or the directory the command ran from. The render is made a git repository with `git init`
-and `git symbolic-ref HEAD refs/heads/main` (not `git init -b main`, which a `git` older than 2.28
-refuses), on `main` with no remote, and the note says how to give it one; a `git` that cannot run, or runs and fails, is a note and not a
-failure, since the tree is there. `--overlay create:<owner>/<name>` asks GitHub for a private
-repository generated from a template — a template and not a fork, since a fork's visibility is
-bound to the upstream network and cannot be made private — and clones it to `<home>/<name>`. It
-asks `gh repo view <owner>/stayfixed-overlay-template --json isTemplate` once: a template there is
-generated from, and a repository of that name that is not one, or `gh`'s explicit answer that there
-is none, means you have published none, and the template is
-`github.com/stayfixed/stayfixed-overlay-template`, the publisher's public copy, named with its host:
-`gh` looks an unqualified name up on `GH_HOST`, so on a GitHub Enterprise host `stayfixed/…` would
-be whoever owns that name there. Any other failure of that question — an expired token, a network
-error, a `gh` that is not installed or hung, an answer that is not the JSON asked for — stops the
-command with `gh`'s own message and creates nothing (`1`). What is at `<home>/<name>` already is
-decided before any of that, before the first write and before `gh` is asked anything: nothing,
-or an empty directory you can list and write, which this run clones into; the overlay an earlier
-run made, which is left alone and nothing is generated; or anything else — a file, a link, a
-directory holding something that is not an overlay or one you cannot both list and write — which
-is refused (`2`), since the clone would meet it only
-after `gh repo create` had made a repository nothing then records. Once `gh repo create` has run,
-the repository may exist on GitHub whatever `gh` answered, and a second `create:` would fail on
-the name it holds, so every refusal from then on says so and gives the remedy that works: once
-`<home>/<name>` holds a clone of it, record it with `stayfixed setup --overlay <home>/<name>`.
-When `gh repo create` itself fails, the command stops there with its exit code and stderr; when it reports success and the clone leaves nothing at
-`<home>/<name>`, `gh repo view` is asked whether the repository exists, and the clone is retried once, after a
-ten-second wait when it does — a wait carried on reasoning rather than a measurement, since the one
-trial run against it did not reproduce the race. A rendered, generated or recorded
-overlay gets the commit-time secret scan with `pre-commit install`; a missing `pre-commit` is a
-note. What `gh`, `git` and `pre-commit` print is quoted in these notes as it came, except that one
-holding anything but a plain path is escaped, and one longer than 120 characters is cut to its
-first 120 and its length.
-Naming `create:` is the request, and no flag stands in front of it. Every path is validated
-**before the first write** — before the machine file, the settings merge and the plugin installs,
-and for `create:` before `gh repo create` runs on anybody's account. A path holding something must
-carry the identity record `stayfixed-overlay.toml`, parsing as TOML and holding `layout = 1`, which
-is what `setup` renders; the refusal of a tree without it names the file and its keys. A tree is an
-overlay exactly when that record parses, and each way one is made writes it last: the render after
-every other file, and a clone in path order, where the record's path sorts last. So a render or a
-clone cut short is never taken for an overlay. Where the
-overlay lives is yours to choose and `setup` refuses no place for it; `stayfixed doctor`'s
+overlay, in three forms, below; naming one is the request, and no flag stands in front of it. Each
+is validated **before the first write** — before the machine file, the settings merge and the
+plugin installs, and for `create:` before `gh repo create` runs on anybody's account — and the
+place it names is judged by one rule. Nothing there, or an empty directory that is no link, is a
+place to render or clone into. A tree that carries the identity record `stayfixed-overlay.toml`,
+parsing as TOML and holding `layout = 1`, is an overlay; the refusal of a tree without it names the
+file and its keys. Anything else is refused (`2`): a file, a link at a `create:` destination, a
+directory holding something that is not an overlay, and, in one sentence for both forms, a
+directory you cannot search, or one holding no overlay that you cannot both list and write. Where
+the overlay lives is yours to choose and `setup` refuses no place for it; `stayfixed doctor`'s
 `overlay-requires` row warns when another repository's work tree holds it, since that repository
 can put files into it. Each path is judged and recorded resolved, so the record does not follow a
-link someone retargets later.
+link someone retargets later, and a run that records a root other than the one the machine file
+held says so in a note naming the root it replaced, and how to record that one again. A leading
+`~` is the home `HOME` names, as in the machine file's `[overlay] root`; where `HOME` is empty or
+relative, such a path is refused (`2`) rather than read against `/` or the directory the command
+ran from. Every overlay a form makes or records gets the commit-time secret scan with `pre-commit
+install`; a missing `pre-commit` is a note. What `gh`, `git` and `pre-commit` print is quoted in
+these notes as it came, except that one holding anything but a plain path is escaped, and one
+longer than 120 characters is cut to its first 120 and its length.
+
+**Record: `--overlay <path>` naming an overlay** records its root and writes nothing in its tree;
+its `pre-commit` git hook is installed, so a second machine records its clone with the scan armed.
+
+**Render: `--overlay <path>` naming nothing**, or an empty directory, renders the shipped template
+there, with no network call. The directory it is made in has to be one you can write: a path whose
+parent is missing or not writable is refused before the first write. So a mistyped path is not
+refused: it is rendered at and recorded, with the note above when it replaces a recorded root. The
+render writes the identity record after every other file, so a render cut short is never taken for
+an overlay. It is made a git repository with `git init` and `git symbolic-ref HEAD refs/heads/main`
+(not `git init -b main`, which a `git` older than 2.28 refuses), on `main` with no remote, and the
+note says how to give it one; a `git` that cannot run, or runs and fails, is a note and not a
+failure, since the tree is there.
+
+**`create:`: `--overlay create:<owner>/<name>`** asks GitHub for a private repository generated
+from a template — a template and not a fork, since a fork's visibility is bound to the upstream
+network and cannot be made private — and clones it to `<home>/<name>`. What is there already is
+judged first, before the first write and before `gh` is asked anything: nothing, or an empty
+directory, which this run clones into; the overlay an earlier run made, which is left alone and
+nothing is generated; or anything else, refused (`2`) by the rule above, since the clone would meet
+it only after `gh repo create` had made a repository nothing then records. It then asks `gh repo
+view <owner>/stayfixed-overlay-template --json isTemplate` once: a template there is generated
+from, and a repository of that name that is not one, or `gh`'s explicit answer that there is none,
+means you have published none, and the template is `github.com/stayfixed/stayfixed-overlay-template`,
+the publisher's public copy, named with its host: `gh` looks an unqualified name up on `GH_HOST`,
+so on a GitHub Enterprise host `stayfixed/…` would be whoever owns that name there. Any other
+failure of that question — an expired token, a network error, a `gh` that is not installed or
+hung, an answer that is not the JSON asked for — stops the command with `gh`'s own message and
+creates nothing (`1`). Once `gh repo create` has run, the repository may exist on GitHub whatever
+`gh` answered, and a second `create:` would fail on the name it holds, so every refusal from then
+on says so and gives the remedy that works: once `<home>/<name>` holds a clone of it, record it
+with `stayfixed setup --overlay <home>/<name>`. When `gh repo create` itself fails, the command
+stops there with its exit code and stderr; when it reports success and the clone leaves nothing at
+`<home>/<name>`, `gh repo view` is asked whether the repository exists, and the clone is retried
+once, after a ten-second wait when it does — a wait carried on reasoning rather than a measurement,
+since the one trial run against it did not reproduce the race. A clone checks the identity record
+out last as far as git's order goes: git writes a tree in path order, where the record's path sorts
+after every file the template ships, but parallel checkout (`checkout.workers`) keeps no order, and
+a file of yours whose path sorts after the record comes after it, so a clone cut short can carry
+the record. A generated overlay has no `.stayfixed/manifest.json`, so `stayfixed overlay upgrade`
+refreshes none of its files once they differ from a release's (`overlay upgrade`, above).
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;
