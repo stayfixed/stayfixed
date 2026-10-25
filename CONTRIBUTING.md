@@ -194,11 +194,13 @@ the `.stayfixed/` namespace and the machine file's keys are the core's — and m
 delivery's code or call its behaviour except through discovery, which is how any area plugs into the
 core: the CLI frame, the hook registry and `doctor`'s report import an area's `commands.py`,
 `hooks.py` and `doctor.py` by name and call the `register()` each publishes, without knowing which
-area it is, and the bullets below are that contract. One crossing still exists, and it is pinned in
-`CORE_TO_DELIVERY` in `tests/boundaries/test_delivery.py` because it is meant to stay rather than be
-cut: `stayfixed setup --overlay` creates or records the overlay as the last step of machine setup,
-so `setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it, and
-those rows stay until the step leaves `setup`. A row is one import statement and the names it takes,
+area it is, and the bullets below are that contract. Two crossings still exist, and they are pinned
+in `CORE_TO_DELIVERY` in `tests/boundaries/test_delivery.py` because they are meant to stay rather
+than be cut: `stayfixed setup --overlay` creates or records the overlay as the last step of machine
+setup, so `setup/run.py` imports the overlay area's `api.py`, inside the two functions that use it,
+and those rows stay until the step leaves `setup`; and `stayfixed uninstall` detaches an attached
+repository before it takes the scaffold back, so `project/uninstall.py` imports the attach area's
+`detach`, inside the one function that runs it. A row is one import statement and the names it takes,
 held as a multiset in both directions, so `test_core_never_imports_delivery` refuses a new crossing,
 a second statement beside a pinned one, a pinned statement that takes one more name and a pinned row
 whose import has gone alike. `scripts/` is repository tooling and stays under the `api.py` rule

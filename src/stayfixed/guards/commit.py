@@ -554,3 +554,28 @@ def commit_gate(root: Path, config: Config, base: str) -> list[Finding]:
         for violation in report.violations
         for offence in violation.offences
     ]
+
+
+def harness_says_what_commits_carry(home: Path | None) -> bool:
+    """Whether the machine owner's Claude Code settings set `attribution.commit`, the harness's own
+    word on what a commit it makes carries, to any value, the empty one that adds nothing included.
+
+    `commit strip` gives way to it: the trailer is then the person's choice, made in the harness,
+    and the hook undid it. Only the owner's settings file under `home` is read, never one a
+    repository commits, because a clone could otherwise turn the hook off. A file that is not
+    there, cannot be read or is not one JSON object sets nothing, and the strip goes on.
+    """
+    from stayfixed.errors import Failure
+    from stayfixed.harnesses import CLAUDE, lenient_settings
+    from stayfixed.jsonobject import json_object
+
+    if home is None:
+        return False
+    (settings,) = CLAUDE.settings
+    try:
+        text = (home / settings).read_text(encoding="utf-8")
+        document = json_object(lenient_settings(text), settings, error=Failure)
+    except (OSError, UnicodeDecodeError, Failure):
+        return False
+    attribution = document.get("attribution")
+    return isinstance(attribution, dict) and "commit" in attribution

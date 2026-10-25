@@ -44,6 +44,7 @@ CORE_TO_DELIVERY = (
         "stayfixed.overlay.api",
         frozenset({"finish", "generate", "overlay_fault", "render", "require_overlay"}),
     ),
+    ("project/uninstall.py", "stayfixed.attach.api", frozenset({"detach"})),
 )
 
 DeliveryRow = tuple[str, str, frozenset[str]]
@@ -103,7 +104,7 @@ def test_core_never_imports_delivery() -> None:
             path.read_text(encoding="utf-8"),
             stayfixed.areas.DELIVERY_AREAS,
         )
-    assert len(CORE_TO_DELIVERY) == 2
+    assert len(CORE_TO_DELIVERY) == 3
     found, pinned = Counter(rows), Counter(CORE_TO_DELIVERY)
     assert found == pinned, {"unpinned": found - pinned, "gone": pinned - found}
 

@@ -352,6 +352,16 @@ def run_upgrade(args: argparse.Namespace) -> Result:
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 
 
+# Said when the repository was attached: fixed text, since `detach`'s own report is counts of what
+# the repository's ledger and settings named.
+DETACHED = (
+    "this repository was attached to an overlay, so uninstall ran `stayfixed detach` first, which "
+    "withdrew what attach placed and its ledger"
+)
+DETACHED_DRY = (
+    "this repository is attached to an overlay, so uninstall would run `stayfixed detach` first, "
+    "which withdraws what attach placed and its ledger"
+)
 # The refused lines are `init`'s in substance, with the verb this command performs.
 UNINSTALL_HEADINGS = {
     (True, True): "refused, and nothing would be removed:",
@@ -363,6 +373,7 @@ UNINSTALL_HEADINGS = {
 
 def run_uninstall(args: argparse.Namespace) -> Result:
     from stayfixed.project.uninstall import KEPT_CONFIG, KEPT_LOCALLY, uninstall
+    from stayfixed.runner import subprocess_runner
 
     force = _force_paths(args.force)
     machine = Path(args.machine) if args.machine else None
@@ -371,6 +382,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         machine=machine,
         dry_run=args.dry_run,
         force=force,
+        runner=subprocess_runner(),
         owner=command_owner(machine),
     )
     refused = report.refused
@@ -392,6 +404,8 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         "write-once:",
         once,
     ]
+    if report.detached:
+        lines.append(f"note: {DETACHED_DRY if report.dry_run else DETACHED}")
     if left:
         lines.append(f"left in place, yours now: {len(left)} file(s), each named above")
     if report.orphans:
@@ -416,6 +430,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         "kept_locally": report.kept_locally,
         "kept_config": report.kept_config,
         "unanswered": report.unanswered,
+        "detached": report.detached,
     }
     return Result("\n".join(lines), data, exit_code=1 if refused else 0)
 

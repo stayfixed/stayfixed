@@ -64,6 +64,9 @@ package that names a harness is pardoned there, each pardon by one of these item
   there.
 - One hook output cap, `native_caps.hook_output_chars`, is Claude Code's and is applied under
   every harness.
+- `commit strip` gives way to Claude Code's `attribution.commit`, read off `CLAUDE.settings` under
+  the owner's home (`guards.commit`), and its message names it, so another harness's setting for
+  what its commits carry is an edit there.
 - The advice `setup --approval-boundary` prints is Claude Code's alone: `trust.boundary` spells
   its managed-settings paths, its sandbox settings and its deny-rule grammar, and names it in the
   one sentence every writer gives a write its sandbox refused. Another harness's sandbox is an

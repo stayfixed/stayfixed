@@ -530,7 +530,11 @@ file is there before it runs the gate.
 Rewrite a commit-message file in place with the attribution lines of its trailing attribution
 block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
 says which; a message that is *only* attribution is left alone, because emptying it aborts the
-commit with a confusing error and CI explains better. Refuses a symlink, and fails (`1`) on a
+commit with a confusing error and CI explains better. It strips nothing where your own Claude Code
+settings, `~/.claude/settings.json`, set `attribution.commit` to any value, the empty one
+included: what a commit carries is then your choice in the harness, and the run says so. A
+repository's own `.claude/settings.json` is not read for it, since a clone could then turn the
+hook off. Refuses a symlink, and fails (`1`) on a
 file it cannot read, a file that is not UTF-8 included.
 
 Git's own trailing comment block is kept, and so is everything below the scissors line that
@@ -2078,10 +2082,17 @@ someone committed where a ledger file belongs stays. So does a harness's own dir
 empty directory, and to `init` its presence means the project uses that harness. So a later `init`
 detects that harness and lists it in `[stayfixed] agents` until you remove the directory.
 
-**Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay
-(the ledger is in this checkout or in the main checkout, where `attach` keeps it from every
-worktree), so run `stayfixed detach` first; `stayfixed.toml` is missing while the manifest records it, so restore
-it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
+**An attached repository is detached first.** When `attach`'s ledger is in this checkout or in the
+main checkout, where `attach` keeps it from every worktree, the run asks every refusal below, then
+runs [`stayfixed detach`](#stayfixed-detach---root-path---machine-path) before its first write,
+which withdraws what `attach` placed, the overlay's plugin and the allow rules among it, and takes
+the ledger; a `note:` line says so, and a dry run says it would. A `detach` that refuses or stops
+part-way stops the run there with nothing of its own done, its own sentence and exit code given,
+and running `uninstall` again finishes from what is left. The ledger is not counted among the
+files `.stayfixed/local/` holds.
+
+**Refused before any write** (`2`): the repository is not initialised; `stayfixed.toml` is missing
+while the manifest records it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
 take them out of the list; two artifacts resolve to one file, named as `init` names it;
 `.stayfixed/local/` holds files this run would not remove, such as notes, or an artifact kept out of
 git that changed since stayfixed wrote it, which the refusal counts and never names; git ignores an
@@ -2153,7 +2164,9 @@ above a file it removed, once that directory is empty. After the write-once pass
 `.stayfixed/local/artifacts/`, deepest first, that directory included; after the last pass, the
 ledger: `.stayfixed/assessment.json`, `.stayfixed/manifest.json`, then `.stayfixed/local/` and
 `.stayfixed/`, each once it is empty. A harness's own directory is never removed. When
-`stayfixed.toml` is gone and nothing records it, only the ledger is removed. Under `--dry-run`,
+`stayfixed.toml` is gone and nothing records it, only the ledger is removed. On an attached
+repository, before all of that, everything `stayfixed detach` writes and removes, which its section
+names, `attach`'s ledger among them, and through its `claude plugin` commands. Under `--dry-run`,
 nothing.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
@@ -2166,8 +2179,9 @@ one of them.
 files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's
 order note, or the missing-configuration count, or empty) and `kept_locally` (how many files
 under `.stayfixed/local/` the run would leave, on a dry run and on a run whose plans refuse; `0` on
-a run that removed what it planned), `kept_config` and `unanswered` (the sentence of a
-`git check-ignore` that could not answer, or empty).
+a run that removed what it planned), `kept_config`, `unanswered` (the sentence of a
+`git check-ignore` that could not answer, or empty) and `detached` (whether the repository was
+attached, and so detached first, or would be on a dry run).
 
 ---
 

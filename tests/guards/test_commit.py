@@ -8,6 +8,7 @@ the shape of a real line from such a repository.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed import gitenv
+from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.errors import Refusal
 from stayfixed.guards.commit import (
@@ -860,3 +862,34 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     # `--` last, and the range before it: without the terminator a range that names an
     # existing file is read as a pathspec and the log silently answers about something else.
     assert argv_seen[-2:] == ["a..b", "--"]
+
+
+@pytest.mark.parametrize(
+    ("document", "strips"),
+    [
+        ({"attribution": {"commit": "Co-Authored-By: Claude <noreply@anthropic.com>"}}, False),
+        ({"attribution": {"commit": ""}}, False),
+        ({"attribution": {"pr": ""}}, True),
+        ({}, True),
+    ],
+    ids=["commit-text", "commit-empty", "pull-requests-only", "unset"],
+)
+def test_commit_strip_gives_way_to_the_harness_attribution_setting(
+    tmp_path: Path, document: dict[str, object], strips: bool
+) -> None:
+    # Claude Code's `attribution.commit` in the user's own settings is the person saying what
+    # their commits carry. The hook stripping it anyway undid a choice made in the harness, so
+    # with the setting there the message is left as it was; with it unset, or set only for pull
+    # requests, the trailer the harness adds by default is stripped as before. The suite's `HOME`
+    # is a directory of its own (`tests/conftest.py`). Mutation (oracle): `mutations/`'s "commit
+    # strip strips a trailer the harness's attribution setting asked for" -> the first two cases.
+    settings = Path.home() / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps(document), encoding="utf-8")
+    message = tmp_path / "COMMIT_EDITMSG"
+    original = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+    message.write_text(original, encoding="utf-8")
+    assert run(["commit", "strip", str(message)], parser=build_parser(discover_registrars())) == 0
+    stripped = message.read_text(encoding="utf-8")
+    assert (stripped == "fix: thing\n") is strips, stripped
+    assert (stripped == original) is not strips, stripped

@@ -27,7 +27,7 @@ from tests.project.repos import (
     repository,
     tree,
 )
-from tests.runners import LsRemote
+from tests.runners import LsRemote, Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 ENV_TEXT = "SECRET=1\n"
@@ -50,7 +50,7 @@ def _upgrade(root: Path, tmp_path: Path, *, dry_run: bool = False) -> None:
 
 
 def _uninstall(root: Path, tmp_path: Path, *, dry_run: bool = False) -> None:
-    uninstall(root, machine=tmp_path / "absent.toml", dry_run=dry_run, force=())
+    uninstall(root, machine=tmp_path / "absent.toml", dry_run=dry_run, force=(), runner=Recorder())
 
 
 def _append(path: Path, text: str) -> None:
@@ -155,7 +155,7 @@ def test_uninstall_s_remedy_for_an_ignored_file_works(tmp_path: Path) -> None:
         config.read_text(encoding="utf-8").replace('\n[paths]\nroadmap = "build/marker.txt"\n', ""),
         encoding="utf-8",
     )
-    uninstall(root, machine=tmp_path / "absent.toml", dry_run=False, force=())
+    uninstall(root, machine=tmp_path / "absent.toml", dry_run=False, force=(), runner=Recorder())
     assert marker.read_text(encoding="utf-8") == MARKER
     assert not (root / ".stayfixed").exists()
 

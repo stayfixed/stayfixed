@@ -840,16 +840,16 @@ before = "            raise Refusal(FORCE_OUTSIDE)"
 after = "            continue"
 reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_the_root_is_refused_by_rule"]
 
-# `uninstall`'s `ATTACHED` refusal. The attach ledger lives under `.stayfixed/local/`, so the count
-# of files kept out of git would still stop the real run; what this guard adds is the refusal's
-# remedy, and a dry run that refuses rather than reporting an attached repository as one it could
-# uninstall. The test asserts the exact sentence and an unchanged tree for both runs.
+# `uninstall` detaches an attached repository before it takes the scaffold back: the attach ledger,
+# the one record of the overlay's plugin and the allow rules attach placed, lives under
+# `.stayfixed/local/`, and without the detach it is counted as a file kept out of git and the run
+# refuses instead of finishing.
 [[mutation]]
-name = "an attached repository is counted as files kept out of git instead of being told to detach"
+name = "uninstall takes an attached repository for an unattached one"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if _attached(root):"
-after = "    if False:"
-reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
+before = "    attached = _attached(root)"
+after = "    attached = False"
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_detached_and_then_uninstalled"]
 
 # `attach` keeps its ledger in the main checkout from every worktree, so a linked worktree's
 # uninstall asks the main checkout's.
@@ -858,7 +858,7 @@ name = "uninstall asks only this checkout for attach's ledger"
 file = "src/stayfixed/project/uninstall.py"
 before = "for checkout in (root, main))"
 after = "for checkout in (root,))"
-reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attached_repository_is_refused_too"]
+reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout"]
 
 # `uninstall` replans the write-once pass over the body the footprint pass leaves, so an untouched
 # footprint leaves only what was there before.

@@ -1401,3 +1401,15 @@ reddens = [
   "tests/guards/test_bashscan.py::test_run_directory_is_where_uv_runs_the_program[nested-variable]",
   "tests/prove/test_run.py::test_the_command_is_judged_where_its_launcher_runs_it[nested]",
 ]
+
+# `commit strip` leaves a message alone when the person set Claude Code's `attribution.commit`: the
+# trailer is then their choice, and stripping it rewrites a message they meant.
+[[mutation]]
+name = "commit strip strips a trailer the harness's attribution setting asked for"
+file = "src/stayfixed/guards/commit.py"
+before = '    return isinstance(attribution, dict) and "commit" in attribution'
+after = "    return False"
+reddens = [
+  "tests/guards/test_commit.py::test_commit_strip_gives_way_to_the_harness_attribution_setting[commit-text]",
+  "tests/guards/test_commit.py::test_commit_strip_gives_way_to_the_harness_attribution_setting[commit-empty]",
+]

@@ -30,6 +30,13 @@ _STRIP_REMEDY = (
     "hook that strips it before the commit exists."
 )
 
+# Fixed text: what `commit strip` says when it leaves a message alone because the person set what
+# the harness's commits carry (`harness_says_what_commits_carry`).
+GIVES_WAY = (
+    "nothing stripped: Claude Code's attribution.commit setting in your own settings says what a "
+    "commit carries, so the message is left as it is"
+)
+
 # git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read from
 # the repository's config: a value this module would feed straight into a line-prefix comparison is
 # exactly the kind of repository-authored value principle 5 calls untrusted, and there is no
@@ -120,7 +127,12 @@ def run_commit_check(args: argparse.Namespace) -> Result:
 
 
 def run_commit_strip(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.commit import offending_lines, strip_message
+    from stayfixed.config.machine import owner_home
+    from stayfixed.guards.commit import (
+        harness_says_what_commits_carry,
+        offending_lines,
+        strip_message,
+    )
 
     raw = str(args.file)
     if raw.startswith("-"):
@@ -143,6 +155,8 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
         raise Failure(f"cannot read {path}: {exc}") from None
     except UnicodeDecodeError:
         raise Failure(f"cannot read {path}: it is not valid UTF-8") from None
+    if harness_says_what_commits_carry(owner_home()):
+        return Result(GIVES_WAY, {"stripped": 0})
     message, comment_block = _split_trailing_comment_block(original)
     stripped_message = strip_message(message)
     # A message that is *only* attribution would be emptied, which aborts the commit with a

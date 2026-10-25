@@ -19,7 +19,9 @@ reads from outside the area:
   `BINDING_STATES`: the vocabulary and the one classifier that decides between its members are
   the memory area's, so this area publishes neither a copy of the set nor its own members;
 - the file an earlier release merged the overlay's hook entries into (`LOCAL_SETTINGS`), which
-  the doctor area's tests write those entries into.
+  the doctor area's tests write those entries into;
+- `detach`, which `project`'s `uninstall` runs on an attached repository before it takes the
+  scaffold back, and `Detached`, the type it returns.
 
 **Trimmed when the `attached` row moved into this area: `overlay_entries`.** It was published for
 `doctor`'s provenance column, and went once `attach` merged no hook entry.
@@ -30,7 +32,8 @@ reads the same `Result`"; `src/stayfixed/setup/` imports nothing from `stayfixed
 permission-diff half of the area — `check`, `diff_permissions` and the `PermissionDiff` it
 returns — was published on the strength of that sentence and left when the sentence did.
 
-**Trimmed: `attach`, `detach`, `Attached` and `Detached`.** They were published against a
+**Trimmed: `attach` and `Attached`, and `detach` and `Detached` until `uninstall` ran it.** They
+were published against a
 second sentence of the same kind — "`tests/test_install_path.py`, the walkthrough that runs the
 four packages in the order a person does, is the other consumer, and it drives `attach` and
 `detach`, whose returns are `Attached` and `Detached`". That walkthrough drives the argument
@@ -47,20 +50,22 @@ covered `src/`, `scripts/` and `tests/` and never read the sentence, and the sen
 kept the names.
 
 The ledger's path is the core's (`config.layout`'s `ATTACH_LEDGER`), because `project` and
-`doctor` name it too and the core may not import this area; the crossings still pinned are listed
-in `tests/boundaries/test_delivery.py`.
+`doctor` name it too; the core imports this area only through the crossings pinned in
+`tests/boundaries/test_delivery.py`, `uninstall`'s `detach` among them.
 """
 
 from stayfixed.attach.binding import Binding, read_binding
 from stayfixed.attach.permissions import LOCAL_SETTINGS
 from stayfixed.attach.render import Rendered
-from stayfixed.attach.write import AttachLedger, ledger
+from stayfixed.attach.write import AttachLedger, Detached, detach, ledger
 
 __all__ = [
     "LOCAL_SETTINGS",
     "AttachLedger",
     "Binding",
+    "Detached",
     "Rendered",
+    "detach",
     "ledger",
     "read_binding",
 ]

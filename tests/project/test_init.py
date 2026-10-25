@@ -26,7 +26,7 @@ from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.parserlimits import LONG_HEX
 from tests.project.repos import repository
-from tests.runners import LsRemote
+from tests.runners import LsRemote, Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 SHA = "b" * 40
@@ -670,7 +670,7 @@ def test_uninstall_keeps_an_adopted_document_with_the_version_init_added(tmp_pat
     hand_written = '# ours\n[project]\nname = "widget"\n'
     (root / CONFIG_FILE).write_text(hand_written, encoding="utf-8")
     assert _init(root, tmp_path).stamped
-    uninstall(root, machine=tmp_path / "absent.toml", dry_run=False, force=())
+    uninstall(root, machine=tmp_path / "absent.toml", dry_run=False, force=(), runner=Recorder())
     assert (root / CONFIG_FILE).read_text(encoding="utf-8").startswith(hand_written)
 
 

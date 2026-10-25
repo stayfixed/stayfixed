@@ -300,6 +300,10 @@ LISTED = {
     ),
     ("src/stayfixed/doctor/checks.py", "plugin_data"): (1, "`${CLAUDE_PLUGIN_DATA}` in the"),
     ("src/stayfixed/trust/boundary.py", "claude"): (2, "`trust.boundary` spells"),
+    ("src/stayfixed/guards/commands.py", "claude"): (
+        1,
+        "`commit strip` gives way to Claude Code's `attribution.commit`",
+    ),
 }
 # The mentions that are no fact the code acts on, each with how many constants make it and why.
 PROSE = {

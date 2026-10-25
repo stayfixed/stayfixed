@@ -48,8 +48,16 @@ a `[paths]` value is committed, so a directory it merely names may be a person's
 any earlier point leaves the configuration and the manifest the next run needs to finish it. A
 process killed mid-pass can leave an empty directory behind, which no later run removes.
 
-**Two refusals come before any write**: while the repository is attached, and while
-`.stayfixed/local/` holds a file this run would not remove, the local-only memory notes above all.
+**An attached repository is detached first.** `attach`'s ledger, which records what it placed,
+the overlay's plugin and the allow rules among it, lives under `.stayfixed/local/` in the main
+checkout, and taking it with the scaffold would leave nothing to withdraw them by. So once every
+refusal below has been asked, and before this run's first write, it runs `detach`, which takes
+back exactly what the ledger records and the ledger with it; a dry run says it would. A `detach`
+that refuses or stops part-way stops this run with nothing of its own done, and the next run
+finishes from what is left.
+
+**One refusal comes before any write**: while `.stayfixed/local/` holds a file this run would not
+remove, the local-only memory notes above all, `attach`'s ledger aside, which `detach` takes.
 That count is a prediction from the plans: a file goes only when an action unlinks it, or when
 a region's removal leaves exactly what the write-once pass then removes, which the engine's own
 rule for a file kept out of git (`ours_locally`, asked of each file `local_copies` names) answers
@@ -106,6 +114,7 @@ from stayfixed.fsops import path_key, remove_within, rmdir_within, said
 from stayfixed.project.footprint import prepare
 from stayfixed.project.templates import CONFIG_ARTIFACT, IGNORE_ARTIFACT
 from stayfixed.release.api import Resolution
+from stayfixed.runner import Runner
 from stayfixed.scaffold import (
     LOCAL_ARTIFACTS,
     LOCAL_DIGESTS,
@@ -126,11 +135,6 @@ from stayfixed.scaffold import (
 NOTHING = (
     f"{MANIFEST_PATH} is not there; nothing records what stayfixed wrote here, so there is "
     "nothing to uninstall"
-)
-ATTACHED = (
-    "this repository is attached to an overlay; run `stayfixed detach` first — uninstall does not "
-    "withdraw what attach placed, the overlay's plugin and the allow rules among it, and would "
-    "take the ledger that is the only record of them"
 )
 KEPT_LOCALLY = (
     f"{LOCAL_ROOT}/ holds {{count}} file(s) uninstall would not remove, and the ignore block it "
@@ -184,6 +188,8 @@ class UninstallReport:
     kept_config: bool = False
     # `ignored.UNANSWERED` when git could not say whether a file this run removes is ignored.
     unanswered: str = ""
+    # The repository was attached, and this run detached it first, or a dry run would have.
+    detached: bool = False
 
     @property
     def refused(self) -> bool:
@@ -328,18 +334,25 @@ def _attached(root: Path) -> bool:
     return any(fsops.is_file(contained(checkout, ATTACH_LEDGER)) for checkout in (root, main))
 
 
+def _detach(root: Path, runner: Runner) -> None:
+    """`detach`, the attach area's, which withdraws what `attach` placed and takes its ledger."""
+    from stayfixed.attach.api import detach
+
+    detach(root, runner=runner)
+
+
 def uninstall(
     root: Path,
     *,
     machine: Path | None,
     dry_run: bool,
     force: Sequence[str],
+    runner: Runner,
     owner: Owner | None = None,
 ) -> UninstallReport:
     if not Manifest.present(root):
         raise Refusal(NOTHING)
-    if _attached(root):
-        raise Refusal(ATTACHED)
+    attached = _attached(root)
     manifest = Manifest.read(root)
     document = read_document(root)
     if document is None:
@@ -349,9 +362,11 @@ def uninstall(
         # target the manifest records is a committed string. No run of this command reaches here
         # with directories it emptied, because `stayfixed.toml` goes after they are pruned.
         if not dry_run:
+            if attached:
+                _detach(root, runner)
             _remove_ledger(root)
         note = NO_CONFIG.format(count=len(manifest.records))
-        return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0)
+        return UninstallReport(Plan(), Plan(), 0, dry_run, note, 0, detached=attached)
     config = loads(document, root, machine=machine, owner=owner)
     # `removing`: every record `retired_templates` lists goes, and a profile artifact kept out of
     # git is not refused, so a configuration written before that rule can still be taken back.
@@ -400,15 +415,22 @@ def uninstall(
     }
     unlinked = {a.target for a in footprint.actions if _goes(a, local_once, digests)}
     unlinked |= {a.target for a in once.actions if unlinks(a)}
-    kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS})
+    # `attach`'s ledger is not counted where the repository is attached: `detach` takes it before
+    # the first pass.
+    detaching = {ATTACH_LEDGER} if attached else set()
+    kept = _kept_locally(root, unlinked | {LOCAL_DIGESTS} | detaching)
     kept_config = CONFIG_ARTIFACT not in manifest.records
     report = UninstallReport(
-        footprint, once, orphans, dry_run, note, kept, kept_config, passes.unanswered
+        footprint, once, orphans, dry_run, note, kept, kept_config, passes.unanswered, attached
     )
     if dry_run or report.refused:
         return report
     if kept:
         raise Refusal(KEPT_LOCALLY.format(count=kept))
+    # Nothing either pass targets is a path `detach` writes or removes, so the plans above are
+    # the ones applied below.
+    if attached:
+        _detach(root, runner)
     # The footprint plan without the ignore region, which goes last: nothing has been written
     # since it was made, and each action is one template's, so this is the plan a re-plan of the
     # other templates would give, and the plan reported is the one applied.
@@ -432,7 +454,9 @@ def uninstall(
     _apply(root, last)
     _remove_ledger(root)
     joined = _joined(body, ignore), _joined(judged, last)
-    return UninstallReport(*joined, orphans, dry_run, note, 0, kept_config, passes.unanswered)
+    return UninstallReport(
+        *joined, orphans, dry_run, note, 0, kept_config, passes.unanswered, attached
+    )
 
 
 def _goes(action: Action, local_once: Mapping[str, Template], digests: LocalDigests) -> bool:
