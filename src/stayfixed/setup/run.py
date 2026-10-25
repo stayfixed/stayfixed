@@ -85,6 +85,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
+from stayfixed.config.machine import in_owner_home
 from stayfixed.config.overlay import overlay_root as recorded_root
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import utf_8_name
@@ -141,6 +142,11 @@ DESTINATION_NOT_AN_OVERLAY = (
 REPLACED_ROOT = (
     "the machine configuration recorded the overlay at {previous}, and records this one now; "
     "`stayfixed setup --overlay {previous}` records that one again"
+)
+# What `--overlay ~/…` says where `HOME` names no home, `{overlay}` through `printed.quoted`.
+NO_HOME_FOR_OVERLAY = (
+    "--overlay {overlay} begins with `~`, and HOME names no home directory to read it against; "
+    "name the overlay by its whole path"
 )
 # What `--overlay <path>` says of a path that is not there and cannot be rendered, `{path}` and
 # `{parent}` through `printed.quoted`.
@@ -478,7 +484,13 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
         root = fsops.resolved(destination)
         _recordable(root)
         return _Overlay(root=root, create=(account, name), destination=destination)
-    candidate = fsops.resolved(Path(overlay).expanduser())
+    # A leading `~` is the home `config.machine.owner_home` reads, as the machine file's own
+    # `[overlay] root` is: `expanduser` read an empty `HOME` as `/` and a relative one against the
+    # working directory, and rendered and recorded an overlay there.
+    named = in_owner_home(overlay)
+    if named is None:
+        raise Refusal(NO_HOME_FOR_OVERLAY.format(overlay=quoted(overlay)))
+    candidate = fsops.resolved(named)
     _recordable(candidate)
     # Through `fsops`, which raises for a path it cannot ask about (a directory above it nobody may
     # search), so that is the floor's refusal and never read as "not there".

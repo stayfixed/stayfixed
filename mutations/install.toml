@@ -844,8 +844,8 @@ reddens = [
 [[mutation]]
 name = "setup resolves --overlay past fsops"
 file = "src/stayfixed/setup/run.py"
-before = "    candidate = fsops.resolved(Path(overlay).expanduser())"
-after = "    candidate = Path(overlay).expanduser().resolve()"
+before = "    candidate = fsops.resolved(named)"
+after = "    candidate = named.resolve()"
 reddens = [
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
 ]

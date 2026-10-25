@@ -2722,7 +2722,9 @@ naming nothing, or an empty directory, renders the shipped template there, with 
 the directory it is made in has to be one you can write, and a path whose parent is missing or
 not writable is refused before the first write. So a mistyped path is not refused: it is rendered
 at and recorded, and a run that records a root other than the one the machine file held says so
-in a note naming the root it replaced, and how to record that one again. The render is made a git repository with `git init`
+in a note naming the root it replaced, and how to record that one again. A leading `~` is the home
+`HOME` names, as in the machine file's `[overlay] root`; where `HOME` is empty or relative, such a
+path is refused (`2`) rather than read against `/` or the directory the command ran from. The render is made a git repository with `git init`
 and `git symbolic-ref HEAD refs/heads/main` (not `git init -b main`, which a `git` older than 2.28
 refuses), on `main` with no remote, and the note says how to give it one and to write its owner and
 name into its identity record; a `git` that cannot run, or runs and fails, is a note and not a
@@ -2787,8 +2789,9 @@ Run again over the overlay it made, it generates nothing, and the record already
 - `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
 - a refused `--overlay`: a path that names nothing under a directory that is missing or that you
   cannot create it in, a path holding something that is not an overlay, a `create:` destination
-  that holds something and is not the overlay an earlier run made, or a path that is not UTF-8 text
-  and so cannot be recorded in the machine file;
+  that holds something and is not the overlay an earlier run made, a path beginning with `~` while
+  `HOME` names no home, or a path that is not UTF-8 text and so cannot be recorded in the machine
+  file;
 - a `--home` that cannot take what this run writes under it, naming the directory you cannot write
   into, asked only where a write lands: the one the settings file is made in (its directory when
   it is there, the nearest directory above it while it is not); and for `create:`, the one the

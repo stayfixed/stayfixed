@@ -1744,3 +1744,29 @@ def test_setup_says_when_it_records_an_overlay_root_other_than_the_recorded_one(
     said = REPLACED_ROOT.format(previous=quoted(str(first)))
     assert said not in again.notes
     assert said in moved.notes
+
+
+@pytest.mark.parametrize("value", ["", "relative-home"], ids=["empty", "relative"])
+def test_an_overlay_under_a_home_that_names_none_is_refused_and_never_read_against_the_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    # `--overlay '~/x'` was expanded with `Path.expanduser`, which reads an empty `HOME` as `/` and
+    # a relative one against whatever directory the command ran from: with `HOME=relative-home`,
+    # `setup` rendered an overlay under the working directory and recorded it as the machine's
+    # trust anchor. A leading `~` is read as `config.machine.owner_home` reads it, as the machine
+    # file's own `[overlay] root` is, and a home that names none is refused.
+    from stayfixed.setup.run import NO_HOME_FOR_OVERLAY
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", value)
+    machine = tmp_path / "config.toml"
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended",
+            home=tmp_path / "home",
+            machine=machine,
+            runner=Recorder(),
+            overlay="~/x",
+        )
+    assert str(refused.value) == NO_HOME_FOR_OVERLAY.format(overlay=quoted("~/x"))
+    assert sorted(path.name for path in tmp_path.iterdir()) == []
