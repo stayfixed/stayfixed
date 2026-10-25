@@ -2098,9 +2098,10 @@ name git's control directory or stayfixed's own `.stayfixed/`, and a symlinked `
 refused. An existing file git ignores at a place a `[paths]` value chose is never removed or
 rewritten: the run is refused (`2`) before any removal, dry run included, by `upgrade`'s rule,
 naming the files; a run inside a repository whose `git` cannot answer, because it timed out or is
-not installed, goes on with a `note:` line and `unanswered` in `--json`, as `upgrade`'s does. Take stayfixed's part out of them by hand, or take the `[paths]` key out of
-`stayfixed.toml`; the run then leaves those files where they are and lists them. That includes a file
-stayfixed itself created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
+not installed, goes on with a `note:` line and `unanswered` in `--json`, as `upgrade`'s does. Take
+stayfixed's part out of them by hand, or take the `[paths]` key out of `stayfixed.toml`; the run
+then leaves those files where they are and lists them. That includes a file stayfixed itself
+created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
 under an ignored `build/`, say): creating it was allowed because nothing was there, and by the time
 `uninstall` runs it exists, so this refusal meets it, and taking the key out is the remedy that
 finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any
@@ -2659,8 +2660,9 @@ marketplace for it. A harness with no declared marketplace for a plugin is not a
 nothing here is vendored on a guessed marketplace name — and a missing binary or a
 failed call is a reported note, never a failure.
 
-**The overlay is touched only when `--overlay` names an answer.** It is the one entry for an overlay, in three forms. `--overlay <path>` naming an overlay records its
-root. `--overlay <path>` naming nothing renders the shipped template there, with no network call:
+**The overlay is touched only when `--overlay` names an answer.** It is the one entry for an
+overlay, in three forms. `--overlay <path>` naming an overlay records its root. `--overlay <path>`
+naming nothing renders the shipped template there, with no network call:
 the directory above it has to be one you can create it in, and a path whose parent is missing or
 not writable is refused before the first write. The render is made a git repository with `git init`
 and `git symbolic-ref HEAD refs/heads/main` (not `git init -b main`, which a `git` older than 2.28
@@ -2683,8 +2685,8 @@ generated; or anything else — a file, a link to nowhere, a directory that is n
 empty one included — which is refused (`2`), since the clone would meet it only after `gh repo
 create` had made a repository nothing then records. A directory an earlier run's clone left cut
 short is one of those: delete it and run again. When `gh repo create` itself fails, the command stops
-there with its exit code and stderr; when it reports success and the clone brings nothing down,
-`gh repo view` is asked whether the repository exists, and the clone is retried once, after a
+there with its exit code and stderr; when it reports success and the clone leaves nothing at
+`<home>/<name>`, `gh repo view` is asked whether the repository exists, and the clone is retried once, after a
 ten-second wait when it does — a wait carried on reasoning rather than a measurement, since the one
 trial run against it did not reproduce the race. The generated overlay's identity record is then
 named after `<owner>/<name>` where it holds the template's placeholders. A rendered or generated
@@ -2713,7 +2715,7 @@ writes the directory with every file of the template plus `.stayfixed/manifest.j
 repository `git init` makes there, and, through `pre-commit install`, its `pre-commit` git hook.
 `--overlay create:<owner>/<name>` writes, through `gh repo create <owner>/<name> --private
 --template <template> --clone`, a new private repository on GitHub under `<owner>` and its clone
-at `<home>/<name>` — or, when that clone brings nothing down, a clone from the retried `git clone`
+at `<home>/<name>` — or, when that clone leaves nothing there, a clone from the retried `git clone`
 — then the `owner` and `name` lines of its `stayfixed-overlay.toml`, and its `pre-commit` git hook.
 Run again over the overlay it made, it generates nothing, and the record already names its owner.
 
@@ -2995,8 +2997,9 @@ no overlay root is recorded on this machine **or** when the root it records is n
 — two different arms with two different sentences, because a machine that recorded an overlay
 and then moved it is not a machine that recorded none; `attached`, `pre-commit` and
 `overlay-requires` again, each in a sentence of its own, when the machine file does not load, so
-whether it records an overlay is not known, which is neither of those; `overlay-requires` again when the
-overlay declares no stayfixed requirement; `bundles`, when the note store does not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
+whether it records an overlay is not known, which is neither of those; `overlay-requires` again
+when the overlay declares no stayfixed requirement and no other repository's work tree holds it;
+`bundles`, when the note store does not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
 `stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
 is recorded. `files` has a
 second state arm of its own — a plugin built before the release record existed carries none, and

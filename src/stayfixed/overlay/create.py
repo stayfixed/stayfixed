@@ -92,8 +92,8 @@ def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
     """Where `generate(owner, name, root=root)` would put the overlay, and the folded owner.
 
     Nothing is created and nothing is asked of the network, which is the point: `setup
-    --overlay create:<owner>/<name>` has to be able to refuse the *destination* — for lying
-    inside the project root, say — before it runs `gh repo create` on somebody's account. The
+    --overlay create:<owner>/<name>` has to be able to refuse the *destination* — a file there,
+    say — before it runs `gh repo create` on somebody's account. The
     destination is knowable from the arguments alone, and it used to be computed only by the
     call that had already created the repository.
 

@@ -24,7 +24,6 @@ from stayfixed.runner import Completed
 from stayfixed.setup.api import USER_SETTINGS, setup
 from stayfixed.setup.machine import read_machine, write_machine
 from tests import parserlimits
-from tests.gitfixture import git as _git
 from tests.gitfixture import needs_git
 from tests.parserlimits import overflowing
 from tests.pathfaults import (
@@ -713,7 +712,7 @@ def test_a_malformed_overlay_spec_is_refused(tmp_path: Path) -> None:
     # No mutation: this is ordinary input validation on a value only the operator types
     # (`owner, sep, name = spec.partition("/")`), not a trust-boundary guard something
     # downstream reads as permission — the guards the oracle curates for are the overlay-layout
-    # and containment checks above, which this same branch also runs.
+    # and destination checks, which this same branch also runs.
     with pytest.raises(Refusal):
         setup(
             "recommended",
@@ -839,27 +838,20 @@ def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> 
     assert runner.calls != []
 
 
-@needs_git
 def test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_leads(
     tmp_path: Path,
 ) -> None:
     # A repository can commit `<home>/<name>` as a link: `create:` was judged at the link's
-    # target, which lay outside every checkout, and recorded the link, which the repository can
-    # later point into its own tree. `create:` records what `--overlay <path>` records, the
-    # destination resolved, and judges and compares that one value. Mutation (`mutations/`'s
-    # "setup records a created overlay at its link and not where it leads") -> the link is
-    # recorded and this reddens.
+    # target and recorded the link, which the repository can later point into its own tree.
+    # `create:` records what `--overlay <path>` records, the destination resolved. Mutation
+    # (`mutations/`'s "setup records a created overlay at its link and not where it leads") -> the
+    # link is recorded and this reddens.
     outside = tmp_path / "outside-ov"
-    outside.mkdir()
-    _git(outside, "init", "-q", "-b", "main")
     _seed_overlay(outside)
     repository = tmp_path / "A"
     repository.mkdir()
-    _git(repository, "init", "-q", "-b", "main")
     link = repository / "stayfixed-private"
     link.symlink_to(outside)
-    _git(repository, "add", "-A")
-    _git(repository, "commit", "-qm", "the link")
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     setup(
@@ -908,7 +900,7 @@ def test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_befor
 _DRIVES_A_TERMINAL = "x\x1b]0;owned\x07"
 
 
-@pytest.mark.parametrize("printed", ["not-an-overlay", "the-note", "the-summary"])
+@pytest.mark.parametrize("printed", ["not-an-overlay", "the-floor", "the-note", "the-summary"])
 def test_an_overlay_path_a_repository_spells_is_printed_quoted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -916,30 +908,34 @@ def test_an_overlay_path_a_repository_spells_is_printed_quoted(
     printed: str,
 ) -> None:
     # `--overlay`'s path, resolved through a link a repository commits, is spelled in the
-    # repository's bytes, and the refusal that it is not an overlay, the note that it was
-    # recorded and `setup`'s own report line printed it raw. Mutations (`mutations/`'s "the
-    # overlay probe prints the path it judged raw" -> `not-an-overlay`; "setup notes a recorded
-    # overlay's path raw" -> `the-note`; "setup reports the recorded overlay's path raw" ->
-    # `the-summary`).
+    # repository's bytes, and the refusal that it is not an overlay, the floor's refusal of a path
+    # it could not ask about (a link that loops, here), the note that it was recorded and `setup`'s
+    # own report line printed it raw. Mutations (`mutations/`'s "the overlay probe prints the path
+    # it judged raw" -> `not-an-overlay`; "the floor prints the path it could not ask about raw" ->
+    # `the-floor`; "setup notes a recorded overlay's path raw" -> `the-note`; "setup reports the
+    # recorded overlay's path raw" -> `the-summary`).
     from stayfixed.cli import build_parser, discover_registrars, run
 
     overlay = tmp_path / _DRIVES_A_TERMINAL
-    overlay.mkdir()
-    if printed != "not-an-overlay":
+    refused = printed in ("not-an-overlay", "the-floor")
+    if printed == "the-floor":
+        overlay.symlink_to(overlay)
+    else:
+        overlay.mkdir()
+    if not refused:
         _seed_overlay(overlay)
     runner = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
     argv = ["setup", "--preset", "recommended", "--home", str(tmp_path / "home")]
-    argv += ["--machine", str(tmp_path / "config.toml"), "--root", str(tmp_path / "project")]
-    argv += ["--overlay", str(overlay)]
+    argv += ["--machine", str(tmp_path / "config.toml"), "--overlay", str(overlay)]
     if printed == "the-note":
         argv.append("--json")
     code = run(argv, parser=build_parser(discover_registrars()))
     captured = capsys.readouterr()
-    said = captured.err if printed == "not-an-overlay" else captured.out
+    said = captured.err if refused else captured.out
     if printed == "the-note":
         said = "\n".join(json.loads(captured.out)["notes"])
-    assert code == (2 if printed == "not-an-overlay" else 0), captured
+    assert code == (2 if refused else 0), captured
     assert "\x1b" not in said and "\x07" not in said, said
     assert "\\x1b]0;owned\\x07" in said, said
 
@@ -1193,27 +1189,17 @@ def test_a_created_overlay_in_a_read_only_home_is_refused_before_gh_runs(tmp_pat
 
 
 @ROOT_SEARCHES_EVERYTHING
-@pytest.mark.parametrize(
-    "root_in_a_repository",
-    [False, pytest.param(True, marks=needs_git)],
-    ids=["no-repository", "repository"],
-)
 def test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything(
-    tmp_path: Path, root_in_a_repository: bool
+    tmp_path: Path,
 ) -> None:
-    # `--overlay create:` with `--home` below a directory nobody may search: the walk up from the
-    # destination (`_candidate_repository` -> `_nearest_directory`) asked `is_dir` of it first and
-    # `PermissionError` reached the frame as `stayfixed: internal error`. The questions about
-    # `--home` come before where the overlay lies, and they name the file they could not ask
-    # about. Mutation (`mutations/`'s "setup asks where the overlay lies before it asks about
-    # --home") reddens this on the wording.
+    # `--overlay create:` with `--home` below a directory nobody may search: asking what is at the
+    # destination raised `PermissionError`, which reached the frame as `stayfixed: internal
+    # error`. The phase's floor names the destination it could not ask about. Mutation
+    # (`mutations/`'s "setup lets a path it cannot ask about before its first write reach the
+    # frame") -> `PermissionError` leaves `setup`, and this reddens.
     locked = tmp_path / "locked"
     locked.mkdir()
     home = locked / "home"
-    project = tmp_path / "project"
-    project.mkdir()
-    if root_in_a_repository:
-        _git(project, "init", "-q", "-b", "main")
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     with unsearchable(locked), pytest.raises(Refusal) as refused:
@@ -1618,7 +1604,9 @@ def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_call
         if shape == "not-an-overlay":
             (destination / "notes.md").write_text("mine\n", encoding="utf-8")
     machine = tmp_path / "config.toml"
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    # The template probe is answered and `gh repo create` succeeds, so under the mutation the
+    # repository is really created and the floor's refusal follows it, as it did for the owner.
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE})
     with pytest.raises(Refusal) as refused:
         setup(
             "recommended",

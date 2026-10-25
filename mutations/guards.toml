@@ -599,9 +599,9 @@ reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_refuses_a_tree_git_cannot_report_on",
 ]
 
-# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
-# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
-# a line separator inside a name.
+# In the block led by `mutations/`'s "the overlay's sync row counts a name holding a line separator
+# twice": a line-oriented git answer is split where git ended each line, never at a `\r` or a line
+# separator inside a name.
 [[mutation]]
 name = "the dirty count counts a name holding a line separator twice"
 file = "src/stayfixed/guards/hygiene.py"

@@ -4,17 +4,8 @@
 
 # A line-oriented answer is split where git ended each line. `str.splitlines()` also breaks at
 # `\r`, U+2028 and five more that git prints raw inside a name: a worktree at `…/wt\rx` was
-# listed as `…/wt` — `setup` recorded it among the project's checkouts, and `attach` links into
-# every checkout it lists — and one dirty name counted as two.
-[[mutation]]
-name = "setup splits git's listing of checkouts at a carriage return inside a path"
-file = "src/stayfixed/setup/run.py"
-before = "    lines = answer_lines(out)"
-after = "    lines = out.splitlines()"
-reddens = [
-  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
-]
-
+# listed as `…/wt` — and `attach` links into every checkout it lists — and one dirty name counted
+# as two.
 [[mutation]]
 name = "the overlay's sync row counts a name holding a line separator twice"
 file = "src/stayfixed/overlay/sync.py"
@@ -116,7 +107,7 @@ before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not 
 after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
 reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
 
-# The creation gate, restated in code: `overlay create` runs `gh repo create ... --private` on
+# The creation gate, restated in code: `--overlay create:` runs `gh repo create ... --private` on
 # GitHub, and a default that reaches it is the one default this command may not have. Without this
 # guard, every ordinary run with no `--overlay` flag at all would still reach the overlay branch,
 # which is "taken without being asked" by definition. The `after` is the plausible shape of that bug
@@ -126,24 +117,13 @@ reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_th
 name = "setup touches the overlay even when the caller named no answer"
 file = "src/stayfixed/setup/run.py"
 before = """    if overlay is None:
-        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
-        # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
-        # would turn an omitted flag into a repository created on somebody's account.
+        # Nothing was asked for, so nothing is touched: `--overlay` is the only way to reach the
+        # overlay at all, and a default here would turn an omitted flag into a repository created
+        # on somebody's account.
         return None"""
 after = """    if overlay is None:
         overlay = str(home)"""
 reddens = ["tests/setup/test_setup.py::test_the_overlay_offer_is_never_taken_without_being_asked"]
-
-# `--yes` on `--overlay <path>` would be theatre in a harness where the command line is written by a
-# model, so it is not gated there — but creating a repository on GitHub is the one irreversible,
-# outward-facing act `setup` performs, and that act waits for explicit confirmation. This is the one
-# place `yes` is a real control rather than a restatement.
-[[mutation]]
-name = "setup creates an overlay on GitHub without --yes"
-file = "src/stayfixed/setup/run.py"
-before = "        if not yes:"
-after = "        if False:"
-reddens = ["tests/setup/test_setup.py::test_creating_an_overlay_without_yes_is_refused"]
 
 # The overlay root is the machine's trust anchor: every later `attach` derives `permitted_roots`
 # from it. Without this guard, `--overlay /tmp/whatever` — any directory that merely exists —
@@ -199,170 +179,6 @@ reddens = [
   "tests/overlay/test_requires.py::test_a_fifo_at_the_identity_record_is_unreadable_to_its_readers_without_waiting",
 ]
 
-# The actual control over a named overlay path: a path outside the repository that already
-# carries a real overlay layout is not something a hostile clone can create, but a path *inside*
-# it is exactly the shape of tree a clone can ship — so this is the one check that removes the
-# actual exploitable case, and losing it is the whole residual risk.
-[[mutation]]
-name = "setup stops refusing an overlay root inside the project"
-file = "src/stayfixed/setup/run.py"
-before = "    if any(_same(part, b) for part in (a, *a.parents)):"
-after = "    if any(_same(part, b) for part in (a,)):"
-reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
-
-# The arm that was missing, and the one this project's own way of working walks into: `--root` is
-# a worktree by preset rule, and `git worktree add .worktrees/x` puts it *under* the checkout — so
-# a clone shipping its two manifests at its own root was a parent of `--root`, which the first
-# draft accepted as the machine's trust anchor.
-[[mutation]]
-name = "setup stops refusing an overlay root that holds the project"
-file = "src/stayfixed/setup/run.py"
-before = "    return any(_same(part, a) for part in b.parents)"
-after = "    return False"
-reddens = ["tests/setup/test_setup.py::test_an_overlay_that_holds_the_project_root_is_refused"]
-
-# And the case no path comparison can see. `git worktree add ../side` is git's own documented
-# layout and this repository's own convention: the other checkout is neither inside `--root` nor
-# above it, and a clone ships its tree into every checkout of itself. Only `git` can say that two
-# directories are one repository — and it is asked from the project's side, for the list of its
-# checkouts: asked from inside the candidate, a committed directory holding `HEAD`, `objects/`
-# and `refs/` answered for itself, and a clone's `ov/` in a sibling worktree was recorded.
-[[mutation]]
-name = "setup stops asking git whether the overlay is a checkout of the project"
-file = "src/stayfixed/setup/run.py"
-before = "            if _overlaps(resolved_candidate, fsops.resolved(checkout)):"
-after = "            if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_the_candidate",
-]
-
-# Asked from the project's side, git's discovery can still stop at a bare-shaped directory when
-# `--root` sits inside one: `ov/` is then the repository, its only checkout is itself, and the
-# sibling worktree's `ov/` passes. `--is-inside-work-tree` in the same answer is what refuses
-# it on every git, whatever a committed `ov/config` says. `safe.bareRepository=explicit` has no entry of its own: every refusal here is
-# proven with it removed (the tests' `ignores-safe-bare` cases), and what it adds — git never
-# reading a committed `config` inside a bare-shaped directory — is nothing a test can observe.
-[[mutation]]
-name = "setup stops refusing a root git does not read as inside a checkout"
-file = "src/stayfixed/setup/run.py"
-before = '    if answer[1] != "true":'
-after = "    if False:"
-reddens = ["tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused"]
-
-# Once git has said the project is a repository, a question about its checkouts that git did not
-# answer is not "none of them holds the candidate". The old arm read exactly that: no answer for
-# the candidate was `None`, `None` differed from the project's common directory, and the
-# candidate was recorded. `git_run` decodes with `text=True`, so bytes git prints outside the
-# locale's encoding are the other way of not answering.
-[[mutation]]
-name = "setup stops refusing an overlay when git cannot list the project's checkouts"
-file = "src/stayfixed/setup/run.py"
-before = """    if not checkouts:
-        raise Refusal(unlisted)"""
-after = """    if not checkouts:
-        return _Repository(Path(answer[0]), [])"""
-reddens = [
-  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
-]
-
-# git refusing to answer with `safe.bareRepository=explicit` and answering without it is either
-# a bare-shaped directory, which the answer says, or git not answering the first time; neither
-# is a listing of the project's checkouts.
-[[mutation]]
-name = "setup takes an answer git gave only without the key"
-file = "src/stayfixed/setup/run.py"
-before = """    if retried:
-        raise Refusal(unlisted)"""
-after = """    if retried:
-        pass"""
-reddens = [
-  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
-]
-
-# `git_run`'s `-1` is git that could not be run or ran past its time limit, not git saying there
-# is no repository, and every caller of `_ask` read it as the second: a git that timed out on
-# `rev-parse` let the project's main checkout be recorded from one of its worktrees. So did every
-# other way a `git` that runs can say nothing — an exit of 1, 126 or 127 from a wrapper, a signal,
-# an exit 0 with nothing printed — and with them the clone's own `ov/` was recorded from inside it.
-# Inside a checkout, which the disk says, each of them refuses; where no `.git` is, git has no
-# checkout to name and it is "no repository".
-[[mutation]]
-name = "setup reads git giving no answer inside a checkout as no repository again"
-file = "src/stayfixed/setup/run.py"
-before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))"
-after = "    return None"
-reddens = [
-  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[every-call]",
-  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
-  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-listing]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[exits-1-inside-the-root]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[exits-1-in-a-sibling-checkout]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[killed-by-a-signal-inside-the-root]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[killed-by-a-signal-in-a-sibling-checkout]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[answers-nothing-inside-the-root]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[answers-nothing-in-a-sibling-checkout]",
-]
-
-[[mutation]]
-name = "setup refuses an overlay whenever git gives no answer, checkout or not"
-file = "src/stayfixed/setup/run.py"
-before = "    if not in_work_tree(start):"
-after = "    if code != -1 and not in_work_tree(start):"
-reddens = [
-  "tests/setup/test_setup.py::test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay",
-]
-
-# `git worktree list` names the main checkout of a `--separate-git-dir` repository, and of a
-# submodule, by its git directory, which does not record where the checkout is. From a linked
-# worktree that checkout was on no list, so its `ov/` passed; git asked from the candidate's side
-# finds it through the checkout's `.git`.
-[[mutation]]
-name = "setup stops asking git from the candidate's side"
-file = "src/stayfixed/setup/run.py"
-before = "    if repository is not None and _same(fsops.resolved(found), fsops.resolved(repository.common)):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
-  "tests/setup/test_setup.py::test_a_submodule_checkout_is_refused_from_a_worktree_of_the_submodule",
-]
-
-# The candidate is where a clone puts a bare-shaped directory, and git refuses to answer from
-# inside one; asked once, the candidate side would say nothing exactly when it matters.
-[[mutation]]
-name = "the candidate-side walk stops at the first directory git will not answer for"
-file = "src/stayfixed/setup/run.py"
-before = "        start = start.parent"
-after = "        return None"
-reddens = [
-  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
-]
-
-# On a git that ignores `safe.bareRepository`, `ov/` answers for itself, and its committed
-# `config` or `commondir` can make that answer "not bare" with a common directory anywhere. Only an
-# answer that says the directory is inside a work tree comes through a checkout's `.git`, which a
-# repository cannot commit, so the walk goes on past every other one.
-[[mutation]]
-name = "the candidate-side walk takes an answer from outside a work tree as the candidate's"
-file = "src/stayfixed/setup/run.py"
-before = '        if answer is not None and answer[1] == "true":'
-after = "        if answer is not None:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
-]
-
-# `setup` asks git about `--root` from the nearest directory above it that exists, however many of
-# its components do not.
-[[mutation]]
-name = "setup asks git about --root from a directory that does not exist"
-file = "src/stayfixed/setup/run.py"
-before = """    while not fsops.is_dir(path) and path != path.parent:
-        path = path.parent"""
-after = """    if not fsops.is_dir(path):
-        path = path.parent"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor",
-]
-
 # --- setup and overlay: the structural refusal above the first write (PR 12 review) ---
 
 # A defect that had a test named for it and no mutation: `claude plugin install superpowers@obra` on
@@ -412,26 +228,26 @@ reddens = ["tests/setup/test_setup.py::test_every_plugin_install_is_one_recorded
 [[mutation]]
 name = "setup asks whether --overlay is an overlay after it has already written"
 file = "src/stayfixed/setup/run.py"
-before = "        planned = _requested_overlay(overlay, home=home, yes=yes)"
+before = "        planned = _requested_overlay(overlay, home=home)"
 after = "        planned = None if overlay is None else _Overlay(Path(overlay).expanduser().resolve(), None)"
 reddens = [
   "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
 ]
 
-# The most serious of the eleven. `home/<name>` is knowable from the arguments, and the first
-# draft computed it only inside the call that had already run `gh repo create --private --clone`
-# on somebody's account: the documented command run from `$HOME` created the repository, cloned
-# it, renamed both manifests and installed the secret scan, and then refused. The mutation drops
-# the check on the destination and leaves the floor, so the refusal still happens — after the
-# repository exists.
+# `create:` clones into `<home>/<name>`, which is knowable from the arguments, and what is there
+# was met only by the clone: a file, or a directory that is not an overlay, refused after `gh repo
+# create` had made a repository on the owner's account that nothing then recorded. The mutation
+# drops the question and leaves the floor under the clone, so the refusal still comes — after the
+# repository exists, and after the `gh` calls the tests assert never ran.
 [[mutation]]
-name = "setup computes where a created overlay lands only after creating it"
+name = "setup asks about the create: destination after GitHub"
 file = "src/stayfixed/setup/run.py"
-before = """        if planned is not None:
-            planned = replace("""
-after = """        if planned is not None and planned.create is None:
-            planned = replace("""
-reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
+before = "        if fsops.exists(destination) or fsops.is_symlink(destination):"
+after = "        if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[a-file]",
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[not-an-overlay]",
+]
 
 # An unusable `--home` reached the frame or the second write: under a read-only parent `mkdir`
 # raised `PermissionError` as `internal error`, and a read-only home had the machine file written
@@ -503,8 +319,8 @@ reddens = ["tests/setup/test_setup.py::test_a_home_mkdir_that_fails_is_a_refusal
 
 # `setup`'s questions before its first write are one phase with one floor. `fsops`' predicates raise
 # when a path cannot be asked about, and the steps that do not word that themselves let it reach
-# the frame as `internal error`: an `--overlay` or a `--root` directory below a directory nobody
-# may search, and the walk up from a `create:` destination under such a home.
+# the frame as `internal error`: an `--overlay` directory below a directory nobody may search, and
+# a `create:` destination under such a home.
 [[mutation]]
 name = "setup lets a path it cannot ask about before its first write reach the frame"
 file = "src/stayfixed/setup/run.py"
@@ -515,31 +331,19 @@ after = """    except ValueError as exc:
         asked = (
             quoted(str(exc.filename))"""
 reddens = [
-  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[overlay]",
-  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[root]",
+  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it",
+  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything",
 ]
 
-# The order is load-bearing where two steps can refuse one layout: a `create:` destination under a
-# home nobody may search is the home's fault, which the settings and `--home` questions name, and
-# asked first, where the overlay lies could only say that the destination cannot be asked about.
-[[mutation]]
-name = "setup asks where the overlay lies before it asks about --home"
-file = "src/stayfixed/setup/run.py"
-before = "        _check_home_usable(home, created=created)\n        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )"
-after = "        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )\n        _check_home_usable(home, created=created)"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
-  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",
-  "tests/setup/test_setup.py::test_every_question_before_the_first_write_is_asked_in_the_documented_order",
-]
-
-# Over a `<home>/<name>` that is there, `overlay.create` looks inside it before anything else, and a
-# destination nobody may search raised there, after the machine file and the plugin installs.
+# Over a `<home>/<name>` that is there, what is in it is asked before anything else, and a
+# destination nobody may search raised there: once as `internal error` after the machine file and
+# the plugin installs, and in the phase as the floor's words about a file in it rather than the
+# directory that cannot be searched.
 [[mutation]]
 name = "setup stops asking whether a created overlay's destination can be searched"
 file = "src/stayfixed/setup/run.py"
-before = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
-after = "    elif False:"
+before = "            if not os.access(destination, os.X_OK):"
+after = "            if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[no-access]",
   "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
@@ -550,62 +354,10 @@ reddens = [
 [[mutation]]
 name = "setup asks whether a created overlay's destination can be read, not searched"
 file = "src/stayfixed/setup/run.py"
-before = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
-after = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.R_OK):"
+before = "            if not os.access(destination, os.X_OK):"
+after = "            if not os.access(destination, os.R_OK):"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
-]
-
-# With `--root` in no repository, a `create:` destination is the one overlay not compared with it:
-# the run makes that directory, so nothing shipped it, and the comparison refused the owner's own
-# `setup --overlay create:<owner>/<name> --yes` run in `~`. Compared always, as before, the
-# owner's command is refused.
-[[mutation]]
-name = "setup compares a created overlay's place with --root outside any repository"
-file = "src/stayfixed/setup/run.py"
-before = "    compared = repository is not None or not exempt"
-after = "    compared = True"
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
-]
-
-# And no other overlay: a `--root` in no repository can still hold a tree someone else made — a
-# project downloaded as an archive, a checkout of another version control system, a `vendor/ov`
-# shipped in either — so an overlay already on disk inside, around or equal to it is refused.
-[[mutation]]
-name = "setup exempts an existing overlay from the comparison with a --root in no repository"
-file = "src/stayfixed/setup/run.py"
-before = "    compared = repository is not None or not exempt"
-after = "    compared = repository is not None"
-reddens = [
-  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[inside]",
-  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[holding]",
-  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[equal]",
-]
-
-# And the candidate's own side, asked whichever repository `--root` is in: a directory inside a
-# checkout of another repository is a place that repository can ship files into, and so is a
-# checkout of its own nested in one — a merge in the outer repository writes into it.
-[[mutation]]
-name = "setup stops refusing an overlay inside another repository's checkout"
-file = "src/stayfixed/setup/run.py"
-before = """    if outer is None:
-        return"""
-after = """    if True:
-        return"""
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
-  "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_refused",
-]
-
-[[mutation]]
-name = "setup asks whether an overlay lies in another repository from the overlay itself"
-file = "src/stayfixed/setup/run.py"
-before = "    outer = _candidate_repository(resolved_candidate.parent)"
-after = "    outer = _candidate_repository(resolved_candidate)"
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_is_recorded",
-  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
 ]
 
 # `overlay upgrade --root` defaults to `.` and was checked nowhere: in a directory that was not an
@@ -863,50 +615,6 @@ reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
 
-# git's exit 128 inside a checkout is a repository it will not describe — another user's under
-# `safe.directory`, or one whose `.git` it cannot read — and read as "no repository" it let the
-# overlay guard's path arm stand alone, as git's silence (`-1`) did: from a linked worktree the
-# main checkout's `ov/` was recorded as the machine's trust anchor.
-[[mutation]]
-name = "setup reads git refusing the repository inside a checkout as no repository"
-file = "src/stayfixed/setup/run.py"
-before = "        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=quoted(str(start))))"
-after = "        return None"
-reddens = [
-  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[every-call]",
-  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
-]
-
-[[mutation]]
-name = "the candidate-side walk steps past a repository git refuses under the bare key"
-file = "src/stayfixed/setup/run.py"
-before = "            _shaped(start, _ask(start, *_COMMON_AND_CHECKOUT))"
-after = "            pass"
-reddens = [
-  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
-]
-
-[[mutation]]
-name = "setup refuses an overlay whenever git exits 128, checkout or not"
-file = "src/stayfixed/setup/run.py"
-before = "    if not in_work_tree(start):"
-after = "    if code != _GIT_REFUSED and not in_work_tree(start):"
-reddens = [
-  "tests/setup/test_setup.py::test_git_refusing_every_repository_where_no_checkout_is_still_records_the_overlay",
-]
-
-# Asked with `safe.bareRepository=explicit`, git's 128 can be it declining a bare-shaped
-# directory, which the caller tells apart by asking again without the key: refused at once, a
-# root inside a bare-shaped directory is refused for the wrong reason.
-[[mutation]]
-name = "a keyed question's 128 refuses before it is asked again without the key"
-file = "src/stayfixed/setup/run.py"
-before = "    if code == _GIT_REFUSED and keyed:"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused[current-none]",
-]
-
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub
 # Enterprise host the fallback named whoever owns `stayfixed` there and the owner's private overlay
 # was generated from it. Named with its host, it is looked up on github.com.
@@ -1026,13 +734,13 @@ reddens = [
 name = "setup loads the overlay area with no --overlay again"
 file = "src/stayfixed/setup/run.py"
 before = """    if overlay is None:
-        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
-        # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
-        # would turn an omitted flag into a repository created on somebody's account.
+        # Nothing was asked for, so nothing is touched: `--overlay` is the only way to reach the
+        # overlay at all, and a default here would turn an omitted flag into a repository created
+        # on somebody's account.
         return None
-    from stayfixed.overlay.api import require_overlay, target_root
+    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root
 """
-after = """    from stayfixed.overlay.api import require_overlay, target_root
+after = """    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root
 
     if overlay is None:
         return None
@@ -1046,8 +754,8 @@ reddens = [
 [[mutation]]
 name = "setup imports one more name from the overlay area in a statement of its own"
 file = "src/stayfixed/setup/run.py"
-before = "    from stayfixed.overlay.api import require_overlay, target_root\n"
-after = "    from stayfixed.overlay.api import require_overlay, target_root\n    from stayfixed.overlay.api import overlay_fault\n"
+before = "    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root\n"
+after = "    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root\n    from stayfixed.overlay.api import finish\n"
 reddens = [
   "tests/boundaries/test_delivery.py::test_core_never_imports_delivery",
 ]
@@ -1122,51 +830,6 @@ before = "    if home is None or machine is None:"
 after = "    if machine is None:"
 reddens = ["tests/setup/test_commands.py::test_an_empty_home_is_no_default_for_home"]
 
-# A git directory is git's answer, and a submodule's lies at `.git/modules/<name>`, the name the
-# repository's `.gitmodules` chose: printed raw, an escape sequence in it reached the terminal
-# that read the refusal. Both containment refusals that name one print it through
-# `printed.quoted`.
-[[mutation]]
-name = "setup prints the project's git directory raw in a containment refusal"
-file = "src/stayfixed/setup/run.py"
-before = '            f"in the repository whose git directory is {quoted(str(repository.common))}"'
-after = '            f"in the repository whose git directory is {repository.common}"'
-reddens = [
-  "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[the-projects]",
-]
-
-[[mutation]]
-name = "setup prints another repository's git directory raw in a containment refusal"
-file = "src/stayfixed/setup/run.py"
-before = '        f"{shown} is inside {whose}, whose git directory is {quoted(str(outer))}. The "'
-after = '        f"{shown} is inside {whose}, whose git directory is {outer}. The "'
-reddens = [
-  "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[another-repositorys]",
-]
-
-# A linked worktree of the overlay's own repository nested in another checkout of it is refused as
-# any nested checkout is, and the refusal says whose: "another repository" sent the owner looking
-# for a repository that is not there.
-[[mutation]]
-name = "setup calls the overlay's own repository another one"
-file = "src/stayfixed/setup/run.py"
-before = """    own = os.path.lexists(resolved_candidate / ".git") and _same(
-        fsops.resolved(outer), fsops.resolved(found)
-    )"""
-after = "    own = False"
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_that_is_a_worktree_nested_in_its_own_checkout_is_refused_as_its_own",
-]
-
-[[mutation]]
-name = "setup calls a plain directory in another repository's checkout its own"
-file = "src/stayfixed/setup/run.py"
-before = "    own = os.path.lexists(resolved_candidate / \".git\") and _same("
-after = "    own = _same("
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
-]
-
 # In the block led by `mutations/`'s "fsops.resolved answers a loop with a path where the
 # interpreter does": every resolve in `setup` goes through `fsops.resolved`, so a loop at a path
 # the command line names is the floor's refusal on every interpreter.
@@ -1177,15 +840,6 @@ before = "        return fsops.resolved(Path(given))"
 after = "        return Path(given).resolve()"
 reddens = [
   "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it",
-]
-
-[[mutation]]
-name = "setup resolves the project root past fsops"
-file = "src/stayfixed/setup/run.py"
-before = "    resolved_project = fsops.resolved(project_root)"
-after = "    resolved_project = project_root.resolve()"
-reddens = [
-  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
 ]
 
 [[mutation]]
@@ -1211,118 +865,16 @@ reddens = [
   "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write",
 ]
 
-# A `create:` destination is exempt from the comparison with a `--root` in no repository only when
-# this run makes it or the machine file already records it: `create` leaves a populated
-# destination alone and records it, so a tree an archive or a clone put at `<home>/<name>` was
-# recorded uncompared, and `overlay init` ran in it.
-[[mutation]]
-name = "setup exempts a created overlay's destination that is already there"
-file = "src/stayfixed/setup/run.py"
-before = """    if not os.path.lexists(planned.destination):
-        return ABSENT"""
-after = """    if True:
-        return ABSENT"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[plain]",
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[own-checkout]",
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[root-inside-it]",
-]
-
-[[mutation]]
-name = "setup stops exempting the overlay root the machine file records"
-file = "src/stayfixed/setup/run.py"
-before = "    if recorded is not None and _same(recorded, planned.root):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
-]
-
-[[mutation]]
-name = "setup exempts a destination create left alone"
-file = "src/stayfixed/setup/run.py"
-before = """    exempt = judged and (
-        planned.exempt == RECORDED
-        or (
-            planned.exempt == ABSENT
-            and created.template is not None
-            and not os.path.islink(created.root)
-        )
-    )"""
-after = """    exempt = planned.exempt is not None"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
-]
-
-[[mutation]]
-name = "setup initialises a created overlay before asking where it lies"
-file = "src/stayfixed/setup/run.py"
-before = """    _outside_the_project(root, project_root=project_root, exempt=exempt)
-    finished = "; ".join(finish(root, runner=runner, owner=owner, name=name))"""
-after = """    finished = "; ".join(finish(root, runner=runner, owner=owner, name=name))
-    _outside_the_project(root, project_root=project_root, exempt=exempt)"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
-]
-
-# The walk up from the overlay took only an answer of `<path>`, `true` and stepped past any other
-# exit-0 answer, inside a work tree too: git 2.30 and older echo the `--path-format=absolute` they
-# do not know as a line of their own, and a wrapper can print a banner, so with `--root` in no
-# repository, where the walk is the only arm, an overlay inside another repository's work tree was
-# recorded. Inside a work tree an answer of another shape refuses.
-[[mutation]]
-name = "the candidate walk steps past an answer of the wrong shape inside a work tree"
-file = "src/stayfixed/setup/run.py"
-before = """    if in_work_tree(start):
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))
-    return None"""
-after = """    return None"""
-reddens = [
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-path]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-create]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-path]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-create]",
-]
-
-[[mutation]]
-name = "setup reads --root's repository from an answer of the wrong shape"
-file = "src/stayfixed/setup/run.py"
-before = """    if not _well_shaped(answer):
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))"""
-after = """    if False:
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))"""
-reddens = [
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-root]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-root]",
-]
-
 # A path resolved through a link a repository commits is spelled in bytes the repository chose, and
-# every containment refusal, and the floor under the phase, printed one raw: an escape sequence in
-# a name reached the terminal that read the refusal. Each prints it through `printed.quoted`.
-[[mutation]]
-name = "setup prints the overlay root raw in a containment refusal"
-file = "src/stayfixed/setup/run.py"
-before = "    shown, project = quoted(str(candidate)), quoted(str(project_root))"
-after = "    shown, project = str(candidate), str(project_root)"
-reddens = [
-  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[the-overlay]",
-]
-
-[[mutation]]
-name = "setup prints the directory git was asked from raw"
-file = "src/stayfixed/setup/run.py"
-before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))"
-after = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))"
-reddens = [
-  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[where-git-was-asked]",
-]
-
+# the floor under the phase printed one raw: an escape sequence in a name reached the terminal that
+# read the refusal. It prints it through `printed.quoted`.
 [[mutation]]
 name = "the floor prints the path it could not ask about raw"
 file = "src/stayfixed/setup/run.py"
 before = "            quoted(str(exc.filename)) if exc.filename is not None else \"a path this run was given\""
 after = "            str(exc.filename) if exc.filename is not None else \"a path this run was given\""
 reddens = [
-  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[the-floor]",
+  "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[the-floor]",
 ]
 
 # The hooks directory is git's answer, from a `core.hooksPath` the repository sets, and the
@@ -1372,10 +924,10 @@ reddens = [
 [[mutation]]
 name = "setup takes a dangling link at a created overlay's destination for no destination"
 file = "src/stayfixed/setup/run.py"
-before = "    if not os.path.lexists(planned.destination):"
-after = "    if not fsops.exists(planned.destination):"
+before = "        if fsops.exists(destination) or fsops.is_symlink(destination):"
+after = "        if fsops.exists(destination):"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[inside-the-root]",
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything",
 ]
 
 # `--overlay`'s path, resolved through a link a repository commits, is spelled in the repository's
@@ -1439,40 +991,6 @@ before = "        if linked is not None:"
 after = "        if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_machine_file_linked_into_a_directory_that_cannot_be_written_names_that_directory",
-]
-
-# A link at a `create:` destination whose target is not there passed the phase, and
-# `gh repo create` made a repository on the owner's account before the clone failed on the link.
-[[mutation]]
-name = "setup plans a created overlay through a link that leads nowhere"
-file = "src/stayfixed/setup/run.py"
-before = "    if not fsops.exists(planned.destination):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[inside-the-root]",
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[outside-the-root]",
-]
-
-# An exemption is the phase's verdict on one directory: a link at the destination re-pointed
-# between the phase and `create`, or one put where the phase found nothing, is compared. Outside
-# the threat model the gate defends (whoever writes `<home>/<name>` mid-run can write the machine
-# file too); defence in depth.
-[[mutation]]
-name = "setup honours an exemption for a directory the phase did not judge"
-file = "src/stayfixed/setup/run.py"
-before = "    judged = _same(root, planned.root)"
-after = "    judged = True"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_swapped_after_the_phase_is_compared[recorded-link-repointed]",
-]
-
-[[mutation]]
-name = "setup honours an absent destination's exemption for a link create cloned through"
-file = "src/stayfixed/setup/run.py"
-before = "            and not os.path.islink(created.root)"
-after = "            and True"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_swapped_after_the_phase_is_compared[absent-then-a-link]",
 ]
 
 # With no project configuration the project does not consult the overlay, so an unmet floor warns.
@@ -1566,20 +1084,19 @@ reddens = [
 ]
 
 [[mutation]]
-name = "setup --approval-boundary takes --yes or --git-hooks"
+name = "setup --approval-boundary takes --git-hooks"
 file = "src/stayfixed/setup/commands.py"
-before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
+before = "        switched = (args.git_hooks, args.uninstall)"
 after = "        switched = (args.uninstall,)"
 reddens = [
-  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[yes]",
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[git-hooks]",
 ]
 
 [[mutation]]
 name = "setup --approval-boundary takes --uninstall"
 file = "src/stayfixed/setup/commands.py"
-before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
-after = "        switched = (args.yes, args.git_hooks)"
+before = "        switched = (args.git_hooks, args.uninstall)"
+after = "        switched = (args.git_hooks,)"
 reddens = [
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[uninstall]",
 ]
@@ -1600,23 +1117,16 @@ reddens = [
 [[mutation]]
 name = "setup --git-hooks drops --preset"
 file = "src/stayfixed/setup/commands.py"
-before = "        if args.yes or args.preset is not None or args.overlay is not None:"
-after = "        if args.yes or args.overlay is not None:"
+before = "        if args.preset is not None or args.overlay is not None:"
+after = "        if args.overlay is not None:"
 reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[preset]"]
 
 [[mutation]]
 name = "setup --git-hooks drops --overlay"
 file = "src/stayfixed/setup/commands.py"
-before = "        if args.yes or args.preset is not None or args.overlay is not None:"
-after = "        if args.yes or args.preset is not None:"
+before = "        if args.preset is not None or args.overlay is not None:"
+after = "        if args.preset is not None:"
 reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[overlay]"]
-
-[[mutation]]
-name = "setup --git-hooks drops --yes"
-file = "src/stayfixed/setup/commands.py"
-before = "        if args.yes or args.preset is not None or args.overlay is not None:"
-after = "        if args.preset is not None or args.overlay is not None:"
-reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[yes]"]
 
 [[mutation]]
 name = "setup --approval-boundary names a relative settings file as given"

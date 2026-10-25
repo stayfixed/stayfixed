@@ -101,7 +101,6 @@ before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
 after = '    answer = completed.stdout.decode(codec)'
 reddens = [
   "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
-  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
   "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
   "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
   "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
@@ -130,7 +129,6 @@ after = """    try:
     return completed.returncode, answer"""
 reddens = [
   "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
-  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
   "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
   "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
   "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
@@ -2152,7 +2150,6 @@ before = '    return clipped(done.stderr.strip() or done.stdout.strip() or f"exi
 after = '    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"'
 reddens = [
   "tests/scripts/test_publish_template.py::test_what_gh_prints_cannot_drive_a_terminal",
-  "tests/attach/test_write.py::test_what_pre_commit_prints_cannot_drive_a_terminal",
   "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[marketplace add]",
   "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[install]",
   "tests/overlay/test_create.py::test_what_gh_and_git_print_cannot_drive_a_terminal[repo-create]",
@@ -3325,9 +3322,7 @@ reddens = [
   "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[this-one]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[claude]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
-  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
-  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
 ]
 
 [[mutation]]
@@ -6265,9 +6260,9 @@ before = "    origin = without_userinfo(origin) if origin is not None else None"
 after = "    pass"
 reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]
 
-# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
-# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
-# a line separator inside a name.
+# In the block led by `mutations/`'s "the overlay's sync row counts a name holding a line separator
+# twice": a line-oriented git answer is split where git ended each line, never at a `\r` or a line
+# separator inside a name.
 [[mutation]]
 name = "attach splits git's worktree listing at a carriage return inside a path"
 file = "src/stayfixed/binding.py"

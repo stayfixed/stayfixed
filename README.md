@@ -269,11 +269,11 @@ to find the project root, and reaches no network.
 |---|---|---|---|
 | `git fetch` | `stayfixed bugs new` | the project's `origin` (note 1) | unless `--no-fetch` |
 | `git ls-remote` | `stayfixed init`, `stayfixed upgrade`, `stayfixed doctor`, `stayfixed gate` | `https://github.com/stayfixed/stayfixed`, for its release tags | note 2 |
-| `gh` | `stayfixed setup --overlay create:<owner>/<name> --yes` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
-| `git clone` | `stayfixed setup --overlay create:<owner>/<name> --yes` | `git@github.com:<owner>/<name>.git`, the overlay just created | when the clone `gh repo create --clone` made came down empty |
+| `gh` | `stayfixed setup --overlay create:<owner>/<name>` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
+| `git clone` | `stayfixed setup --overlay create:<owner>/<name>` | `git@github.com:<owner>/<name>.git`, the overlay just created | when `gh repo create --clone` reported success and left nothing at the destination |
 | `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted), `stayfixed attach`, `stayfixed detach` | for `setup`, the marketplace the preset names for Claude Code, and its plugins' sources; for `attach` and `detach`, nothing past this machine (note 4) | `setup` when the preset's agents include `claude` and it names a marketplace for it; `attach` on every run; `detach` where the main checkout's `.claude/settings.local.json` names the plugin or its marketplace and no other checkout of the repository is attached |
 | `codex plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Codex (note 4) | when the preset's agents include `codex` and it names a marketplace for it |
-| `pre-commit install` | `stayfixed setup --overlay`, `stayfixed attach` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | `setup` when it renders an overlay at a path or generates one with `create:`; `attach` only when the overlay carries a `.pre-commit-config.yaml` and no `pre-commit` hook yet |
+| `pre-commit install` | `stayfixed setup --overlay` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | when it renders an overlay at a path, or with `create:` |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
 | the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
 | the test command after `stayfixed prove --` | `stayfixed prove -- COMMAND` | wherever `COMMAND` reaches; stayfixed does not choose: `uv run` may sync the project's environment from its index, `go test` may download the modules `go.mod` names, and `npx` installs a runner no `node_modules` holds, from the registry the project's `.npmrc` names, without asking, since under `prove` its standard input is no terminal; each as outside `prove` | every run, in the directory `prove` is typed in or the one its launcher is told to run `COMMAND` in, once a runner adapter recognises `COMMAND`, or with `--junit` |
@@ -297,8 +297,10 @@ to find the project root, and reaches no network.
    write to a release's commit; in `doctor` when `[ci] ref` is recorded; and in `gate` when a
    change moves `[ci] ref` to the commit `--workflow-sha` names.
 3. **`gh`**: `setup --overlay create:` looks up the template, creates the private overlay from it
-   with its clone, and asks whether it exists when that clone came down empty. `gh repo create
-   --clone` makes its clone with git, over git's own transport, from github.com or the host
+   with its clone, and asks whether it exists when that clone left nothing. It is asked nothing
+   until `setup` has looked at `<home>/<name>`: a file there, or a directory that is not an
+   overlay, is refused before any `gh` call, and the overlay an earlier run made there is left
+   alone with none. `gh repo create --clone` makes its clone with git, over git's own transport, from github.com or the host
    `GH_HOST` names. stayfixed passes `gh` your environment, so a `GH_TOKEN` or `GITHUB_TOKEN` there
    is the account it acts as, over the one `gh` is signed in to, and `GH_HOST` can point it at a
    GitHub Enterprise host — while the clone `create:` falls back to is always `git@github.com:`.
@@ -426,7 +428,7 @@ stayfixed detach                                       # remove what attach adde
 # Machine setup
 stayfixed setup --preset recommended                   # the machine configuration, deny rules and preset plugins
 stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay, or render one there if nothing is; no network call
-stayfixed setup --preset recommended --overlay create:you/stayfixed-private --yes  # create one on GitHub from your <owner>/stayfixed-overlay-template if you published one, else stayfixed's; --yes is the consent
+stayfixed setup --preset recommended --overlay create:you/stayfixed-private  # create one on GitHub from your <owner>/stayfixed-overlay-template if you published one, else stayfixed's
 stayfixed setup --git-hooks                            # install the commit-message hook into this repository
 stayfixed setup --git-hooks --uninstall                # remove it; restore the hook it chained to
 stayfixed setup --approval-boundary                    # print the deny rule and sandbox settings that keep an agent out of the trust record; writes nothing
