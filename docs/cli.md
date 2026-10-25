@@ -529,14 +529,17 @@ file is there before it runs the gate.
 
 Rewrite a commit-message file in place with the attribution lines of its trailing attribution
 block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
-says which; a message that is *only* attribution is left alone, because emptying it aborts the
-commit with a confusing error and CI explains better. It strips nothing where your own Claude Code
-settings, `~/.claude/settings.json`, set `attribution.commit` to text: what a commit carries is
-then your choice in the harness, and the run says so. Set empty, it says your commits carry
-nothing, so a trailer that arrives anyway is stripped as it is with the setting unset. A
-repository's own `.claude/settings.json` is not read for it, since a clone could then turn the
-hook off. Refuses a symlink, and fails (`1`) on a
-file it cannot read, a file that is not UTF-8 included.
+prints one line saying which: `stripped N attribution line(s) from FILE`, `nothing to strip`, or
+`kept N attribution line(s): …` with the reason below. A message that is *only* attribution is
+left alone and reads `nothing to strip`, because emptying it aborts the commit with a confusing
+error and CI explains better. It strips nothing where your own Claude Code settings,
+`~/.claude/settings.json`, set `attribution.commit` to text: what a commit carries is then your
+choice in the harness, and when a line would have gone the run says it kept it and why; a message
+with nothing to strip still says `nothing to strip`, which the hook keeps off the terminal. Set
+empty, it says your commits carry nothing, so a trailer that arrives anyway is stripped as it is
+with the setting unset. A repository's own `.claude/settings.json` is not read for it, since a
+clone could then turn the hook off. Refuses a symlink, and fails (`1`) on a file it cannot read, a
+file that is not UTF-8 included.
 
 Git's own trailing comment block is kept, and so is everything below the scissors line that
 `commit.verbose = true` puts the staged diff under — the message is what lies above both.

@@ -20,6 +20,7 @@ from stayfixed import gitenv
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.errors import Refusal
+from stayfixed.guards.commands import GIVES_WAY
 from stayfixed.guards.commit import (
     ATTRIBUTION_LABELS,
     LOG_TIMEOUT_SECONDS,
@@ -895,3 +896,46 @@ def test_commit_strip_gives_way_to_the_harness_attribution_setting(
     stripped = message.read_text(encoding="utf-8")
     assert (stripped == "fix: thing\n") is strips, stripped
     assert (stripped == original) is not strips, stripped
+
+
+def _set_commit_attribution(text: str) -> None:
+    """The person's own Claude Code settings, under the suite's `HOME` (`tests/conftest.py`)."""
+    settings = Path.home() / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps({"attribution": {"commit": text}}), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "original",
+    ["fix: thing\n", "Co-Authored-By: Claude <noreply@anthropic.com>\n"],
+    ids=["no-trailer", "only-a-trailer"],
+)
+def test_commit_strip_that_gives_way_over_nothing_it_would_strip_says_nothing_to_strip(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], original: str
+) -> None:
+    # The give-way line used to print whenever `attribution.commit` was set, before the message
+    # was read, and the hook keeps quiet only on a line starting "nothing to strip": an owner
+    # with the setting got a notice on every commit, a clean one included. Giving way is news
+    # only when a line would have been stripped; a message that is nothing but attribution is
+    # never stripped either, since emptying it would abort the commit. Mutation (oracle):
+    # `mutations/`'s "commit strip gives way before it has read the message" -> `no-trailer`.
+    _set_commit_attribution("Co-Authored-By: Claude <noreply@anthropic.com>")
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text(original, encoding="utf-8")
+    assert run(["commit", "strip", str(message)], parser=build_parser(discover_registrars())) == 0
+    assert capsys.readouterr().out == "nothing to strip\n"
+    assert message.read_text(encoding="utf-8") == original
+
+
+def test_commit_strip_that_keeps_a_trailer_says_why(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A trailer the strip would have taken is kept because the person set what their commits
+    # carry, and the one line says so, with how many lines it left, where the hook shows it.
+    _set_commit_attribution("Co-Authored-By: Claude <noreply@anthropic.com>")
+    message = tmp_path / "COMMIT_EDITMSG"
+    original = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+    message.write_text(original, encoding="utf-8")
+    assert run(["commit", "strip", str(message)], parser=build_parser(discover_registrars())) == 0
+    assert capsys.readouterr().out == GIVES_WAY.format(count=1) + "\n"
+    assert message.read_text(encoding="utf-8") == original
