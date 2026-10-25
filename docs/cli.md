@@ -2712,9 +2712,10 @@ failed call is a reported note, never a failure.
 
 **The overlay is touched only when `--overlay` names an answer.** It is the one entry for an
 overlay, in three forms. `--overlay <path>` naming an overlay records its root. `--overlay <path>`
-naming nothing, or an empty directory, renders the shipped template there, with no network call:
-the directory it is made in has to be one you can write, and a path whose parent is missing or
-not writable is refused before the first write. So a mistyped path is not refused: it is rendered
+naming nothing, or an empty directory you can list and write, renders the shipped template there,
+with no network call: the directory it is made in has to be one you can write, and a path whose
+parent is missing or not writable, or a directory you cannot both list and write that is not an
+overlay, is refused before the first write. So a mistyped path is not refused: it is rendered
 at and recorded, and a run that records a root other than the one the machine file held says so
 in a note naming the root it replaced, and how to record that one again. A leading `~` is the home
 `HOME` names, as in the machine file's `[overlay] root`; where `HOME` is empty or relative, such a
@@ -2734,9 +2735,10 @@ be whoever owns that name there. Any other failure of that question — an expir
 error, a `gh` that is not installed or hung, an answer that is not the JSON asked for — stops the
 command with `gh`'s own message and creates nothing (`1`). What is at `<home>/<name>` already is
 decided before any of that, before the first write and before `gh` is asked anything: nothing,
-or an empty directory, which this run clones into; the overlay an earlier run made, which is left
-alone and nothing is generated; or anything else — a file, a link to nowhere, a directory holding
-something that is not an overlay — which is refused (`2`), since the clone would meet it only
+or an empty directory you can list and write, which this run clones into; the overlay an earlier
+run made, which is left alone and nothing is generated; or anything else — a file, a link, a
+directory holding something that is not an overlay or one you cannot both list and write — which
+is refused (`2`), since the clone would meet it only
 after `gh repo create` had made a repository nothing then records. Once `gh repo create` has run,
 the repository may exist on GitHub whatever `gh` answered, and a second `create:` would fail on
 the name it holds, so every refusal from then on says so and gives the remedy that works: once

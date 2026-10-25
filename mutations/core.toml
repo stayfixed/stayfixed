@@ -6295,3 +6295,23 @@ after = "        return not exists(path)"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything",
 ]
+
+[[mutation]]
+name = "setup takes a link to an empty directory at a created overlay's destination for no destination"
+file = "src/stayfixed/fsops.py"
+before = "    if is_symlink(path) or not is_dir(path):"
+after = "    if not is_dir(path):"
+reddens = [
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[a-link-to-an-empty-directory]",
+]
+
+# An empty directory this user cannot write takes no clone: read as vacant, `create:` ran `gh repo
+# create`, whose clone failed on it, and left a repository on the owner's account nothing recorded.
+[[mutation]]
+name = "an empty directory this user cannot write reads as vacant"
+file = "src/stayfixed/fsops.py"
+before = "            return next(entries, None) is None and os.access(path, os.R_OK | os.W_OK | os.X_OK)"
+after = "            return next(entries, None) is None and os.access(path, os.R_OK | os.X_OK)"
+reddens = [
+  "tests/setup/test_setup.py::test_an_empty_directory_this_user_cannot_list_and_write_is_refused_naming_that_before_github[create-cannot-be-written]",
+]

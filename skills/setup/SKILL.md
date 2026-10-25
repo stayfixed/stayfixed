@@ -21,10 +21,11 @@ description: Configure the machine for stayfixed — the preset, the personal pa
      that, since the user adds the record by hand. Where the overlay lives is the user's choice;
      `stayfixed doctor` warns when another repository's work tree holds it.
    - **They want one on this machine only for now**: `stayfixed setup --preset recommended
-     --overlay /path/that/does/not/exist` (or an empty directory) renders the shipped template
-     there with no network call, makes it a git repository, installs the secret scan and records
-     it. Relay the note on giving it a remote and filling in `owner` and `name` in its record, and
-     the note that it replaced the overlay the machine recorded before, when there is one.
+     --overlay /path/that/does/not/exist` (or an empty directory they can write) renders the
+     shipped template there with no network call, makes it a git repository, installs the secret
+     scan and records it. Relay the note on giving it a remote and filling in `owner` and `name` in
+     its record, and the note that it replaced the overlay the machine recorded before, when there
+     is one.
    - **They want one on GitHub**: `stayfixed setup --preset recommended --overlay create:<owner>/stayfixed-private`
      creates it on their GitHub account, from their own published template or the publisher's
      public one, names its record after them and records it in one step. Creating a repository

@@ -910,8 +910,8 @@ reddens = [
 
 # A link at `<home>/<name>` is the repository's to retarget, and its target is not: `create:`
 # records what `--overlay <path>` records, the destination resolved, and a link there, dangling or
-# not, is a destination that is there, not one this run makes (the entry for that half is in the
-# group of `fsops`, which answers it).
+# not, is a destination that is there, not one this run makes (the entries for that half are in
+# the group of `fsops`, which answers it).
 [[mutation]]
 name = "setup records a created overlay at its link and not where it leads"
 file = "src/stayfixed/setup/run.py"

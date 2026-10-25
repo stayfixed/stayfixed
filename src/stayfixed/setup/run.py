@@ -56,8 +56,9 @@ and for `create:` above `gh repo create` itself:
 
 * **a path holding something must be an overlay**, which is `overlay.api.require_overlay`: a tree
   whose identity record names layout 1. A path holding nothing (`fsops.vacant`: not there, or an
-  empty directory) is rendered into, so a mistyped path is a new overlay and not a refusal, and
-  the run that records a root other than the one the machine file held says so (`REPLACED_ROOT`).
+  empty directory this user can list and write) is rendered into, so a mistyped path is a new
+  overlay and not a refusal, and the run that records a root other than the one the machine file
+  held says so (`REPLACED_ROOT`).
 * **a `create:` destination must be one `gh` can clone into**: vacant, or the overlay an
   earlier run made. Its place is `home/<name>`, knowable from the arguments
   (`overlay.api.target_root`), so a file there, or a directory holding anything but an overlay, is
@@ -136,6 +137,13 @@ DESTINATION_NOT_AN_OVERLAY = (
     "{destination} is a directory that is not an overlay, so `create:` would clone the new "
     "repository over what is there, and nothing was created on GitHub; move it, or name another "
     "repository"
+)
+# What either form says of a directory there that is no overlay and that this user cannot both list
+# and write, so nothing can be rendered or cloned into it.
+UNUSABLE_DIRECTORY = (
+    "{destination} is a directory this user cannot both list and write, so no overlay can be "
+    "rendered or cloned into it, and nothing was created on GitHub; give this user read, write "
+    "and search on it, or name another place"
 )
 # What `setup` notes when it records an overlay root other than the one the machine file held,
 # `{previous}` through `printed.quoted`: a mistyped `--overlay` path is rendered, not refused.
@@ -470,9 +478,9 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
         destination, account = target_root(home, owner, name)
         # What is there already, decided before any `gh` call: nothing or an empty directory, which
         # this run clones into; the overlay an earlier run made, which `generate` leaves alone; or
-        # anything else — a file, a link to nowhere, a directory holding something that is not an
-        # overlay — which the clone would meet only after `gh repo create` had made a repository
-        # nothing then records.
+        # anything else — a file, a link, a directory holding something that is not an overlay or
+        # one this user cannot both list and write — which the clone would meet only after `gh
+        # repo create` had made a repository nothing then records.
         if not fsops.vacant(destination):
             shown = quoted(str(destination))
             if not fsops.is_dir(destination):
@@ -480,7 +488,9 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
             if not os.access(destination, os.X_OK):
                 raise Refusal(f"--home {home} cannot be used: {destination} cannot be searched")
             if overlay_fault(destination) is not None:
-                raise Refusal(DESTINATION_NOT_AN_OVERLAY.format(destination=shown))
+                usable = os.access(destination, os.R_OK | os.W_OK)
+                said = DESTINATION_NOT_AN_OVERLAY if usable else UNUSABLE_DIRECTORY
+                raise Refusal(said.format(destination=shown))
         root = fsops.resolved(destination)
         _recordable(root)
         return _Overlay(root=root, create=(account, name), destination=destination)
@@ -502,6 +512,9 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
                 NO_PLACE_TO_RENDER.format(path=quoted(str(candidate)), parent=quoted(str(parent)))
             )
         return _Overlay(root=candidate, create=None, render=True)
+    unusable = fsops.is_dir(candidate) and not os.access(candidate, os.R_OK | os.W_OK | os.X_OK)
+    if unusable and overlay_fault(candidate) is not None:
+        raise Refusal(UNUSABLE_DIRECTORY.format(destination=quoted(str(candidate))))
     require_overlay(candidate, because=_RECORDING)
     return _Overlay(root=candidate, create=None)
 

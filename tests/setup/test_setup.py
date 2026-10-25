@@ -1622,7 +1622,7 @@ def test_setup_renders_an_overlay_at_an_absent_or_empty_path_and_records_it(
 # --- the destination `create:` clones into, asked before GitHub is -------------------------------
 
 
-@pytest.mark.parametrize("shape", ["a-file", "not-an-overlay"])
+@pytest.mark.parametrize("shape", ["a-file", "not-an-overlay", "a-link-to-an-empty-directory"])
 def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called(
     tmp_path: Path, shape: str
 ) -> None:
@@ -1630,8 +1630,11 @@ def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_call
     # be searched: a file there, or a directory holding something else, was met by the clone,
     # after `gh repo create` had made a repository on the owner's account that nothing recorded.
     # Both refuse before any `gh` argv now, naming what is there; an empty directory is cloned
-    # into, as `git clone` does. Mutation: `mutations/`'s "setup asks about the create:
-    # destination after GitHub" -> the `gh` calls come first.
+    # into, as `git clone` does. A link to an empty directory is not one: read as empty, the clone
+    # went through it into wherever it leads. Mutations: `mutations/`'s "setup asks about the
+    # create: destination after GitHub" -> the `gh` calls come first; "setup takes a link to an
+    # empty directory at a created overlay's destination for no destination" ->
+    # `a-link-to-an-empty-directory`.
     from stayfixed.setup.run import DESTINATION_NOT_A_DIRECTORY, DESTINATION_NOT_AN_OVERLAY
 
     home = tmp_path / "home"
@@ -1639,6 +1642,9 @@ def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_call
     destination = home / "stayfixed-private"
     if shape == "a-file":
         destination.write_text("mine\n", encoding="utf-8")
+    elif shape == "a-link-to-an-empty-directory":
+        (tmp_path / "elsewhere").mkdir()
+        destination.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
     else:
         destination.mkdir()
         (destination / "notes.md").write_text("mine\n", encoding="utf-8")
@@ -1656,6 +1662,33 @@ def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_call
         )
     sentence = DESTINATION_NOT_A_DIRECTORY if shape == "a-file" else DESTINATION_NOT_AN_OVERLAY
     assert str(refused.value) == sentence.format(destination=quoted(str(destination)))
+    assert not [argv for argv in runner.calls if argv[0] == "gh"], runner.calls
+    assert not machine.exists()
+
+
+@_ROOT_WRITES_EVERYWHERE
+@pytest.mark.parametrize("mode", [0o555, 0o300], ids=["cannot-be-written", "cannot-be-listed"])
+@pytest.mark.parametrize("form", ["create", "path"])
+def test_an_empty_directory_this_user_cannot_list_and_write_is_refused_naming_that_before_github(
+    tmp_path: Path, mode: int, form: str
+) -> None:
+    # An empty directory read as nothing there whatever its mode: at 555, or another user's,
+    # `create:` ran `gh repo create`, whose clone could not write into it, and left a repository
+    # nothing recorded; `--overlay <path>` said it "is not there". At 300 neither form can list
+    # it, and each said what it holds. Refused before any `gh` argv, naming the cause. Mutation
+    # (`mutations/`'s "an empty directory this user cannot write reads as vacant") ->
+    # `cannot-be-written` under `create:` reaches `gh repo create`.
+    from stayfixed.setup.run import UNUSABLE_DIRECTORY
+
+    home = tmp_path / "home"
+    destination = home / "stayfixed-private"
+    destination.mkdir(parents=True)
+    machine = tmp_path / "config.toml"
+    overlay = "create:octo/stayfixed-private" if form == "create" else str(destination)
+    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
+    with at_mode(destination, mode, after=0o755), pytest.raises(Refusal) as refused:
+        setup("recommended", home=home, machine=machine, runner=runner, overlay=overlay)
+    assert str(refused.value) == UNUSABLE_DIRECTORY.format(destination=quoted(str(destination)))
     assert not [argv for argv in runner.calls if argv[0] == "gh"], runner.calls
     assert not machine.exists()
 
