@@ -34,8 +34,10 @@ edited stays where it is and is listed.
 
 ## Rules
 
-- **An exit of 1 removed nothing.** A `REFUSED` section names each artifact and why. Relay it
-  and stop.
+- **An exit of 1 from a plan removed nothing.** A `REFUSED` section names each artifact and why.
+  Relay it and stop. An exit of 1 from the `detach` it runs first on an attached repository may
+  come after part of what `attach` placed was withdrawn: relay its sentence, and once its cause is
+  dealt with run `stayfixed uninstall` again, which finishes.
 - **An exit of 2 is a refusal, and it may have come part-way through.** Files kept under
   `.stayfixed/local/` counted before the run, and a `--force` path outside the root come before
   anything is removed. A refusal from the `detach` it runs comes before its own first removal.

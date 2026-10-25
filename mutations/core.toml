@@ -661,7 +661,7 @@ reddens = [
 # Every call through this seam captures its output, so a `git` or `gh` that asks for a
 # credential on an inherited stdin is invisible and blocks for the whole of
 # NETWORK_TIMEOUT_SECONDS. What makes that a finding is which callers reach the network through
-# it: `overlay create --template` launches `gh` with the machine owner's own authentication, and
+# it: `setup --overlay create:` launches `gh` with the machine owner's own authentication, and
 # `release.pins.released` runs `git ls-remote` for `stayfixed init` and for `doctor`'s `ci-ref`
 # row. (This used to cite that row's URL as repository-authored; it is
 # `stayfixed.REPOSITORY_URL`, a module constant. See `stayfixed.runner._ENV_FORCE`.)

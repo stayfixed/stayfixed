@@ -221,8 +221,8 @@ def _install_path(
     """Steps 1-6: the overlay, the machine layer, a repository, attach, and a note in it, promoted.
 
     Every step is the real launcher with the real argv. Step 1's overlay is rendered **outside** the
-    project root on purpose: `setup` refuses to record one inside it, because a path inside the
-    project is exactly the shape of tree a hostile clone can ship.
+    project root, where an owner keeps it: `setup` refuses no place for it, and `doctor` warns when
+    another repository's work tree holds it, since that repository can put files into it.
 
     `initialised` walks the same steps over a repository that already has its notes in
     `paths.memory` and has had `stayfixed init` run over it, which is the shape the owner's own

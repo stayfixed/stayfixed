@@ -592,7 +592,7 @@ def test_overlay_create_asks_github_and_records_the_new_root(
         ),
     ],
 )
-def test_overlay_create_generates_from_the_template_overlay_create_would_choose(
+def test_create_generates_from_the_owners_template_or_else_the_publishers(
     tmp_path: Path, probe: Completed, template: str
 ) -> None:
     # `--overlay create:` calls `overlay.create`, so a user with no template of their own reaches

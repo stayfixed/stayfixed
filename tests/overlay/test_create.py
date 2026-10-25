@@ -235,13 +235,13 @@ def test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_
     # a cause that was not the cause, about a binary that was not there. A missing optional binary
     # is a reported finding, and never a misattributed one.
     #
-    # The probe is answered here and `gh repo create` is what cannot run (a `gh` that hung, or was
-    # removed between the two calls), because the probe has its own arm and its own test below;
+    # The probe is answered here and `gh repo create` is what cannot run (a `gh` removed between
+    # the two calls), because the probe has its own arm and its own test below;
     # this is the one that reaches the creation arm.
     #
-    # Mutation (`mutations/`'s "overlay create --template asks GitHub about a `gh` that
-    # could not run"): the `NOT_FOUND`/`TIMED_OUT` arm becomes `if False:` → two more
-    # subprocesses run and the message names `gh auth status` instead of the launch failure.
+    # Mutation (`mutations/`'s "create: asks GitHub about a `gh` that could not run"): the
+    # `NOT_FOUND` arm becomes `if False:` → a `gh` that never ran is reported as one that exited
+    # 127, and the advice to install it goes.
     absent = Recorder(
         answers={
             THE_OWNERS_PROBE: A_TEMPLATE,
@@ -348,7 +348,7 @@ def test_an_empty_destination_nothing_arrived_in_is_not_taken_for_a_clone(tmp_pa
 def test_the_owners_own_template_is_used_when_they_have_published_one(tmp_path: Path) -> None:
     # A person who publishes their own template gets their own copy, so an overlay they generate
     # is exactly the tree their published template holds. Mutation (`mutations/`'s
-    # "overlay create never asks whose template to use"): the probe is dropped and the publisher's
+    # "create: never asks whose template to use"): the probe is dropped and the publisher's
     # template is always named → this reddens on the argv.
     runner = Recorder(answers={THE_OWNERS_PROBE: A_TEMPLATE}, on_call=_populate)
     created = generate("octo", "stayfixed-private", root=tmp_path, runner=runner)
@@ -370,7 +370,7 @@ def test_the_publishers_template_is_used_when_the_owner_has_none(tmp_path: Path)
     # documented contract asked for a repository nobody had told them to publish. The answer to
     # "does <owner>/stayfixed-overlay-template exist" is `gh`'s real not-found shape (see
     # `NO_SUCH_REPOSITORY`), and it falls back to the publisher's own public template.
-    # Mutation (`mutations/`'s "overlay create has no template to fall back on"): the
+    # Mutation (`mutations/`'s "create: has no template to fall back on"): the
     # fallback is dropped and the owner's template is always named → this reddens.
     #
     # Named with its host. `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner
@@ -522,8 +522,8 @@ def test_a_local_overlay_is_a_git_repository_on_main_with_no_remote(tmp_path: Pa
     # A local render used to leave a bare directory, so the owner's next step (commit it, push it
     # to a private repository) began with a `git init` nobody had told them about. The init is
     # `render`'s and not `render_template`'s, which the template's publisher also uses for its
-    # scratch render. Mutation (`mutations/`'s "overlay create --local leaves no git
-    # repository"): the `git init` call is deleted → this reddens.
+    # scratch render. Mutation (`mutations/`'s "a local render leaves no git repository"): the
+    # `git init` call is deleted → this reddens.
     runner = Recorder()
     created = render(tmp_path / "stayfixed-private", runner=runner)
     assert runner.calls == [["git", "init"], ["git", "symbolic-ref", "HEAD", "refs/heads/main"]]
@@ -569,7 +569,7 @@ def test_a_git_older_than_2_28_still_leaves_a_repository_on_main(tmp_path: Path)
     # `git init` and then `git symbolic-ref HEAD refs/heads/main` name the branch on every
     # version.
     #
-    # Mutation: `mutations/`'s "overlay create --local asks git init for its branch".
+    # Mutation: `mutations/`'s "a local render asks git init for its branch".
     runner = Recorder(answers={"git init -b": Completed(129, "", "error: unknown switch `b'")})
     created = render(tmp_path / "stayfixed-private", runner=runner)
     assert ["git", "init", "-b", "main"] not in runner.calls

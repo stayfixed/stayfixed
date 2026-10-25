@@ -375,10 +375,10 @@ reddens = [
 ]
 
 # `gh` is an optional binary, and a missing one is a reported finding, never a traceback — and never
-# a misattributed one. Without this arm the command launches two more subprocesses, can sleep ten
-# seconds, and blames the owner's GitHub authentication for a binary that was never on PATH.
+# a misattributed one. Without this arm a `gh` that never ran is reported as one that exited 127,
+# with no word on installing it.
 [[mutation]]
-name = "overlay create --template asks GitHub about a `gh` that could not run"
+name = "create: asks GitHub about a `gh` that could not run"
 file = "src/stayfixed/overlay/create.py"
 before = "    if created.code == NOT_FOUND:"
 after = "    if False:"
@@ -386,24 +386,24 @@ reddens = [
   "tests/overlay/test_create.py::test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_more_calls",
 ]
 
-# Whose template `overlay create --template` generates from, and `setup --overlay create:` with it.
+# Whose template `setup --overlay create:` generates from.
 # A person who has published their own gets their own; one who has not gets the publisher's, so a
 # personal account is never left with nowhere to generate from. Three ways to lose that: never
 # asking (always the publisher's), never falling back (always the owner's), and reading every
 # non-zero exit of the probe as "not found", which turns an expired token or a dropped connection
 # into a silent switch of the template of a person who has one.
 [[mutation]]
-name = "overlay create never asks whose template to use"
+name = "create: never asks whose template to use"
 file = "src/stayfixed/overlay/create.py"
 before = "            return mine if answer else theirs"
 after = "            return theirs"
 reddens = [
   "tests/overlay/test_create.py::test_the_owners_own_template_is_used_when_they_have_published_one",
-  "tests/setup/test_setup.py::test_overlay_create_generates_from_the_template_overlay_create_would_choose[the-owners-own]",
+  "tests/setup/test_setup.py::test_create_generates_from_the_owners_template_or_else_the_publishers[the-owners-own]",
 ]
 
 [[mutation]]
-name = "overlay create treats a repository that is not a template as one"
+name = "create: treats a repository that is not a template as one"
 file = "src/stayfixed/overlay/create.py"
 before = "            return mine if answer else theirs"
 after = "            return mine"
@@ -412,7 +412,7 @@ reddens = [
 ]
 
 [[mutation]]
-name = "overlay create has no template to fall back on"
+name = "create: has no template to fall back on"
 file = "src/stayfixed/overlay/create.py"
 before = """    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:
         return theirs"""
@@ -420,11 +420,11 @@ after = """    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWE
         return mine"""
 reddens = [
   "tests/overlay/test_create.py::test_the_publishers_template_is_used_when_the_owner_has_none",
-  "tests/setup/test_setup.py::test_overlay_create_generates_from_the_template_overlay_create_would_choose[the-publishers]",
+  "tests/setup/test_setup.py::test_create_generates_from_the_owners_template_or_else_the_publishers[the-publishers]",
 ]
 
 [[mutation]]
-name = "overlay create reads any failed probe as no template of the owner's"
+name = "create: reads any failed probe as no template of the owner's"
 file = "src/stayfixed/overlay/create.py"
 before = "    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:"
 after = "    elif probe.code not in (NOT_FOUND, TIMED_OUT):"
@@ -437,7 +437,7 @@ reddens = [
 # `create --local` leaves a repository, so the owner's next step (commit it, give it a private
 # remote) does not begin with a `git init` nobody mentioned.
 [[mutation]]
-name = "overlay create --local leaves no git repository"
+name = "a local render leaves no git repository"
 file = "src/stayfixed/overlay/create.py"
 before = '''    done = runner.launch(["git", "init"], target)'''
 after = '''    done = Completed(0, "", "")'''
@@ -697,7 +697,7 @@ reddens = [
 # `git init -b` arrived in git 2.28; an older `git` refused it and the `--local` overlay was left
 # without a repository.
 [[mutation]]
-name = "overlay create --local asks git init for its branch"
+name = "a local render asks git init for its branch"
 file = "src/stayfixed/overlay/create.py"
 before = '    done = runner.launch(["git", "init"], target)'
 after = '    done = runner.launch(["git", "init", "-b", "main"], target)'
@@ -759,7 +759,7 @@ reddens = [
   "tests/boundaries/test_delivery.py::test_core_never_imports_delivery",
 ]
 
-# `gh`'s answers are read by `overlay create` and `publish-template`. Each reader caught the
+# `gh`'s answers are read by `setup --overlay create:` and `scripts/publish_template.py`. Each reader caught the
 # decoder's `JSONDecodeError` alone, so valid JSON past the parser — nesting it cannot follow, or
 # an integer longer than the interpreter converts — ended the command as an internal error.
 [[mutation]]

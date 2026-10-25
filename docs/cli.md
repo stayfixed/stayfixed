@@ -494,8 +494,8 @@ later, over an overlay the conversation may have left dirty, and an invocation s
 place in a context is treated as a new one rather than as one already answered. The cost is that
 an overlay which becomes unpushed *during* a session that started clean is not reported at that
 session's compactions, only at its next resume or startup; `stayfixed doctor` answers on demand. And the overlay is never a plugin stayfixed
-executes anything from — its
-`hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
+executes anything from: it carries no plugin manifest and no
+`hooks/hooks.json`, and hook entries the owner keeps in *common/claude/hooks.json* and
 `projects/<name>/claude/hooks.json` reach a session only through the plugin `attach` renders from
 them, named by this machine's binding id.
 
@@ -2180,7 +2180,9 @@ nothing.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
-section names each, and nothing was removed — or a `stayfixed.toml` that does not load. `2` on the
+section names each, and nothing was removed — or a `stayfixed.toml` that does not load; and on an
+attached repository, a `detach` that fails as `stayfixed detach` does (`1`), part of what `attach`
+placed withdrawn and nothing of the scaffold removed, which the next run finishes. `2` on the
 refusals above, before any write or part-way; a repository with no `.stayfixed/manifest.json` is
 one of them.
 
@@ -2497,7 +2499,6 @@ It exits `2` on a refusal, in the order the run meets them:
   64 MiB it reads, whether or not this run would rewrite it: a short document many levels deep
   grows by its depth on every line, and `would be longer than this reader reads once written
   back` keeps a run from leaving a file its next read refuses. `--check` refuses it too.
-- A widening without `--yes`.
 - A `memory.groups` entry that leaves this project's share of the overlay.
 - A `.stayfixed` that is a symlink, or an existing ledger naming files, settings keys or
   directories `attach` could not have written.
