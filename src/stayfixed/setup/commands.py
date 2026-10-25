@@ -20,12 +20,13 @@ them), so it runs alone.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 from typing import Any, cast
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
-from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
+from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP, grammar
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import DEFAULT_PRESET
 from stayfixed.printed import quoted
@@ -49,7 +50,7 @@ from stayfixed.runner import subprocess_runner
 # would write, ask nothing done, and are ignored here, as `docs/cli.md` says.
 _HOOKS_ALONE = (
     "--git-hooks installs a hook into one repository and does nothing of machine setup's, so it "
-    "takes no --preset or --overlay; run `stayfixed setup` with those separately"
+    "takes no --preset, --overlay or --plugin; run `stayfixed setup` with those separately"
 )
 # `--uninstall` removes the hook `--git-hooks` installed, and means nothing to machine setup: on
 # its own it was dropped and the machine setup ran, exit 0, for a person who asked for a hook to be
@@ -58,6 +59,13 @@ _UNINSTALL_ALONE = (
     "--uninstall removes the commit-message hook and is taken only with --git-hooks; run "
     "`stayfixed setup --git-hooks --uninstall` to remove it, and nothing was written"
 )
+
+
+# A plugin name as `setup --plugin` takes it, joined to the preset's marketplace into one argv
+# element: led by a letter or a digit, so it cannot be read as an option, and nothing that could
+# reach past the name. The rule in words is the parser's refusal, which never quotes the value.
+PLUGIN_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
+PLUGIN_RULE = "not a plugin name: lowercase ASCII letters, digits and `-`, led by a letter or digit"
 
 
 def _root(given: str) -> Path:
@@ -131,7 +139,7 @@ EMPTY_HOME = (
 # it says only where `--git-hooks` acts, which is refused here.
 _ADVICE_ALONE = (
     "--approval-boundary prints what to set and writes nothing, so it takes no --preset, "
-    "--overlay, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
+    "--overlay, --plugin, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
 )
 # What `--approval-boundary` prints: the deny rule over the trust record's directory and the user
 # settings file it belongs in, the setting that turns the sandbox on, and the managed settings that
@@ -147,13 +155,13 @@ BOUNDARY_ADVICE = (
 
 def run_setup(args: argparse.Namespace) -> Result:
     if args.approval_boundary:
-        named = (args.preset, args.overlay)
+        named = (args.preset, args.overlay, args.plugin)
         switched = (args.git_hooks, args.uninstall)
         if any(switched) or any(value is not None for value in named):
             raise Refusal(_ADVICE_ALONE)
         return run_boundary_advice(args)
     if args.git_hooks:
-        if args.preset is not None or args.overlay is not None:
+        if args.preset is not None or args.overlay is not None or args.plugin is not None:
             raise Refusal(_HOOKS_ALONE)
         return run_git_hooks(args)
     if args.uninstall:
@@ -178,6 +186,7 @@ def run_setup(args: argparse.Namespace) -> Result:
         machine=machine,
         runner=subprocess_runner(),
         overlay=args.overlay,
+        plugins=args.plugin or (),
     )
     data = {
         "machine_written": report.machine_written,
@@ -271,6 +280,17 @@ def register(groups: SubParsers) -> None:
             "record an existing overlay by path, render one at a path that names nothing, or "
             "create one with create:<owner>/<name> (asks GitHub for a private repository from "
             "the template)"
+        ),
+    )
+    setup.add_argument(
+        "--plugin",
+        action="append",
+        default=None,
+        type=grammar(PLUGIN_NAME, PLUGIN_RULE),
+        metavar="NAME",
+        help=(
+            "install this plugin from the marketplace the preset names for each harness; once "
+            "per plugin. Without it no plugin is installed"
         ),
     )
     setup.add_argument(

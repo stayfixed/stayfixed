@@ -67,7 +67,7 @@ Three things hold everywhere:
 - [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
 - [`stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
-- [`stayfixed setup [--preset NAME] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---home-path---machine-path---overlay-value---root-path)
+- [`stayfixed setup [--preset NAME] [--plugin NAME …] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---plugin-name----home-path---machine-path---overlay-value---root-path)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
 - [`stayfixed setup --approval-boundary [--home PATH] [--machine PATH]`](#stayfixed-setup---approval-boundary---home-path---machine-path)
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
@@ -2623,12 +2623,12 @@ with part of the attach already undone:
 
 ---
 
-## `stayfixed setup [--preset NAME] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
+## `stayfixed setup [--preset NAME] [--plugin NAME …] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
 
 Configures this machine from a preset, `recommended` unless `--preset` names another: the
 machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
-values in `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per
-configured harness. That file is read as Claude Code reads it, past a leading byte-order mark,
+values in `<home>/.claude/settings.json`, and each plugin `--plugin` names, one install per plugin
+per configured harness. Without `--plugin` no plugin is installed and no plugin command runs. That file is read as Claude Code reads it, past a leading byte-order mark,
 which a rewrite keeps. The deny rules are merged in beside the owner's own, with one removal: a
 rule an earlier preset wrote and this one retired (its `[deny] retired`) is taken out where it
 stands verbatim. `recommended` retired the masks `Read(.env*)` and `Read(**/.env*)`, which also
@@ -2665,21 +2665,26 @@ recorded survives a run that only changes something else. A table `setup` knows 
 carried through untouched, and so is a key at the top level; **comments are not** — the file is
 parsed and rewritten, and there is no standard-library parser that keeps them.
 
-The `[personal]` values are mirrored into `pluginConfigs` in `<home>/.claude/settings.json`,
-where Claude Code reads this plugin's own options, and that mirror is recomputed from the machine
-file on every run. The machine file wins: a value you set in Claude Code's plugin-config UI is
-overwritten by the next `setup`, because one of the two copies has to decide and the machine file
-is the one everything in stayfixed reads.
+The `[personal]` values are copied into `pluginConfigs` in `<home>/.claude/settings.json`, where
+Claude Code reads this plugin's own options, only where it holds no value for them: a value
+already there — one you set in Claude Code's plugin-config screen, or one an earlier `setup`
+copied — is kept on every run. So a personal value you change in the machine file after the first
+run does not reach `pluginConfigs`; change it there too, or delete it there and run `setup` again.
 
 **From an agent's sandboxed shell** `setup` cannot write the machine directory or the user
 settings: with Claude Code's sandbox on, an agent's shell writes nothing outside the working
 directory and the temporary directory. It says so in one sentence (below, under the exits), naming a
 person outside the agent's sandbox as the one to run it, and never ends in a traceback.
 
-**Plugins are installed per configured harness**, from `[defaults.stayfixed] agents` (`claude`
-and `codex` by default) and from the preset's own per-harness marketplace table
-(`[plugins.<harness>]`). For each harness the preset declares a marketplace for, `setup`
-registers it (`claude plugin marketplace add <source>`; idempotent — an already-registered
+**Plugins are installed only when named**, with `--plugin NAME` once per plugin: a plugin name is
+lowercase ASCII letters, digits and `-`, led by a letter or a digit, and the parser refuses any
+other, naming that rule. A third-party plugin runs in every session of its harness, hooks
+included, and none is pinned, so none is installed unasked; the preset's `[plugins] recommended`
+lists the ones `stayfixed init --questions` offers (`superpowers` and `context7` in
+`recommended`). A named plugin is installed per configured harness, from
+`[defaults.stayfixed] agents` (`claude` and `codex` by default) and from the preset's own
+per-harness marketplace table (`[plugins.<harness>]`). For each harness the preset declares a
+marketplace for, `setup` registers it (`claude plugin marketplace add <source>`; idempotent — an already-registered
 source is a no-op reported as such) and then installs each plugin bare (`claude plugin install
 <name>@<marketplace>`; no `--scope` or `-y` — the spike record's own measured output reports
 `(scope: user)` as the *default*, and `-y` only ever appears there on `uninstall`). Codex adds
@@ -2735,7 +2740,7 @@ link someone retargets later.
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;
 `<home>/.claude/settings.json`, where its links lead; and, through the plugin
-commands it runs for each harness with a declared marketplace (`claude plugin marketplace add` and
+commands it runs for each plugin `--plugin` names, on each harness with a declared marketplace (`claude plugin marketplace add` and
 `claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
 registrations and installed plugins those commands write into each harness's own configuration.
 `--overlay <path>` naming an overlay writes nothing in it; it is only recorded. Naming nothing, it
@@ -2830,8 +2835,8 @@ file, is not refused there, because on a case-sensitive volume it names another 
 would refuse a chain that cannot loop. A hook past the 64 MiB read cap is not read, so it is not
 judged either: it is kept and chained, as below.
 
-**Refuses (`2`) together with `--preset` or `--overlay`.** Each asks machine setup to do
-something, which this form does not do, so it names `--git-hooks` and writes nothing, where
+**Refuses (`2`) together with `--preset`, `--overlay` or `--plugin`.** Each asks machine setup to
+do something, which this form does not do, so it names `--git-hooks` and writes nothing, where
 `--overlay` used to be dropped and the hook installed. `--home` and `--machine` say
 only where machine setup would write, and are ignored.
 
@@ -2849,9 +2854,9 @@ was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `f
 `--uninstall`, which leaves it, and the install refuses it (`2`). A hook whose mode forbids reading
 is neither stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves
 it. A regular file past the 64 MiB read cap is foreign, since stayfixed's own hook is a couple of
-kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset` or
-`--overlay` is also given, `--uninstall` is given without `--git-hooks`, the hook cannot
-be read, or a hook names `prepare-commit-msg.local`.
+kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset`,
+`--overlay` or `--plugin` is also given, `--uninstall` is given without `--git-hooks`, the hook
+cannot be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 
@@ -2889,8 +2894,8 @@ and `managed`.
 
 **Writes** nothing.
 
-**Exits** `0`; `2` beside `--preset`, `--overlay`, `--git-hooks` or `--uninstall`, which
-name a write this run does not make; `1` for a `HOME` that is empty with no `--home` or no
+**Exits** `0`; `2` beside `--preset`, `--overlay`, `--plugin`, `--git-hooks` or `--uninstall`,
+which name a write this run does not make; `1` for a `HOME` that is empty with no `--home` or no
 `--machine`.
 
 ---

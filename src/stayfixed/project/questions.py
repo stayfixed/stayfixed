@@ -182,7 +182,7 @@ def _recommended() -> list[str]:
     """The plugins the default preset recommends, which the plugins question offers."""
     from stayfixed.presets import DEFAULT_PRESET, load_preset
 
-    listed = load_preset(DEFAULT_PRESET).get("plugins", {}).get("install", [])
+    listed = load_preset(DEFAULT_PRESET).get("plugins", {}).get("recommended", [])
     return [name for name in listed if isinstance(name, str)]
 
 

@@ -75,10 +75,11 @@ containment or a data-loss path ships with the mutation that reddens its test, a
 is a routing table of hand-written lines, not a summary. The principles behind all of it, with dated sources and an honest note where the
 backing is thin, are in [docs/methodology/README.md](https://github.com/stayfixed/stayfixed/blob/main/docs/methodology/README.md).
 
-**This is not a replacement for superpowers.** `stayfixed setup --preset recommended` installs
-it, and [context7](https://github.com/upstash/context7), on Claude Code — both ship in
-Anthropic's own official marketplace, so `setup` needs no separate registration step for
-either. **Codex has no verified non-interactive marketplace source for either plugin** (checked
+**This is not a replacement for superpowers.** `stayfixed init` recommends it, and
+[context7](https://github.com/upstash/context7), and `stayfixed setup --plugin superpowers
+--plugin context7` installs them on Claude Code — both ship in Anthropic's own official
+marketplace, so `setup` needs no separate registration step for either. Neither is installed
+unless you name it: each runs in every session, and neither is pinned. **Codex has no verified non-interactive marketplace source for either plugin** (checked
 against this project's own spike record and each plugin's own published install instructions,
 2026-09-18): install `superpowers` and `context7` by hand there if you use Codex, the same way
 you would install any other Codex plugin — `setup` reports this as a note rather than guessing a
@@ -271,8 +272,8 @@ to find the project root, and reaches no network.
 | `git ls-remote` | `stayfixed init`, `stayfixed upgrade`, `stayfixed doctor`, `stayfixed gate` | `https://github.com/stayfixed/stayfixed`, for its release tags | note 2 |
 | `gh` | `stayfixed setup --overlay create:<owner>/<name>` | GitHub's API, as the account `gh` acts for, and the clones it makes over git (note 3) | note 3 |
 | `git clone` | `stayfixed setup --overlay create:<owner>/<name>` | `git@github.com:<owner>/<name>.git`, the overlay just created | when `gh repo create --clone` reported success and left nothing at the destination |
-| `claude plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted), `stayfixed attach`, `stayfixed detach` | for `setup`, the marketplace the preset names for Claude Code, and its plugins' sources; for `attach` and `detach`, nothing past this machine (note 4) | `setup` when the preset's agents include `claude` and it names a marketplace for it; `attach` on every run; `detach` where the main checkout's `.claude/settings.local.json` names the plugin or its marketplace and no other checkout of the repository is attached |
-| `codex plugin` | `stayfixed setup` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Codex (note 4) | when the preset's agents include `codex` and it names a marketplace for it |
+| `claude plugin` | `stayfixed setup --plugin NAME` (`--preset NAME`; `recommended` when omitted), `stayfixed attach`, `stayfixed detach` | for `setup`, the marketplace the preset names for Claude Code, and the named plugins' sources; for `attach` and `detach`, nothing past this machine (note 4) | `setup` when `--plugin` names a plugin, the preset's agents include `claude` and it names a marketplace for it; `attach` on every run; `detach` where the main checkout's `.claude/settings.local.json` names the plugin or its marketplace and no other checkout of the repository is attached |
+| `codex plugin` | `stayfixed setup --plugin NAME` (`--preset NAME`; `recommended` when omitted) | the marketplace the preset names for Codex (note 4) | when `--plugin` names a plugin, the preset's agents include `codex` and it names a marketplace for it |
 | `pre-commit install` | `stayfixed setup --overlay` | nothing as it installs; GitHub and Go's servers on the first commit after it (note 5) | when it renders an overlay at a path, or with `create:` |
 | `sh -c` | `stayfixed test attribute --command CMD` | wherever `CMD` reaches; stayfixed does not choose | every run: `CMD` in the working tree, then in extracts of `HEAD` and of the merge base |
 | the commands `[gates.custom]` names | `stayfixed assess`, `stayfixed gate`, `stayfixed adopt promote` | wherever those commands reach; stayfixed does not choose | when `[gates.custom]` names one, unless `--builtin` is passed |
@@ -306,12 +307,12 @@ to find the project root, and reaches no network.
    GitHub Enterprise host — while the clone `create:` falls back to is always `git@github.com:`.
 4. **`claude plugin`** registers the marketplace the preset names for Claude Code
    (`anthropics/claude-plugins-official` in `recommended`), reads its list of plugins, and
-   downloads each of the preset's plugins from the source its entry there names, which can be
+   downloads each plugin `--plugin` named from the source its entry there names, which can be
    another repository. For `attach`, it registers the directory `attach` renders the overlay's
    hooks, skills and agents into, `~/.local/share/stayfixed/delivery/<id>/`, as a marketplace and
    installs the one plugin in it, whose source is a directory inside it, so neither names a source
    past this machine; `detach` uninstalls that plugin and removes that marketplace. **`codex plugin`** registers the marketplace the preset names for Codex and
-   adds the preset's plugins from it; `recommended` names none, so it does not run. Once
+   adds the named plugins from it; `recommended` names none, so it does not run. Once
    installed, a plugin runs in every session of its harness and reaches what it reaches.
 5. **`pre-commit install`** reaches nothing as it installs. On the first commit after it,
    pre-commit clones `https://github.com/gitleaks/gitleaks` at the commit the overlay's
@@ -426,7 +427,7 @@ stayfixed attach                                       # merge the allow rules, 
 stayfixed detach                                       # remove what attach added; the binding record stays
 
 # Machine setup
-stayfixed setup --preset recommended                   # the machine configuration, deny rules and preset plugins
+stayfixed setup --preset recommended                   # the machine configuration and deny rules; no plugin unless --plugin names one
 stayfixed setup --preset recommended --overlay ../stayfixed-private   # record an existing overlay, or render one there if nothing is; no network call
 stayfixed setup --preset recommended --overlay create:you/stayfixed-private  # create one on GitHub from your <owner>/stayfixed-overlay-template if you published one, else stayfixed's
 stayfixed setup --git-hooks                            # install the commit-message hook into this repository

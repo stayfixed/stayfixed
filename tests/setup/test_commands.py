@@ -39,9 +39,8 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
     # Patched at `stayfixed.setup.commands` itself, not at `overlay.api`: that module-level import
     # is what `run_setup` calls directly, so a test that wants to keep this command away from a real
     # `claude`/`codex` monkeypatches a name this module owns rather than reaching two hops into a
-    # dependency's own attribute. The recorder answers every call with success, because installing
-    # the preset's plugins is unconditional and a test here must never reach a real `claude` or
-    # `codex`.
+    # dependency's own attribute. The recorder answers every call with success, because the run
+    # names a plugin to install and a test here must never reach a real `claude` or `codex`.
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
@@ -55,11 +54,14 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
             str(home),
             "--machine",
             str(machine),
+            "--plugin",
+            "superpowers",
         ]
     )
     assert code == 0
     assert (home / ".claude" / "settings.json").is_file()
     assert machine.is_file()
+    assert ["claude", "plugin", "install", "superpowers@claude-plugins-official"] in stub.calls
     # The seam actually fired: at least the marketplace-add call reached the stub rather than
     # a real binary. An empty list here would mean the patch above stopped applying.
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
@@ -106,7 +108,8 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
-    assert invoke(["setup", "--preset", "recommended", "--home", str(home)]) == 0
+    argv = ["setup", "--preset", "recommended", "--home", str(home), "--plugin", "superpowers"]
+    assert invoke(argv) == 0
     assert (home / ".config" / "stayfixed" / "config.toml").is_file()
     assert not (xdg / "stayfixed" / "config.toml").exists()
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"

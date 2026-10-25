@@ -6,7 +6,7 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 # Machine setup
 
 1. Run `stayfixed setup --preset recommended` and relay what it writes to the machine
-   configuration file and which plugins the preset enables. It asks nothing.
+   configuration file. It asks nothing, and installs no plugin unless `--plugin` names one.
 2. For the commit-message hook, run `stayfixed setup --git-hooks` inside the repository and
    relay what it installed and what existing hook it kept and chained to;
    `stayfixed setup --git-hooks --uninstall` restores it.
@@ -42,10 +42,12 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    the agent's shell cannot write the machine directory at all: when `setup` or `trust revoke`
    says a person must run it in their own terminal, outside the agent's sandbox,
    relay that sentence and stop — never retry it outside the sandbox yourself.
-7. **The preset's plugins install on Claude Code only.** Codex has no verified non-interactive
-   marketplace source for them, so `setup` reports the gap as a note rather than attempting an
-   unverified install. Relay that note and tell the user to add those plugins by hand on Codex;
-   do not present the run as having configured both harnesses.
+7. **A plugin is installed only when named**, and only on Claude Code: add `--plugin NAME` once
+   per plugin the user chose, never one they did not, as in
+   `stayfixed setup --preset recommended --plugin superpowers`. Codex has no verified non-interactive marketplace source for them, so
+   `setup` reports the gap as a note rather than attempting an unverified install. Relay that
+   note and tell the user to add those plugins by hand on Codex; do not present the run as
+   having configured both harnesses.
 8. `--home` and `--machine` point the `--preset` run at a scratch destination instead of the
    real home directory and `~/.config/stayfixed/config.toml`. They are **not** a dry run — the
    same files are written, just elsewhere — and `--git-hooks` ignores both. Do not offer them

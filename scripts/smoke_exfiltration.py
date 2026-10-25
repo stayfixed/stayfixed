@@ -124,7 +124,8 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
     # the wrong reason is the vacuous shape this repository names.
     # Rendered by `setup --overlay <path>`, the one entry for an overlay, at a path that names
     # nothing yet. `PATH` is the system's own, where `git` is and no harness CLI or `pre-commit`
-    # is, so the plugin installs and the secret scan `setup` would run are notes and launch nothing.
+    # is, so the secret scan `setup` would run is a note and launches nothing; it names no plugin,
+    # so it installs none.
     overlay = scratch / "overlay"
     env = {**os.environ, "HOME": str(home), "PATH": "/usr/bin:/bin"}
     created = _run(

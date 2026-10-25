@@ -9,9 +9,11 @@ from typing import Any
 
 import pytest
 
+from stayfixed.cli import build_parser, discover_registrars
 from stayfixed.config.loader import load, preset_defaults
 from stayfixed.config.schema import MEMORY_MODES
 from stayfixed.errors import Refusal
+from stayfixed.presets import load_preset
 from stayfixed.project.init import init
 from stayfixed.project.questions import (
     BRANCH_PATTERN,
@@ -218,3 +220,15 @@ def test_the_skip_takes_attribution_off_the_preset_types_and_no_plugin(tmp_path:
         "superpowers",
         "context7",
     }
+
+
+def test_the_plugins_question_s_flag_is_one_setup_takes_for_each_plugin_it_offers() -> None:
+    # The plugins are answered on the machine, not by `init`: the skill runs the flag the question
+    # names with each chosen plugin, so that flag has to be one `setup`'s parser takes for every
+    # plugin the question offers.
+    parser = build_parser(discover_registrars())
+    command = FLAGS[PLUGINS].removeprefix("stayfixed ").split()
+    offered = load_preset("recommended")["plugins"]["recommended"]
+    assert offered
+    for name in offered:
+        assert parser.parse_args([*command, name]).plugin == [name]

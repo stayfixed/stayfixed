@@ -3,17 +3,22 @@
 Five things, each reported and each independently skippable, in this order: write the machine
 file (the personal defaults the preset names, for whichever of them nothing has recorded yet);
 merge the preset's deny rules and the personal values into the machine-scope settings file;
-register each preset plugin's marketplace and install from it, per configured harness; report
-whether `stayfixed` itself resolves on `PATH`; and, only when the caller named an answer, create,
-render or record the private overlay.
+only for the plugins the caller named, register the marketplace the preset declares and install
+from it, per configured harness; report whether `stayfixed` itself resolves on `PATH`; and, only
+when the caller named an answer, create, render or record the private overlay.
 
 **A preset default never overwrites a value already recorded.** The first draft of this module
 rebuilt `[personal]` from the preset's own defaults on every run, which meant a second
 `setup --preset recommended` reset a personal value back to the preset's after the owner set it by
 hand — exactly the value `setup.machine`'s own docstring promises survives a rewrite that "only
 set one of them". `_new_personal_values` computes only the keys the machine file does not already
-carry, and that is what both `write_machine` and the settings file's `pluginConfigs` receive — an
-empty dict on every run after the first, once every key has a recorded value.
+carry, and that is what `write_machine` receives — an empty dict on every run after the first,
+once every key has a recorded value. The settings file's `pluginConfigs` follows the same rule
+from its own side: a value it already holds is kept, whoever wrote it.
+
+**A plugin is installed only when it is named.** A third-party plugin runs in every session of its
+harness, its hooks included, and the preset pins none, so the preset only recommends them
+(`[plugins] recommended`, which `init --questions` offers) and `setup --plugin NAME` installs one.
 
 **Marketplaces are registered before anything is installed from them, and per-plugin sources are
 never guessed.** The first draft attempted `claude plugin install superpowers@obra` on a fresh
@@ -189,9 +194,18 @@ def _marketplace(preset: dict[str, Any], agent: str) -> tuple[str, str] | None:
 
 
 def _install_plugins(
-    preset: dict[str, Any], agents: Sequence[str], *, home: Path, runner: Runner
+    preset: dict[str, Any],
+    agents: Sequence[str],
+    selectors: Sequence[str],
+    *,
+    home: Path,
+    runner: Runner,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    selectors = [s for s in preset.get("plugins", {}).get("install", []) if isinstance(s, str)]
+    """Install each plugin in `selectors`, the ones the caller named, per harness in `agents`.
+
+    Nothing named is nothing run: no marketplace is registered and no note is written."""
+    if not selectors:
+        return (), ()
     installed: list[str] = []
     notes: list[str] = []
     for agent in agents:
@@ -258,8 +272,9 @@ def _write_user_settings(
 
     Merge, never replace: the owner's own file predates stayfixed on most machines, and nothing
     this run did not add may be recorded as if it had. Deny only — this never reads or writes
-    `permissions.allow` — and `pluginConfigs` gets the same treatment, key by key inside its own
-    `options`, so a value this run did not set survives a second one same as `write_machine`'s.
+    `permissions.allow` — and `pluginConfigs` is filled key by key inside its own `options`, only
+    where it holds no value: Claude Code writes there the answers a person gives in its
+    plugin-config screen, so a value there is the user's and survives every run.
 
     `retired` is the one removal: rules an earlier preset wrote under the same table and this one
     took back (the preset's `[deny] retired`), each removed where it stands verbatim. A rule the
@@ -286,7 +301,8 @@ def _write_user_settings(
     entry = dict(entry) if isinstance(entry, dict) else {}
     options = entry.get("options")
     options = dict(options) if isinstance(options, dict) else {}
-    options.update(personal)
+    for key, value in personal.items():
+        options.setdefault(key, value)
     entry["options"] = options
     plugin_configs[PLUGIN_ID] = entry
     document["pluginConfigs"] = plugin_configs
@@ -582,8 +598,9 @@ def setup(
     machine: Path,
     runner: Runner,
     overlay: str | None,
+    plugins: Sequence[str] = (),
 ) -> SetupReport:
-    """Configure this machine from `preset`.
+    """Configure this machine from `preset`, installing the `plugins` named and no other.
 
     **Everything structural is asked before the first write**, in `_before_the_first_write`:
     `--overlay` is parsed and probed, the preset is loaded and the places a write under `--home`
@@ -612,20 +629,17 @@ def setup(
 
     deny_rules = [r for r in data.get("deny", {}).get("global", []) if isinstance(r, str)]
     retired = [r for r in data.get("deny", {}).get("retired", []) if isinstance(r, str)]
-    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own
-    # new keys.** `personal` above is empty on every run after the first, so the mirror was
-    # write-once: an owner who edited a personal value in the machine file — the documented way,
-    # `README.md`'s own "Written by: you, or `stayfixed setup`" — kept the preset's in
-    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop
-    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code
-    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares
-    # them, so dropping it would leave the harness reading nothing. The cost of this direction
-    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
-    # overwritten by the machine file on the next `setup`, because one file has to win and the
-    # machine file is the one every stayfixed reader reads.
+    # **`pluginConfigs` is filled from the machine file where it holds no value, and never
+    # overwritten.** It is where Claude Code reads a plugin's `userConfig` answers, and where its
+    # plugin-config screen writes the ones a person gives, so a value already there is the
+    # user's. The cost is stated where a reader will meet it: a personal value changed in the
+    # machine file after the first run does not reach `pluginConfigs`; changing it there, or
+    # removing it so the next `setup` fills it again, does.
     deny_written = _write_user_settings(home, deny_rules, read_personal(machine), retired=retired)
 
-    installed, install_notes = _install_plugins(data, _agents(data), home=home, runner=runner)
+    installed, install_notes = _install_plugins(
+        data, _agents(data), tuple(dict.fromkeys(plugins)), home=home, runner=runner
+    )
     notes = list(install_notes)
 
     cli_on_path = shutil.which("stayfixed") is not None

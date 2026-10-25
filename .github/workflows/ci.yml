@@ -180,7 +180,8 @@ jobs:
         # `setup --overlay <path>` — the one entry for a first overlay — has to find its template
         # tree inside the package. Under a `HOME` of its own, so the machine file and the
         # settings it writes are the scratch's, and with the system's `PATH`, where `git` is and
-        # no harness CLI or `pre-commit` is, so its plugin installs and secret scan are notes.
+        # no harness CLI or `pre-commit` is, so its secret scan is a note; it names no plugin, so
+        # it installs none.
         run: |
           uv venv "$RUNNER_TEMP/wheel"
           uv pip install --python "$RUNNER_TEMP/wheel/bin/python" dist/*.whl

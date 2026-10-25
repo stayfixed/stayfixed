@@ -68,6 +68,7 @@ def _args(**over: object) -> argparse.Namespace:
         "home": "/nonexistent/stayfixed-test-guard/home",
         "machine": "/nonexistent/stayfixed-test-guard/config.toml",
         "overlay": None,
+        "plugin": None,
         "git_hooks": True,
         "approval_boundary": False,
         "uninstall": False,
@@ -79,8 +80,8 @@ def _args(**over: object) -> argparse.Namespace:
 
 @pytest.mark.parametrize(
     "over",
-    [{"preset": "recommended"}, {"overlay": "elsewhere"}],
-    ids=["preset", "overlay"],
+    [{"preset": "recommended"}, {"overlay": "elsewhere"}, {"plugin": ["superpowers"]}],
+    ids=["preset", "overlay", "plugin"],
 )
 def test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act(
     tmp_path: Path, over: dict[str, object]
@@ -89,7 +90,7 @@ def test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act(
     # `--overlay` was dropped and the hook installed, exit 0. Asked of a real repository, where an
     # install that is not refused succeeds. Mutations (`mutations/`'s "setup --git-hooks drops
     # --preset" -> the first case installs; "setup --git-hooks drops --overlay" -> the second
-    # does).
+    # does; "setup --git-hooks drops --plugin" -> the third does).
     root = _repo(tmp_path)
     with pytest.raises(Refusal) as refused:
         run_setup(_args(root=str(root), **over))

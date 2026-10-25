@@ -268,32 +268,74 @@ def test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_wor
     )
 
 
-def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
-    # The Runner seam again. Two things could be wrong here that only an argv assertion can see: the
-    # marketplace must be registered *before* anything is installed from it (a fresh machine cannot
-    # install a plugin from a marketplace it never added), and the install call itself must carry
-    # none of the unmeasured `--scope`/`-y` flags the first draft guessed.
+def test_setup_with_no_plugin_named_runs_no_plugin_command(tmp_path: Path) -> None:
+    # A third-party plugin runs in every session of its harness, hooks and all, so `setup`
+    # installs one only when a person names it: an unasked run registers no marketplace and
+    # installs nothing, on any harness, and has nothing to say about plugins.
     runner = Recorder()
-    setup(
+    report = setup(
         "recommended",
         home=tmp_path / "home",
         machine=tmp_path / "config.toml",
         runner=runner,
         overlay=None,
     )
+    assert [argv for argv in runner.calls if argv[1:2] == ["plugin"]] == [], runner.calls
+    assert report.plugins_installed == ()
+    assert not [note for note in report.notes if "plugin" in note or "marketplace" in note]
+
+
+def test_a_plugin_config_value_the_user_set_survives_setup(tmp_path: Path) -> None:
+    # `pluginConfigs` is where Claude Code keeps the answers a person gives in its plugin-config
+    # screen. `setup` used to write the machine file's personal values over it on every run, so
+    # an answer given there lasted until the next `setup`. A value already there is the user's.
+    # Mutation (oracle): `mutations/`'s "setup overwrites a plugin option the user set".
+    home = tmp_path / "home"
+    settings = home / USER_SETTINGS
+    settings.parent.mkdir(parents=True)
+    plugin = "stayfixed@stayfixed-marketplace"
+    settings.write_text(
+        json.dumps({"pluginConfigs": {plugin: {"options": {"preset": "mine"}}}}), encoding="utf-8"
+    )
+    for _ in range(2):
+        setup(
+            "recommended",
+            home=home,
+            machine=tmp_path / "config.toml",
+            runner=Recorder(),
+            overlay=None,
+        )
+    options = json.loads(settings.read_text(encoding="utf-8"))["pluginConfigs"][plugin]["options"]
+    assert options["preset"] == "mine"
+
+
+def test_every_plugin_install_is_one_recorded_argv(tmp_path: Path) -> None:
+    # The Runner seam again. Two things could be wrong here that only an argv assertion can see: the
+    # marketplace must be registered *before* anything is installed from it (a fresh machine cannot
+    # install a plugin from a marketplace it never added), and the install call itself must carry
+    # none of the unmeasured `--scope`/`-y` flags the first draft guessed.
+    runner = Recorder()
     preset = load_preset("recommended")
+    setup(
+        "recommended",
+        home=tmp_path / "home",
+        machine=tmp_path / "config.toml",
+        runner=runner,
+        overlay=None,
+        plugins=preset["plugins"]["recommended"],
+    )
     claude = preset["plugins"]["claude"]
     add = ["claude", "plugin", "marketplace", "add", claude["source"]]
     installs = [
         ["claude", "plugin", "install", f"{selector}@{claude['marketplace']}"]
-        for selector in preset["plugins"]["install"]
+        for selector in preset["plugins"]["recommended"]
     ]
     # **Order, not membership.** `… in runner.calls` is a set question, and the thing this test is
     # named for is a sequence: the reviewer swapped the two loops in `_install_plugins` so every
     # install ran before its marketplace was registered -- the exact defect the first draft shipped
     # -- and both assertions still passed, because both calls were still made. `mutations/`'s
     # "a plugin is installed before its marketplace is registered" carries the swap.
-    assert installs, "the preset installs nothing, so the ordering below measures nothing"
+    assert installs, "the preset recommends nothing, so the ordering below measures nothing"
     assert add in runner.calls
     for install in installs:
         assert install in runner.calls
@@ -318,7 +360,7 @@ def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
     # questions rather than one asked twice.
     preset = load_preset("recommended")
     claude = preset["plugins"]["claude"]
-    selector = preset["plugins"]["install"][0]
+    selector = preset["plugins"]["recommended"][0]
     full = f"{selector}@{claude['marketplace']}"
     runner = Recorder(
         answers={
@@ -331,12 +373,13 @@ def test_a_selector_the_marketplace_does_not_carry_is_a_note_naming_the_argv(
         machine=tmp_path / "config.toml",
         runner=runner,
         overlay=None,
+        plugins=preset["plugins"]["recommended"],
     )
     assert ["claude", "plugin", "marketplace", "add", claude["source"]] in runner.calls
     assert ["claude", "plugin", "install", full] in runner.calls
     assert selector not in report.plugins_installed
     # The other selector still installs: one failure is one note, never an abandoned run.
-    assert preset["plugins"]["install"][1] in report.plugins_installed
+    assert preset["plugins"]["recommended"][1] in report.plugins_installed
     assert any(f"claude plugin install {full}" in note for note in report.notes), report.notes
     assert any("no plugin named" in note for note in report.notes), report.notes
 
@@ -356,6 +399,7 @@ def test_what_a_plugin_command_prints_cannot_drive_a_terminal(tmp_path: Path, st
         machine=tmp_path / "config.toml",
         runner=runner,
         overlay=None,
+        plugins=["superpowers"],
     )
     said = " ".join(report.notes)
     assert "forged" in said
@@ -375,9 +419,10 @@ def test_codex_gets_a_note_naming_the_unverified_plugins_rather_than_silence(
         machine=tmp_path / "config.toml",
         runner=Recorder(),
         overlay=None,
+        plugins=preset["plugins"]["recommended"],
     )
     expected = (
-        f"codex: no verified marketplace for {', '.join(preset['plugins']['install'])}; "
+        f"codex: no verified marketplace for {', '.join(preset['plugins']['recommended'])}; "
         f"install manually if this harness supports it (see README)"
     )
     assert expected in report.notes
@@ -400,6 +445,7 @@ def test_a_harness_that_is_not_installed_is_a_note_not_a_failure(tmp_path: Path)
         machine=tmp_path / "config.toml",
         runner=runner,
         overlay=None,
+        plugins=["superpowers"],
     )
     assert any("claude" in note for note in report.notes)
     assert report.plugins_installed == ()
@@ -833,6 +879,7 @@ def test_the_same_fixture_without_the_typo_writes_both_files(tmp_path: Path) -> 
         machine=machine,
         runner=runner,
         overlay=str(existing),
+        plugins=["superpowers"],
     )
     assert _wrote_anything(home, machine) == [str(machine), str(home / USER_SETTINGS)]
     assert runner.calls != []
@@ -1372,41 +1419,6 @@ def test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it(
     asked = home / USER_SETTINGS if place in ("claude", "home") else looped
     assert f"{quoted(str(asked))} cannot be checked (" in said, said
     assert not machine.exists() and runner.calls == []
-
-
-def test_the_plugin_config_mirror_follows_the_machine_file(tmp_path: Path) -> None:
-    # The mirror was written from `_new_personal_values`, which is empty on every run after the
-    # first — so an owner who set `preset` in the machine file, the documented way (`README.md`:
-    # "Written by: you, or `stayfixed setup`"), kept the preset's in `~/.claude/settings.json` for
-    # ever, and Claude Code read that. The mirror is a projection of the machine file and is
-    # recomputed from it on every run. The direction is a decision, recorded in `setup.run`: a value
-    # set in Claude Code's own plugin-config UI loses to the machine file, because one file has to
-    # win and that one is the file every reader reads.
-    #
-    # Mutation (`mutations/`'s "setup mirrors only the values this run itself added"): the argument
-    # goes back to `personal` → the second run leaves the preset's in the settings file and this
-    # reddens.
-    home = tmp_path / "home"
-    machine = tmp_path / "config.toml"
-    for _ in range(1):
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=Recorder(),
-            overlay=None,
-        )
-    write_machine(machine, personal={"preset": "mine"}, overlay_root=None, machine={})
-    setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=Recorder(),
-        overlay=None,
-    )
-    settings = json.loads((home / USER_SETTINGS).read_text(encoding="utf-8"))
-    options = settings["pluginConfigs"]["stayfixed@stayfixed-marketplace"]["options"]
-    assert options["preset"] == "mine"
 
 
 def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
