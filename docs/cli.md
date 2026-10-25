@@ -1552,7 +1552,7 @@ the resolver's reason. Write a path that deliberately does not resolve in *itali
 
 ## `stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--attribution-check] [--commit-type TYPE …] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`
 
-Writes a repository's stayfixed footprint, once. It is the only command that creates the
+Writes a repository's stayfixed scaffold, once. It is the only command that creates the
 documents every other command reads, and the only one that writes `stayfixed.toml`.
 
 **`--yes` is required, and it means "take the defaults `stayfixed init --questions` shows".**
@@ -1630,7 +1630,7 @@ written. One the next command could not load fails (`1`) with the loader's own s
 nothing is written: no `[project] name`, a `state` outside `initialised`, `adopting` and
 `installed`, or an `enforced` list the loader holds against `state` and the gates.
 
-The paths it declares are where the footprint lands. A repository with no `stayfixed.toml` gets
+The paths it declares are where the scaffold lands. A repository with no `stayfixed.toml` gets
 one written from the detected values and your answers, headed by a comment naming the four
 keys that are stayfixed's to rewrite: `[stayfixed] version`, `state` and `enforced`, and
 `[ci] ref`. A file that cannot be read, is not UTF-8 text or is not valid TOML is a failure
@@ -1643,7 +1643,7 @@ those are commands the clone wrote, and the dry run you read before `--yes` says
 commands themselves never print.
 
 **Two passes, both planned before either is applied.** The three write-once files are one pass
-and the rest of the footprint is the other, because two artifacts cannot target one file in one
+and the rest of the scaffold is the other, because two artifacts cannot target one file in one
 pass and both the `AGENTS.md` skeleton and its `harness` region land on `AGENTS.md`. A refusal
 in either plan stops the run with nothing written and no manifest, and `--dry-run` is that same
 branch rather than a second code path — it reports both plans and writes nothing. On a
@@ -1657,20 +1657,20 @@ either way.
 | `config` | write-once | once | `stayfixed.toml` | the document this run rendered |
 | `agents-skeleton` | write-once | once | `[paths] agents_md` | a skeleton headed with the project's name, stating this project's own budgets |
 | `claude-md` | write-once | once | `CLAUDE.md` | a one-line pointer at `[paths] agents_md`, whatever that file is called |
-| `documentation-policy` | footprint | template | `<architecture>/documentation.md` | where each kind of fact belongs |
-| `adr-template` | footprint | template | `<adr>/0000-template.md` | the four-heading decision record |
-| `ledger-runbook` | footprint | template | `<runbooks>/bug-reports.md` | how to file, close and reference an entry |
-| `ledger-audits` | footprint | template | `<bugs>/audits/README.md` | what an audit record is |
-| `bug-index` | footprint | template | `[paths] bug_index` | the generated index, rendered empty |
-| `roadmap` | footprint | template | `[paths] roadmap` | `Now`, `Next`, and the trail block |
-| `roadmap-history` | footprint | template | `[paths] roadmap_history` | an empty history |
-| `trail` | footprint | template | `trail.toml` beside the roadmap | one theme, no declared states |
-| `specs-keep`, `plans-keep` | footprint | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
-| `gitignore` | footprint | managed region | `.gitignore` | `.stayfixed/local/` and `.stayfixed/assessment.json` |
-| `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's stayfixed uses |
-| `ci-workflow` | footprint | template | `.github/workflows/stayfixed.yml` | the pinned call to the reusable gate |
-| `profile-rules` | footprint | template | `<stayfixed>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[stayfixed] profile` set |
-| `claude-rules` | footprint | template | `.claude/rules/stayfixed-<profile>.md` | a `paths:`-scoped pointer at `profile-rules` for Claude Code; only when `[stayfixed] agents` lists `claude` |
+| `documentation-policy` | scaffold | template | `<architecture>/documentation.md` | where each kind of fact belongs |
+| `adr-template` | scaffold | template | `<adr>/0000-template.md` | the four-heading decision record |
+| `ledger-runbook` | scaffold | template | `<runbooks>/bug-reports.md` | how to file, close and reference an entry |
+| `ledger-audits` | scaffold | template | `<bugs>/audits/README.md` | what an audit record is |
+| `bug-index` | scaffold | template | `[paths] bug_index` | the generated index, rendered empty |
+| `roadmap` | scaffold | template | `[paths] roadmap` | `Now`, `Next`, and the trail block |
+| `roadmap-history` | scaffold | template | `[paths] roadmap_history` | an empty history |
+| `trail` | scaffold | template | `trail.toml` beside the roadmap | one theme, no declared states |
+| `specs-keep`, `plans-keep` | scaffold | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
+| `gitignore` | scaffold | managed region | `.gitignore` | `.stayfixed/local/` and `.stayfixed/assessment.json` |
+| `agents-md` | scaffold | managed region | `[paths] agents_md` | which paths this repository's stayfixed uses |
+| `ci-workflow` | scaffold | template | `.github/workflows/stayfixed.yml` | the pinned call to the reusable gate |
+| `profile-rules` | scaffold | template | `<stayfixed>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[stayfixed] profile` set |
+| `claude-rules` | scaffold | template | `.claude/rules/stayfixed-<profile>.md` | a `paths:`-scoped pointer at `profile-rules` for Claude Code; only when `[stayfixed] agents` lists `claude` |
 
 With a profile set, the `agents-md` region also names the profile's rules file and lists the
 lines under its *Before the first command* heading, so every harness that reads `AGENTS.md` has
@@ -1769,7 +1769,7 @@ existing file a `[paths]` value chose, which the refusal names; a `git` that can
 one inside a repository, because it timed out or is not installed, is a `note:` line and
 `unanswered` in `--json` instead (see `upgrade`'s boundary).
 
-`--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
+`--json` carries `dry_run`, `adopted`, `once` and `scaffold` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
 `{tag, sha}` or `null`), `asked`, `note`, `ref` — what `[ci] ref` says on disk after the run
 and so what the workflow pins, empty when no workflow was planned — `stamped`, whether this
@@ -1873,8 +1873,8 @@ Exits `0` with the questions printed; `2` on a refusal.
 
 ## `stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`
 
-Refreshes a repository's footprint after a stayfixed update, keeping every hand edit. It moves
-`[stayfixed] version` to the stayfixed running, re-plans every footprint artifact against
+Refreshes a repository's scaffold after a stayfixed update, keeping every hand edit. It moves
+`[stayfixed] version` to the stayfixed running, re-plans every scaffold artifact against
 `.stayfixed/manifest.json` by hash, and never re-plans the write-once files: `stayfixed.toml`,
 `CLAUDE.md` and the `AGENTS.md` skeleton are yours after `init`.
 
@@ -1911,7 +1911,7 @@ have edited the file, it is not, so `stayfixed.toml` stays yours.
 and the `uses:` line in `.github/workflows/stayfixed.yml` are one value. When no released commit
 of the stayfixed running is found — before its tag exists, or with the network unreachable — or
 when the workflow would not be rewritten to the new pin, neither key moves: a `note:` line says
-`[stayfixed] version` and `[ci] ref` were left as they are and why, and the rest of the footprint
+`[stayfixed] version` and `[ci] ref` were left as they are and why, and the rest of the scaffold
 is still refreshed. A workflow you edited by hand, or one stayfixed never wrote, is reported
 `skip_modified` and moves with them only under `--force` with the path the report prints for it.
 When the report refuses the workflow, or the `CI:` line says none was rendered (a `[ci]
@@ -2003,7 +2003,7 @@ file an artifact targets, `git check-ignore` for each existing file a write or r
 a place a `[paths]` value chose, and, under `[ci] mode = "reusable"`, the public repository's
 tags.
 
-**Writes** the footprint through the scaffold engine — every `create`, `update`, `region_update`,
+**Writes** the scaffold through the scaffold engine — every `create`, `update`, `region_update`,
 `remove` and `relocated` in the report, and each file `--force` takes — then
 `.stayfixed/manifest.json`, the committed record, written even when a write or removal fails
 part-way, and `.stayfixed/local/artifacts.json`, the record kept out of git, only when what it
@@ -2026,7 +2026,7 @@ and running the command again re-plans from there.
 
 `--json` carries `dry_run`, `moved` (each `{key, before, after}`; a `before` outside its grammar
 prints as `(not a version)` or `(not a commit)`), `held` (the note's sentence, or empty),
-`footprint` (the plan's rendered report), `writes`, `skipped`, `orphans` (a count), `pin`
+`scaffold` (the plan's rendered report), `writes`, `skipped`, `orphans` (a count), `pin`
 (`{tag, sha}` or `null`), `asked` and `unanswered` (the sentence of a `git check-ignore` that could
 not answer, or empty).
 
@@ -2051,7 +2051,7 @@ old place (`relocated and hand-edited`), which is yours to keep or delete by han
 are `upgrade`'s: a leading `./` is dropped, an absolute path or one with a `..` component is refused
 (`2`), and a forced path no planned action names is counted in a `note:` line and forces nothing.
 
-**Two passes, the footprint first.** The footprint pass removes files and takes the regions out;
+**Two passes, the scaffold first.** The scaffold pass removes files and takes the regions out;
 a region taken out of a file that keeps other text is reported as
 `remove  AGENTS.md  (retired; stayfixed's part only, the file stays)`, and a line without that
 tail means the file itself goes. Every command that prints a plan says it the same way.
@@ -2060,7 +2060,7 @@ after it, so the skeleton is judged once stayfixed's region has left `AGENTS.md`
 byte for byte what `init` wrote and goes. A dry run cannot take the region out first, so it
 judges the skeleton with the region still in it and calls it edited; a `note:` line says so.
 **Forcing `AGENTS.md` takes stayfixed's region out of it and never the skeleton**: a forced path
-the footprint pass targets never reaches the write-once pass, compared as the engine places each
+the scaffold pass targets never reaches the write-once pass, compared as the engine places each
 file, so what you wrote into the skeleton is judged on its own bytes.
 
 **The ignore block goes last, and only over an empty `.stayfixed/local/`.** The `.gitignore` region
@@ -2135,7 +2135,7 @@ under an ignored `build/`, say): creating it was allowed because nothing was the
 finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any
 other. Run it on a checkout you trust.
 
-**What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
+**What stays on the machine.** `uninstall` takes back one repository's scaffold, and what is the
 machine's stays: the deny rules `stayfixed setup` added to the user settings file, and every
 approval in `~/.config/stayfixed/trust.json`. `stayfixed trust revoke reviewed --subject KEY`, with a
 key `stayfixed trust list --json` prints, withdraws one.
@@ -2162,7 +2162,7 @@ section names each, and nothing was removed — or a `stayfixed.toml` that does 
 refusals above, before any write or part-way; a repository with no `.stayfixed/manifest.json` is
 one of them.
 
-`--json` carries `dry_run`, `footprint` and `once` (each the plan's rendered report), `left` (the
+`--json` carries `dry_run`, `scaffold` and `once` (each the plan's rendered report), `left` (the
 files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's
 order note, or the missing-configuration count, or empty) and `kept_locally` (how many files
 under `.stayfixed/local/` the run would leave, on a dry run and on a run whose plans refuse; `0` on
@@ -2572,7 +2572,7 @@ empty, and left standing otherwise. A link tree under `paths.memory` or a harnes
 `~/.claude/projects/` an earlier release made is not touched: remove those by hand.
 
 **`.gitignore` is never touched.** `attach` writes nothing there, so `detach` takes nothing out:
-a `stayfixed:ignore` region `stayfixed init` wrote is the footprint's, and one an earlier release's
+a `stayfixed:ignore` region `stayfixed init` wrote is the scaffold's, and one an earlier release's
 `attach` wrote stays until you remove it.
 
 **Directories come back too.** `attach` records which of `.stayfixed/local/`, `.stayfixed/`,

@@ -1,6 +1,6 @@
 ---
 name: uninstall
-description: Remove stayfixed's footprint from a repository, leaving hand-edited files in place and listed. Use when the user asks to uninstall or remove stayfixed from a project.
+description: Remove stayfixed's scaffold from a repository, leaving hand-edited files in place and listed. Use when the user asks to uninstall or remove stayfixed from a project.
 ---
 
 # Uninstalling

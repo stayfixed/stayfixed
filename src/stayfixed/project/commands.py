@@ -1,4 +1,4 @@
-"""The project area's commands: `init` writes a repository's stayfixed footprint once, `upgrade`
+"""The project area's commands: `init` writes a repository's stayfixed scaffold once, `upgrade`
 refreshes it, and `uninstall` takes it back.
 
 **The summary is both rendered reports, the way `overlay upgrade`'s is.** It was four lines of
@@ -6,7 +6,7 @@ counts, with every artifact's verb and the whole REFUSED section reachable only 
 — so the skill that tells a relayer to pass on "both reports" and "every refused line" was
 describing output the command did not print, and the exit-1 path is the one a person meets
 without a flag. `scaffold.render_report` is the renderer, and the same text goes into `--json`
-under `once` and `footprint`, so the two cannot disagree.
+under `once` and `scaffold`, so the two cannot disagree.
 
 That is safe on the repository-bytes rule because `render_report` bounds every target it
 prints: one outside `PATH_VALUE`, such as a target a committed manifest recorded, prints as its
@@ -74,7 +74,7 @@ UNKNOWN_HARNESSES = (
 )
 YES_HELP = (
     "take the defaults `init --questions` shows, with any answer flag below replacing one, and "
-    "write the footprint; without it nothing is written"
+    "write the scaffold; without it nothing is written"
 )
 # Fixed text: the verb is one of two this module chooses, and nothing the file says prints.
 STAMPED = (
@@ -200,7 +200,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "write-once:",
         once,
         "",
-        "footprint:",
+        "scaffold:",
         footprint,
         "",
         ci_line,
@@ -227,7 +227,7 @@ def run_init(args: argparse.Namespace) -> Result:
         "dry_run": report.dry_run,
         "adopted": report.adopted,
         "once": once,
-        "footprint": footprint,
+        "scaffold": footprint,
         "writes": [*report.once.writes, *report.footprint.writes],
         "skipped": dict(report.skipped),
         "pin": _pin(pin),
@@ -269,7 +269,7 @@ FORCE_UNMATCHED = (
 CI_PINNED = "CI: the workflow pins [ci] ref"
 CI_LEFT = (
     "CI: the workflow was left as it is, so what it pins is not this run's to say; the "
-    "footprint report names it and why"
+    "scaffold report names it and why"
 )
 # A count: the ids of records this build does not produce are repository-authored.
 ORPHANS = (
@@ -319,7 +319,7 @@ def run_upgrade(args: argparse.Namespace) -> Result:
     lines = [
         UPGRADE_HEADINGS[(refused, report.dry_run)],
         f"stayfixed.toml: {moved or 'nothing to move'}",
-        "footprint:",
+        "scaffold:",
         shown,
     ]
     skipped = report.skipped.get(CI_ARTIFACT)
@@ -341,7 +341,7 @@ def run_upgrade(args: argparse.Namespace) -> Result:
             {"key": ".".join(m.key), "before": m.before, "after": m.after} for m in report.moved
         ],
         "held": report.held,
-        "footprint": shown,
+        "scaffold": shown,
         "writes": report.footprint.writes,
         "skipped": dict(report.skipped),
         "orphans": report.orphans,
@@ -376,7 +376,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
     refused = report.refused
     # Through `printable`, the bound the reports use, so a forged target is `<id>` in both. A
     # file one pass left and a later action deletes is gone, not left: with stayfixed's region
-    # taken out of `AGENTS.md` by hand, the footprint pass skips the file and the write-once pass
+    # taken out of `AGENTS.md` by hand, the scaffold pass skips the file and the write-once pass
     # removes the untouched skeleton, and counting the skip told the person a deleted file was
     # theirs now.
     actions = (*report.footprint.actions, *report.once.actions)
@@ -387,7 +387,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
     footprint, once = render_report(report.footprint), render_report(report.once)
     lines = [
         UNINSTALL_HEADINGS[(refused, report.dry_run)],
-        "footprint:",
+        "scaffold:",
         footprint,
         "write-once:",
         once,
@@ -408,7 +408,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
-        "footprint": footprint,
+        "scaffold": footprint,
         "once": once,
         "left": left,
         "orphans": report.orphans,
@@ -421,7 +421,7 @@ def run_uninstall(args: argparse.Namespace) -> Result:
 
 
 def _judging(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """The two flags of a command that re-judges a footprint, `upgrade` and `uninstall`."""
+    """The two flags of a command that re-judges a scaffold, `upgrade` and `uninstall`."""
     parser.add_argument("--dry-run", action="store_true", help=DRY_RUN_HELP)
     parser.add_argument("--force", action="append", default=[], metavar="PATH", help=FORCE_HELP)
     return parser
@@ -496,7 +496,7 @@ def _answers(parser: argparse.ArgumentParser) -> None:
 def register(groups: SubParsers) -> None:
     # `parser` and not `init`: the name `init` in this module is the command, and the function
     # `run_init` imports from `stayfixed.project.init`.
-    parser = common_flags(groups.add_parser("init", help="write this repository's footprint"))
+    parser = common_flags(groups.add_parser("init", help="write this repository's scaffold"))
     asking = parser.add_mutually_exclusive_group()
     asking.add_argument("--yes", action="store_true", help=YES_HELP)
     asking.add_argument("--questions", action="store_true", help=QUESTIONS_HELP)
@@ -504,11 +504,11 @@ def register(groups: SubParsers) -> None:
     parser.add_argument("--no-ci", dest="ci", action="store_false", help=NO_CI_HELP)
     _answers(parser)
     parser.set_defaults(func=run_init, ci=True)
-    upgrade = common_flags(groups.add_parser("upgrade", help="refresh this repository's footprint"))
+    upgrade = common_flags(groups.add_parser("upgrade", help="refresh this repository's scaffold"))
     _judging(upgrade).set_defaults(func=run_upgrade)
     uninstall = common_flags(
         groups.add_parser(
-            "uninstall", help="remove this repository's footprint; leave what you edited"
+            "uninstall", help="remove this repository's scaffold; leave what you edited"
         )
     )
     _judging(uninstall).set_defaults(func=run_uninstall)

@@ -1,17 +1,17 @@
 ---
 name: upgrade
-description: Upgrade the stayfixed footprint in a repository after a plugin update, keeping every hand edit. Use when the user asks to upgrade, update or refresh stayfixed's files, or after the plugin version changed.
+description: Upgrade the stayfixed scaffold in a repository after a plugin update, keeping every hand edit. Use when the user asks to upgrade, update or refresh stayfixed's files, or after the plugin version changed.
 ---
 
-# Upgrading the footprint
+# Upgrading the scaffold
 
 `stayfixed upgrade` moves `[stayfixed] version` to the stayfixed running and refreshes every
-footprint file whose bytes are still the ones stayfixed wrote. When the workflow pins stayfixed by
+scaffold file whose bytes are still the ones stayfixed wrote. When the workflow pins stayfixed by
 commit, `[ci] ref` and the workflow's pin move with the version: all three, or none. A file the
 user edited is skipped and named, never overwritten.
 
 1. Run `stayfixed upgrade --dry-run` and relay what it prints: the opening line, the
-   `stayfixed.toml:` line with each key it would move, the `footprint:` report with each file's
+   `stayfixed.toml:` line with each key it would move, the `scaffold:` report with each file's
    verdict, the `CI:` line, and every `note:` line.
 2. For each file reported `skip_modified`, edited by the user or never written by stayfixed, ask
    whether the user wants it overwritten. Only on a yes for that file, add `--force <path>` for
@@ -35,7 +35,7 @@ user edited is skipped and named, never overwritten.
   says the project records a newer stayfixed than the one running, the plugin is what needs
   updating: relay that, and never edit `[stayfixed] version` to get past it.
 - **A `note:` saying `[stayfixed] version` and `[ci] ref` were left as they are is not a
-  failure.** The footprint was still refreshed, and the note says what would let the three move
+  failure.** The scaffold was still refreshed, and the note says what would let the three move
   together. Relay it as printed. When the workflow is reported `skip_modified`, forcing it is
   step 2's question like any other file's.
 - **A `[ci] ref` that is not a commit, such as `v1`, is the user's choice.** Only the version

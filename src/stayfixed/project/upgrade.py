@@ -1,4 +1,4 @@
-"""`stayfixed upgrade`: the footprint refreshed against the running stayfixed.
+"""`stayfixed upgrade`: the scaffold refreshed against the running stayfixed.
 
 Every refusal comes before every write.
 
@@ -66,8 +66,7 @@ from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, Verb, apply
 from stayfixed.semver import RELEASE, later
 
 NOT_INITIALISED = (
-    f"{MANIFEST_PATH} is not there, so there is no footprint to upgrade; "
-    "`stayfixed init` writes one"
+    f"{MANIFEST_PATH} is not there, so there is no scaffold to upgrade; `stayfixed init` writes one"
 )
 # Fixed text: the recorded string is repository-authored and is never quoted.
 UNREADABLE_VERSION = (
@@ -100,7 +99,7 @@ NO_RELEASE = _HELD + (
 # and a `--force` naming that path reaches each of those; or the plan refuses it, or the CI line
 # says none was rendered, and no flag changes either.
 WORKFLOW_HELD = _HELD + (
-    "the workflow would not be rewritten to the new pin. When the footprint report lists it "
+    "the workflow would not be rewritten to the new pin. When the scaffold report lists it "
     "skip_modified, --force with the path printed there moves all three; when the report "
     "refuses it or the CI line says none was rendered, put right what they name, then run "
     "`stayfixed upgrade` again"

@@ -309,7 +309,7 @@ def _counted(shown: list[str], more: int, separator: str) -> str:
     return separator.join(shown) + (f"{separator}and {more} more" if more > 0 else "")
 
 
-VERSION_BEHIND = "run `stayfixed upgrade`, which moves it and refreshes the footprint with it"
+VERSION_BEHIND = "run `stayfixed upgrade`, which moves it and refreshes the scaffold with it"
 VERSION_AHEAD = (
     "update the stayfixed plugin: this project records a newer stayfixed than the one running, "
     "and `stayfixed upgrade` never moves a project backward"

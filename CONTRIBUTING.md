@@ -176,7 +176,7 @@ rules and the test-run checks, `hooks` the dispatcher every hook event goes thro
 run of a test command and the verdict its runner's own report supports, and `setup` a
 machine's configuration, and `trust` every approval a person gave on the machine, in one record,
 with the `stayfixed trust` commands over it. `project` holds the shipped project templates and `init`, the command that
-writes a repository's footprint from them; `assess` runs the gates and the inventory over a
+writes a repository's scaffold from them; `assess` runs the gates and the inventory over a
 repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
 (`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
 (`stayfixed adopt promote`); and `doctor` reports on what every other area left behind and repairs

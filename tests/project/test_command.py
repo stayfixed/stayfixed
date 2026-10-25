@@ -50,7 +50,7 @@ JSON_KEYS = {
     "dry_run",
     "adopted",
     "once",
-    "footprint",
+    "scaffold",
     "writes",
     "skipped",
     "pin",
@@ -96,11 +96,13 @@ def test_a_dry_run_prints_both_reports_and_says_it_wrote_nothing(tmp_path: Path)
     assert code == 0, printed
     data = json.loads(printed)
     assert set(data) >= JSON_KEYS and data["dry_run"] is True
+    # Renamed with no alias: a script reading the old key finds nothing rather than a stale copy.
+    assert "footprint" not in data
     # Two reports, not one rendered twice: the write-once pass plans three files and the
     # footprint pass plans the rest, and a summary that showed one of them would hide
     # whichever half a refusal landed in.
-    assert "CLAUDE.md" in data["once"] and "CLAUDE.md" not in data["footprint"]
-    assert ".gitignore" in data["footprint"]
+    assert "CLAUDE.md" in data["once"] and "CLAUDE.md" not in data["scaffold"]
+    assert ".gitignore" in data["scaffold"]
     assert data["adopted"] is False and data["pin"] is None
     assert set(data["writes"]) >= {"CLAUDE.md", "stayfixed.toml", ".gitignore"}
     assert not (root / "CLAUDE.md").exists()
@@ -115,7 +117,7 @@ def test_a_real_run_prints_both_reports_in_full_and_the_ci_line(tmp_path: Path) 
     code, printed = _invoke(root, tmp_path, "--yes")
     assert code == 0, printed
     assert printed.startswith("initialised:")
-    assert "write-once:" in printed and "footprint:" in printed
+    assert "write-once:" in printed and "scaffold:" in printed
     # Per-artifact lines, from both passes, with their verbs — not just the counts.
     assert "create         CLAUDE.md  (new)" in printed
     assert "create         docs/adr/0000-template.md  (new)" in printed
@@ -132,7 +134,7 @@ def test_a_refused_footprint_exits_one_with_the_refused_section_in_that_report(
     code, printed = _invoke(root, tmp_path, "--yes", "--json")
     assert code == 1, printed
     data = json.loads(printed)
-    assert "REFUSED" in data["footprint"] and "REFUSED" not in data["once"]
+    assert "REFUSED" in data["scaffold"] and "REFUSED" not in data["once"]
     assert not (root / ".stayfixed").exists()
     # And in plain text, which is the output a person meets on this path: the REFUSED section
     # with the artifact and the engine's reason, and a heading that does not claim otherwise.
@@ -157,7 +159,7 @@ def test_a_refused_write_once_pass_exits_one_and_writes_nothing(tmp_path: Path) 
     code, printed = _invoke(root, tmp_path, "--yes", "--json")
     assert code == 1, printed
     data = json.loads(printed)
-    assert "REFUSED" in data["once"] and "REFUSED" not in data["footprint"]
+    assert "REFUSED" in data["once"] and "REFUSED" not in data["scaffold"]
     assert data["summary"].startswith("refused, and nothing was written:")
     assert_snapshot_unchanged(root, before)
 

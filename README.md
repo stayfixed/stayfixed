@@ -10,7 +10,7 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > without its private layer: the methodology's gates, the records they check, and a machine's setup.
 > It holds the bug ledger; the documentation and plan lints; the guards over a shell call, a commit
 > message and a test run; the scaffolding engine that writes files into a repository;
-> `stayfixed init`, which writes a repository's footprint from the shipped project templates,
+> `stayfixed init`, which writes a repository's scaffold from the shipped project templates,
 > `stayfixed upgrade`, which refreshes it, and `stayfixed uninstall`, which takes it back;
 > `stayfixed assess`, which inventories what stands between a repository and enforcement;
 > `stayfixed gate`, which judges a change against what its base branch enforces; `stayfixed adopt`,
@@ -216,7 +216,7 @@ stayfixed writes files. Being specific about which is the point of this section.
 | `docs/bugs/` and `docs/bug-reports.md` (configurable) | One file per bug, and the generated index over them | `stayfixed init` writes the empty index and `docs/bugs/audits/README.md`; `stayfixed bugs new`, `bugs index` and `bugs renumber` after |
 | `docs/roadmap.md` and `docs/roadmap-history.md` (configurable) | The forward track and the closed phases; in the roadmap, `docs trail` owns only the listing between its two markers | `stayfixed init` writes both files; `stayfixed docs trail` rewrites the listing |
 | `docs/trail.toml` (beside the roadmap) | Which theme each design or plan document belongs to, and which are not plainly delivered. Read by `docs trail`, never written by it | `stayfixed init`, once; you after |
-| `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/stayfixed.yml` | The project footprint: the documents every other command reads, plus the pinned CI caller. Written by `stayfixed init`, recorded in the manifest; `stayfixed upgrade` refreshes what you have not touched, and `stayfixed uninstall` takes it back | `stayfixed init` |
+| `AGENTS.md`, `CLAUDE.md`, `docs/architecture/`, `docs/adr/`, `docs/runbooks/`, `docs/specs/`, `docs/plans/`, `.github/workflows/stayfixed.yml` | The project scaffold: the documents every other command reads, plus the pinned CI caller. Written by `stayfixed init`, recorded in the manifest; `stayfixed upgrade` refreshes what you have not touched, and `stayfixed uninstall` takes it back | `stayfixed init` |
 | `docs/stayfixed/rules/<profile>.md` (configurable) and `.claude/rules/stayfixed-<profile>.md` | The stack profile's rules, the one copy a project edits, and a path-scoped pointer at it for Claude Code (only when `[stayfixed] agents` lists `claude`) | `stayfixed init`, when `[stayfixed] profile` is set |
 | `.stayfixed/assessment.json` | The inventory `stayfixed assess` last wrote, format 1 — git-ignored | `stayfixed assess`; `stayfixed uninstall` removes it |
 | the file `--summary FILE` names | The gate's summary, appended; in CI the platform's job summary | `stayfixed gate --summary FILE` |
@@ -379,7 +379,7 @@ parser, and every registered command has a line — a test holds both.
 stayfixed init --questions                             # each default, where it came from, the flag that changes it
 stayfixed init --yes --dry-run                         # both reports, nothing written
 stayfixed init --yes --dry-run --name widget           # the plan with one default replaced
-stayfixed init --yes                                   # write the footprint and record every file
+stayfixed init --yes                                   # write the scaffold and record every file
 stayfixed upgrade --dry-run                            # what a newer stayfixed would refresh
 stayfixed upgrade                                      # refresh untouched files; move version and pin
 stayfixed upgrade --force docs/roadmap.md              # overwrite one file you edited
