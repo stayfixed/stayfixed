@@ -187,7 +187,7 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/wheel/bin/python" dist/*.whl
           mkdir "$RUNNER_TEMP/home"
           HOME="$RUNNER_TEMP/home" PATH=/usr/bin:/bin "$RUNNER_TEMP/wheel/bin/stayfixed" setup \
-            --overlay "$RUNNER_TEMP/rendered" --root "$RUNNER_TEMP/home"
+            --overlay "$RUNNER_TEMP/rendered"
           uv run python scripts/check_artifacts.py rendered "$RUNNER_TEMP/rendered"
 
   # The mutation oracle, in a job of its own and on one configuration.

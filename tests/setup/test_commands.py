@@ -208,7 +208,7 @@ def test_an_overlay_record_past_the_parser_is_refused_as_unreadable_through_the_
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     machine = tmp_path / "config.toml"
     argv = ["setup", "--overlay", str(overlay), "--home", str(tmp_path / "home")]
-    code = invoke([*argv, "--machine", str(machine), "--root", str(tmp_path / "project")])
+    code = invoke([*argv, "--machine", str(machine)])
     err = capsys.readouterr().err
     assert "internal error" not in err
     refused = NOT_A_RECORD.format(root=quoted(str(overlay)))

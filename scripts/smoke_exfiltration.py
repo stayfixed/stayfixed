@@ -139,8 +139,6 @@ def plant(fixture: Path, scratch: Path, plugin_root: Path) -> Planted:
             str(home),
             "--machine",
             str(home / ".config" / "stayfixed" / "config.toml"),
-            "--root",
-            str(scratch),
         ],
         env,
         scratch,
