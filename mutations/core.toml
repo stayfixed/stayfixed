@@ -6290,28 +6290,47 @@ reddens = [
 [[mutation]]
 name = "setup takes a dangling link at a created overlay's destination for no destination"
 file = "src/stayfixed/fsops.py"
-before = "        return not exists(path) and not is_symlink(path)"
-after = "        return not exists(path)"
+before = "    if is_symlink(path):"
+after = "    if is_symlink(path) and is_dir(path):"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything",
+  "tests/test_fsops.py::test_vacant_is_nothing_there_or_an_empty_directory_that_is_no_link_whoever_may_write_it",
 ]
 
 [[mutation]]
 name = "setup takes a link to an empty directory at a created overlay's destination for no destination"
 file = "src/stayfixed/fsops.py"
-before = "    if is_symlink(path) or not is_dir(path):"
-after = "    if not is_dir(path):"
+before = "    if is_symlink(path):"
+after = "    if is_symlink(path) and not is_dir(path):"
 reddens = [
   "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[a-link-to-an-empty-directory]",
+  "tests/test_fsops.py::test_vacant_is_nothing_there_or_an_empty_directory_that_is_no_link_whoever_may_write_it",
 ]
 
-# An empty directory this user cannot write takes no clone: read as vacant, `create:` ran `gh repo
-# create`, whose clone failed on it, and left a repository on the owner's account nothing recorded.
+# A directory holding something is no place to clone or render into: read as vacant, `create:` ran
+# `gh repo create` over it and `--overlay <path>` rendered into what the owner kept there.
 [[mutation]]
-name = "an empty directory this user cannot write reads as vacant"
+name = "vacant takes a directory holding something for an empty one"
 file = "src/stayfixed/fsops.py"
-before = "            return next(entries, None) is None and os.access(path, os.R_OK | os.W_OK | os.X_OK)"
-after = "            return next(entries, None) is None and os.access(path, os.R_OK | os.X_OK)"
+before = "        return next(entries, None) is None"
+after = "        return True"
 reddens = [
-  "tests/setup/test_setup.py::test_an_empty_directory_this_user_cannot_list_and_write_is_refused_naming_that_before_github[create-cannot-be-written]",
+  "tests/test_fsops.py::test_vacant_is_nothing_there_or_an_empty_directory_that_is_no_link_whoever_may_write_it",
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[not-an-overlay]",
+]
+
+# A listing that fails leaves the question open, and every predicate here raises for that: read as
+# occupied, the caller refused the directory in words about what it holds, which nobody had read.
+[[mutation]]
+name = "vacant reads a directory it cannot list as occupied"
+file = "src/stayfixed/fsops.py"
+before = """    with os.scandir(path) as entries:
+        return next(entries, None) is None"""
+after = """    try:
+        with os.scandir(path) as entries:
+            return next(entries, None) is None
+    except OSError:
+        return False"""
+reddens = [
+  "tests/test_fsops.py::test_vacant_raises_for_a_directory_it_cannot_list",
 ]

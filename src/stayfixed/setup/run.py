@@ -54,11 +54,11 @@ plugin is actually installed under everywhere the preset's own `setup` runs.
 `_before_the_first_write` — above the machine file, the settings merge and the plugin installs,
 and for `create:` above `gh repo create` itself:
 
-* **a path holding something must be an overlay**, which is `overlay.api.require_overlay`: a tree
-  whose identity record names layout 1. A path holding nothing (`fsops.vacant`: not there, or an
-  empty directory this user can list and write) is rendered into, so a mistyped path is a new
-  overlay and not a refusal, and the run that records a root other than the one the machine file
-  held says so (`REPLACED_ROOT`).
+* **a path holding something must be an overlay**, a tree whose identity record names layout 1
+  (`overlay.api.overlay_fault`). A path holding nothing (`fsops.vacant`: not there, or an empty
+  directory that is no link) is rendered into, so a mistyped path is a new overlay and not a
+  refusal, and the run that records a root other than the one the machine file held says so
+  (`REPLACED_ROOT`).
 * **a `create:` destination must be one `gh` can clone into**: vacant, or the overlay an
   earlier run made. Its place is `home/<name>`, knowable from the arguments
   (`overlay.api.target_root`), so a file there, or a directory holding anything but an overlay, is
@@ -80,10 +80,10 @@ import datetime
 import os
 import shutil
 import stat
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
 from stayfixed.config.machine import in_owner_home
@@ -138,10 +138,11 @@ DESTINATION_NOT_AN_OVERLAY = (
     "repository over what is there, and nothing was created on GitHub; move it, or name another "
     "repository"
 )
-# What either form says of a directory there that is no overlay and that this user cannot both list
-# and write, so nothing can be rendered or cloned into it.
+# What either form says of a directory there that this user cannot search, so what it holds cannot
+# be told, or that is no overlay and that this user cannot both list and write: nothing can be
+# rendered or cloned into either. `{destination}` through `printed.quoted`.
 UNUSABLE_DIRECTORY = (
-    "{destination} is a directory this user cannot both list and write, so no overlay can be "
+    "{destination} is a directory this user cannot list, write and search, so no overlay can be "
     "rendered or cloned into it, and nothing was created on GitHub; give this user read, write "
     "and search on it, or name another place"
 )
@@ -410,21 +411,15 @@ def _check_home_usable(home: Path, *, created: Path | None = None) -> None:
 class _Overlay:
     """What `--overlay` asked for, once everything knowable before the first write is known.
 
-    `create` is `(owner, name)` when this run has to create the repository, and `None` when the
-    root already exists and is only being recorded, or is not there and is rendered (`render`).
-    `root` is where the overlay is or will be: for the create branch it is
-    `overlay.api.target_root`'s answer, computed from the arguments alone so the destination can be
-    refused before `gh repo create` runs.
+    `kind` is which of the three; `root` is where the overlay is or will be, resolved, and what is
+    recorded. A `create` alone names the `(owner, name)` GitHub generates, and `destination`,
+    `<home>/<name>` as `overlay.api.target_root` names it, which is judged and cloned into.
     """
 
+    kind: Literal["record", "render", "create"]
     root: Path
-    create: tuple[str, str] | None
-    # `--overlay <path>` naming nothing: the shipped template is rendered there.
-    render: bool = False
-    # For `create:`, the destination as `overlay.api.target_root` names it, `<home>/<name>`,
-    # which is where `generate` clones; `root` is that path resolved, which is what is judged and
-    # recorded, as `--overlay <path>` records its path resolved.
-    destination: Path | None = None
+    create: tuple[str, str] = ("", "")
+    destination: Path = Path()
 
 
 def _recordable(root: Path) -> None:
@@ -463,7 +458,7 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
         # overlay at all, and a default here would turn an omitted flag into a repository created
         # on somebody's account.
         return None
-    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root
+    from stayfixed.overlay.api import overlay_fault, target_root
 
     if overlay.startswith("create:"):
         spec = overlay[len("create:") :]
@@ -476,47 +471,54 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
         # Refuses a name that is not one path segment, and answers where the tree would land —
         # both without creating anything, which is the whole point of asking here.
         destination, account = target_root(home, owner, name)
-        # What is there already, decided before any `gh` call: nothing or an empty directory, which
-        # this run clones into; the overlay an earlier run made, which `generate` leaves alone; or
-        # anything else — a file, a link, a directory holding something that is not an overlay or
-        # one this user cannot both list and write — which the clone would meet only after `gh
-        # repo create` had made a repository nothing then records.
-        if not fsops.vacant(destination):
-            shown = quoted(str(destination))
-            if not fsops.is_dir(destination):
-                raise Refusal(DESTINATION_NOT_A_DIRECTORY.format(destination=shown))
-            if not os.access(destination, os.X_OK):
-                raise Refusal(f"--home {home} cannot be used: {destination} cannot be searched")
-            if overlay_fault(destination) is not None:
-                usable = os.access(destination, os.R_OK | os.W_OK)
-                said = DESTINATION_NOT_AN_OVERLAY if usable else UNUSABLE_DIRECTORY
-                raise Refusal(said.format(destination=shown))
+        # Judged before any `gh` call, which the clone would otherwise follow with a repository
+        # nothing records.
+        refused = (DESTINATION_NOT_A_DIRECTORY, DESTINATION_NOT_AN_OVERLAY)
+        _judged(destination, overlay_fault, refused)
         root = fsops.resolved(destination)
         _recordable(root)
-        return _Overlay(root=root, create=(account, name), destination=destination)
+        return _Overlay("create", root, (account, name), destination)
     # `~` as the machine file's `[overlay] root` reads it: never `/` or the working directory.
     named = in_owner_home(overlay)
     if named is None:
         raise Refusal(NO_HOME_FOR_OVERLAY.format(overlay=quoted(overlay)))
     candidate = fsops.resolved(named)
     _recordable(candidate)
-    # Through `fsops`, which raises for a path it cannot ask about (a directory above it nobody may
-    # search), so that is the floor's refusal and never read as "not there".
-    if fsops.vacant(candidate):
-        # Not there, or an empty directory: the shipped template is rendered into it, so the
-        # directory its files are made in has to be one this user can write, asked of a file in
-        # it here rather than met by the render after the machine file is written.
-        parent = candidate.parent
-        if not fsops.is_dir(parent) or not fsops.creatable(candidate / "file"):
-            raise Refusal(
-                NO_PLACE_TO_RENDER.format(path=quoted(str(candidate)), parent=quoted(str(parent)))
-            )
-        return _Overlay(root=candidate, create=None, render=True)
-    unusable = fsops.is_dir(candidate) and not os.access(candidate, os.R_OK | os.W_OK | os.X_OK)
-    if unusable and overlay_fault(candidate) is not None:
-        raise Refusal(UNUSABLE_DIRECTORY.format(destination=quoted(str(candidate))))
-    require_overlay(candidate, because=_RECORDING)
-    return _Overlay(root=candidate, create=None)
+    not_recorded = f"{{fault}}; {_RECORDING}"
+    if _judged(candidate, overlay_fault, (not_recorded, not_recorded)):
+        return _Overlay("record", candidate)
+    # Nothing there: the directory the template's files are made in has to be one this user can
+    # write, asked of a file in it here rather than met by the render after the first write.
+    parent = candidate.parent
+    if not fsops.is_dir(parent) or not fsops.creatable(candidate / "file"):
+        raise Refusal(
+            NO_PLACE_TO_RENDER.format(path=quoted(str(candidate)), parent=quoted(str(parent)))
+        )
+    return _Overlay("render", candidate)
+
+
+def _judged(place: Path, fault_of: Callable[[Path], str | None], refused: tuple[str, str]) -> bool:
+    """Whether `place` holds an overlay (`False`: nothing is there), refusing anything else: one
+    rule for both forms of `--overlay`. Nothing there, or an empty directory that is no link
+    (`fsops.vacant`), takes a render or a clone. A directory this user cannot search, or one holding
+    no overlay that it cannot both list and write, is `UNUSABLE_DIRECTORY`; the rest is refused in
+    the caller's words for what is not a directory and for a directory holding something else
+    (`refused`, given `{destination}` and `{fault}`). `os.access` says yes to root, so the render
+    and the clone keep refusals of their own. `fault_of` is `overlay.api.overlay_fault`, handed in
+    by the one function here that imports it."""
+    shown = quoted(str(place))
+    directory = fsops.is_dir(place)
+    if directory and not os.access(place, os.X_OK):
+        raise Refusal(UNUSABLE_DIRECTORY.format(destination=shown))
+    fault = fault_of(place)
+    if fault is None:
+        return True
+    if directory and not os.access(place, os.R_OK | os.W_OK):
+        raise Refusal(UNUSABLE_DIRECTORY.format(destination=shown))
+    if fsops.vacant(place):
+        return False
+    said = refused[1] if directory else refused[0]
+    raise Refusal(said.format(destination=shown, fault=fault))
 
 
 def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
@@ -536,43 +538,40 @@ def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
     """
     from stayfixed.overlay.api import finish, generate, render, require_overlay
 
-    if planned.render:
-        try:
-            rendered = render(planned.root, runner=runner)
-        except OSError as exc:
-            # The floor under `_requested_overlay`'s question: a directory that changed in
-            # between, or root, for whom `os.access` says yes whatever the mode.
-            raise Refusal(
-                f"{quoted(str(planned.root))} could not be rendered ({fsops.said(exc)}), and "
-                "nothing was recorded in the machine configuration"
-            ) from exc
-        root = fsops.resolved(rendered.root)
-        notes = (*rendered.notes, finish(root, runner=runner))
-        return root, f"rendered the overlay at {quoted(str(root))}: {'; '.join(notes)}"
-    if planned.create is None:
-        require_overlay(planned.root, because=_RECORDING)
-        # Armed here too: the hook lives in the clone's own `.git`, so an overlay a second machine
-        # records from a clone has no commit-time scan until something installs it.
-        recorded = f"recorded the existing overlay at {quoted(str(planned.root))}"
-        return planned.root, f"{recorded}; {finish(planned.root, runner=runner)}"
-    owner, name = planned.create
-    destination = planned.destination if planned.destination is not None else planned.root
-    created = generate(owner, name, root=destination.parent, runner=runner)
-    # The one value finished and recorded, as the phase planned it: what the clone's path
-    # resolves to now, so a link that arrived there since is followed and not recorded.
-    root = fsops.resolved(created.root)
-    finished = finish(root, runner=runner)
-    if created.template is None:
-        # `generate` found a populated destination and generated nothing (no `gh` call at all),
-        # which is what re-running `setup --overlay create:` does after the first run, so there is
-        # no template to name.
-        return root, (
-            f"found the overlay already at {quoted(str(root))}, so nothing was generated; "
-            f"{finished}"
-        )
-    return root, (
-        f"created the overlay at {quoted(str(root))}, generated from {created.template}; {finished}"
-    )
+    match planned.kind:
+        case "record":
+            require_overlay(planned.root, because=_RECORDING)
+            # Armed here too: the hook lives in the clone's own `.git`, so an overlay a second
+            # machine records from a clone has no commit-time scan until something installs it.
+            recorded = f"recorded the existing overlay at {quoted(str(planned.root))}"
+            return planned.root, f"{recorded}; {finish(planned.root, runner=runner)}"
+        case "render":
+            try:
+                rendered = render(planned.root, runner=runner)
+            except OSError as exc:
+                # The floor under `_requested_overlay`'s question: a directory that changed in
+                # between, or root, for whom `os.access` says yes whatever the mode.
+                raise Refusal(
+                    f"{quoted(str(planned.root))} could not be rendered ({fsops.said(exc)}), and "
+                    "nothing was recorded in the machine configuration"
+                ) from exc
+            root = fsops.resolved(rendered.root)
+            notes = (*rendered.notes, finish(root, runner=runner))
+            return root, f"rendered the overlay at {quoted(str(root))}: {'; '.join(notes)}"
+        case "create":
+            owner, name = planned.create
+            created = generate(owner, name, root=planned.destination.parent, runner=runner)
+            # The one value finished and recorded, as the phase planned it: what the clone's path
+            # resolves to now, so a link that arrived there since is followed and not recorded.
+            root = fsops.resolved(created.root)
+            shown = quoted(str(root))
+            # No template: `generate` found the overlay a first run made and asked `gh` nothing.
+            said = (
+                f"found the overlay already at {shown}, so nothing was generated"
+                if created.template is None
+                else f"created the overlay at {shown}, generated from {created.template}"
+            )
+            return root, f"{said}; {finish(root, runner=runner)}"
 
 
 def _before_the_first_write(
@@ -603,7 +602,7 @@ def _before_the_first_write(
     try:
         planned = _requested_overlay(overlay, home=home)
         # Where this run clones a `create:` overlay, or `None` when it creates none.
-        created = planned.root if planned is not None and planned.create is not None else None
+        created = planned.root if planned is not None and planned.kind == "create" else None
         data = load_preset(preset, key="--preset")
         _check_home_usable(home, created=created)
     except OSError as exc:

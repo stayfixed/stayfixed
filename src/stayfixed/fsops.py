@@ -258,17 +258,16 @@ def is_symlink(path: Path) -> bool:
 
 
 def vacant(path: Path) -> bool:
-    """Whether nothing is at `path`, or an empty directory that is no link and that this user can
-    list, search and write: what a clone or a render goes into. A link leads the clone wherever it
-    points, a directory that cannot be listed is not known to be empty, and one that cannot be
-    searched or written takes nothing in, so none is vacant (`os.access` answers root yes)."""
-    if is_symlink(path) or not is_dir(path):
-        return not exists(path) and not is_symlink(path)
-    try:
-        with os.scandir(path) as entries:
-            return next(entries, None) is None and os.access(path, os.R_OK | os.W_OK | os.X_OK)
-    except OSError:
+    """Whether nothing is at `path`, or an empty directory that is no link: what a clone or a
+    render may go into. A link, dangling or not, leads either wherever it points, so it is never
+    vacant. Whether this user may write there is the caller's to ask; a directory that cannot be
+    listed raises, as every predicate here does for a fault that leaves the question open."""
+    if is_symlink(path):
         return False
+    if not is_dir(path):
+        return not exists(path)
+    with os.scandir(path) as entries:
+        return next(entries, None) is None
 
 
 def linked_directory(path: Path) -> Path | None:

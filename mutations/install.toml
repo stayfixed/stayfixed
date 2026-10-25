@@ -80,8 +80,8 @@ reddens = [
 [[mutation]]
 name = "setup creates a new overlay under the caller's cwd instead of --home"
 file = "src/stayfixed/setup/run.py"
-before = "    created = generate(owner, name, root=destination.parent, runner=runner)"
-after = "    created = generate(owner, name, root=Path.cwd(), runner=runner)"
+before = "            created = generate(owner, name, root=planned.destination.parent, runner=runner)"
+after = "            created = generate(owner, name, root=Path.cwd(), runner=runner)"
 reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
 
 # A preset's own default must never win over a personal value already recorded — by an earlier
@@ -242,7 +242,7 @@ reddens = ["tests/setup/test_setup.py::test_every_plugin_install_is_one_recorded
 name = "setup asks whether --overlay is an overlay after it has already written"
 file = "src/stayfixed/setup/run.py"
 before = "        planned = _requested_overlay(overlay, home=home)"
-after = "        planned = None if overlay is None else _Overlay(Path(overlay).expanduser().resolve(), None)"
+after = "        planned = None if overlay is None else _Overlay(\"record\", Path(overlay).expanduser().resolve())"
 reddens = [
   "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
 ]
@@ -255,8 +255,8 @@ reddens = [
 [[mutation]]
 name = "setup asks about the create: destination after GitHub"
 file = "src/stayfixed/setup/run.py"
-before = "        if not fsops.vacant(destination):"
-after = "        if False:"
+before = "        _judged(destination, overlay_fault, refused)"
+after = "        pass"
 reddens = [
   "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[a-file]",
   "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[not-an-overlay]",
@@ -348,29 +348,64 @@ reddens = [
   "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything",
 ]
 
-# Over a `<home>/<name>` that is there, what is in it is asked before anything else, and a
-# destination nobody may search raised there: once as `internal error` after the machine file and
-# the plugin installs, and in the phase as the floor's words about a file in it rather than the
-# directory that cannot be searched.
+# What is in a directory nobody may search cannot be told, and for either form of `--overlay` it is
+# asked before anything else: a `create:` destination nobody may search raised there, once as
+# `internal error` after the machine file and the plugin installs, and in the phase as the floor's
+# words about a file in it rather than the directory that cannot be searched.
 [[mutation]]
-name = "setup stops asking whether a created overlay's destination can be searched"
+name = "setup stops asking whether the place --overlay names can be searched"
 file = "src/stayfixed/setup/run.py"
-before = "            if not os.access(destination, os.X_OK):"
-after = "            if False:"
+before = "    if directory and not os.access(place, os.X_OK):"
+after = "    if False:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[no-access]",
-  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[create-no-access]",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[path-no-access]",
 ]
 
-# Looking inside the destination for an overlay asks its search bit, not its read bit: a
-# destination that can be read and not searched raised there all the same.
+# Looking inside for an overlay asks the search bit, not the read bit: a directory that can be read
+# and not searched raised there all the same.
 [[mutation]]
-name = "setup asks whether a created overlay's destination can be read, not searched"
+name = "setup asks whether the place --overlay names can be read, not searched"
 file = "src/stayfixed/setup/run.py"
-before = "            if not os.access(destination, os.X_OK):"
-after = "            if not os.access(destination, os.R_OK):"
+before = "    if directory and not os.access(place, os.X_OK):"
+after = "    if directory and not os.access(place, os.R_OK):"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[create-readable-only]",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[path-readable-only]",
+]
+
+# An empty directory this user cannot write takes no clone: read as vacant, `create:` ran `gh repo
+# create`, whose clone failed on it, and left a repository on the owner's account nothing recorded.
+[[mutation]]
+name = "an empty directory this user cannot write reads as vacant"
+file = "src/stayfixed/setup/run.py"
+before = "    if directory and not os.access(place, os.R_OK | os.W_OK):"
+after = "    if directory and not os.access(place, os.R_OK):"
+reddens = [
+  "tests/setup/test_setup.py::test_an_empty_directory_this_user_cannot_list_and_write_is_refused_naming_that_before_github[create-cannot-be-written]",
+]
+
+# Only a tree whose identity record parses is an overlay: taken for one, a directory holding
+# something else at a `create:` destination was cloned over, after `gh repo create` had made a
+# repository nothing then records.
+[[mutation]]
+name = "setup takes whatever is at the place --overlay names for an overlay"
+file = "src/stayfixed/setup/run.py"
+before = "    if fault is None:\n        return True"
+after = "    if True:\n        return True"
+reddens = [
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[not-an-overlay]",
+]
+
+# A path naming nothing is rendered into, so the directory it is made in is asked about first: met by
+# the render, a missing or unwritable parent refused after the machine file and the settings merge.
+[[mutation]]
+name = "setup renders an overlay under a directory it cannot create it in"
+file = "src/stayfixed/setup/run.py"
+before = '    if not fsops.is_dir(parent) or not fsops.creatable(candidate / "file"):'
+after = "    if False:"
+reddens = [
+  "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
 ]
 
 # `overlay upgrade --root` defaults to `.` and was checked nowhere: in a directory that was not an
@@ -761,9 +796,9 @@ before = """    if overlay is None:
         # overlay at all, and a default here would turn an omitted flag into a repository created
         # on somebody's account.
         return None
-    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root
+    from stayfixed.overlay.api import overlay_fault, target_root
 """
-after = """    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root
+after = """    from stayfixed.overlay.api import overlay_fault, target_root
 
     if overlay is None:
         return None
@@ -777,8 +812,8 @@ reddens = [
 [[mutation]]
 name = "setup imports one more name from the overlay area in a statement of its own"
 file = "src/stayfixed/setup/run.py"
-before = "    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root\n"
-after = "    from stayfixed.overlay.api import overlay_fault, require_overlay, target_root\n    from stayfixed.overlay.api import finish\n"
+before = "    from stayfixed.overlay.api import overlay_fault, target_root\n"
+after = "    from stayfixed.overlay.api import overlay_fault, target_root\n    from stayfixed.overlay.api import finish\n"
 reddens = [
   "tests/boundaries/test_delivery.py::test_core_never_imports_delivery",
 ]

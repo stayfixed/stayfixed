@@ -1315,31 +1315,30 @@ def test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_namin
 
 @ROOT_SEARCHES_EVERYTHING
 @pytest.mark.parametrize("mode", [0o000, 0o600], ids=["no-access", "readable-only"])
-def test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything(
-    tmp_path: Path, mode: int
+@pytest.mark.parametrize("form", ["create", "path"])
+def test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything(
+    tmp_path: Path, mode: int, form: str
 ) -> None:
-    # Over a `<home>/<name>` that is there, `create:` clones nothing and the home takes no new
-    # directory, so nothing about `--home` refused it; `overlay.create` then looked inside it for
-    # an overlay, and a destination nobody may search raised `PermissionError` there, as
-    # `internal error`, after the machine file and both plugin installs. Looking inside asks the
-    # search bit alone, so a destination that can be read and not searched is refused too.
-    # Mutations (`mutations/`'s "setup stops asking whether a created overlay's destination can be
-    # searched" -> the machine file is written and `PermissionError` leaves `setup`; "setup asks
-    # whether a created overlay's destination can be read, not searched" -> `readable-only`).
+    # What is in a directory nobody may search cannot be told, and nothing can be rendered or
+    # cloned into it. `create:` once looked inside its `<home>/<name>` for an overlay and raised
+    # `PermissionError` as `internal error`, after the machine file and the plugin installs; it
+    # then refused in words blaming `--home` for a directory below it, printed raw, while
+    # `--overlay <path>` named a file inside the directory it could not check. One rule judges
+    # both now, in one sentence. Looking inside asks the search bit alone, so a directory that can
+    # be read and not searched is refused too. Mutations (`mutations/`'s "setup stops asking
+    # whether the place --overlay names can be searched" -> a file inside it cannot be checked;
+    # "setup asks whether the place --overlay names can be read, not searched" -> `readable-only`).
+    from stayfixed.setup.run import UNUSABLE_DIRECTORY
+
     home = tmp_path / "home"
     destination = home / "stayfixed-private"
     destination.mkdir(parents=True)
     machine = tmp_path / "config.toml"
+    overlay = "create:octo/stayfixed-private" if form == "create" else str(destination)
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     with at_mode(destination, mode, after=0o755), pytest.raises(Refusal) as refused:
-        setup(
-            "recommended",
-            home=home,
-            machine=machine,
-            runner=runner,
-            overlay="create:octo/stayfixed-private",
-        )
-    assert str(refused.value) == f"--home {home} cannot be used: {destination} cannot be searched"
+        setup("recommended", home=home, machine=machine, runner=runner, overlay=overlay)
+    assert str(refused.value) == UNUSABLE_DIRECTORY.format(destination=quoted(str(destination)))
     assert runner.calls == []
     assert not machine.exists()
 

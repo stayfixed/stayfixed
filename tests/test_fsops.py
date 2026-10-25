@@ -7,6 +7,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -678,6 +679,55 @@ def test_the_path_predicates_answer_each_fault_alike_on_every_interpreter(
             assert tuple(ask(path) for ask in asks) == expected
     finally:
         unlock(tmp_path)
+
+
+def test_vacant_is_nothing_there_or_an_empty_directory_that_is_no_link_whoever_may_write_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # What a clone or a render may go into, and nothing more: a link leads either wherever it
+    # points, so none is vacant, and a directory holding anything is not. Whether this user may
+    # write there is the caller's question, asked with its own words: answered here, as it was, an
+    # empty directory nobody could write read as occupied, and the caller then called it "a
+    # directory that is not an overlay". `os.access` answers no to everything below, and the
+    # answers stand. Mutations: `mutations/`'s "vacant takes a directory holding something for an
+    # empty one", "setup takes a dangling link at a created overlay's destination for no
+    # destination" and "setup takes a link to an empty directory at a created overlay's destination
+    # for no destination".
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "holding").mkdir()
+    (tmp_path / "holding" / "a-note.md").write_text("mine\n", encoding="utf-8")
+    (tmp_path / "a-file").write_text("mine\n", encoding="utf-8")
+    (tmp_path / "a-link-to-the-empty-one").symlink_to(tmp_path / "empty")
+    (tmp_path / "a-dangling-link").symlink_to(tmp_path / "later")
+    monkeypatch.setattr(os, "access", lambda *_args, **_kwargs: False)
+    names = ["absent", "empty", "holding", "a-file", "a-link-to-the-empty-one", "a-dangling-link"]
+    answers = {name: fsops.vacant(tmp_path / name) for name in names}
+    assert answers == {
+        "absent": True,
+        "empty": True,
+        "holding": False,
+        "a-file": False,
+        "a-link-to-the-empty-one": False,
+        "a-dangling-link": False,
+    }
+
+
+def test_vacant_raises_for_a_directory_it_cannot_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The module's rule for every predicate: a fault that leaves the question open raises. A
+    # listing that failed answered "not vacant", the one `fsops` predicate that guessed, so the
+    # caller refused the directory in words about what it holds, which nobody had read. Mutation:
+    # `mutations/`'s "vacant reads a directory it cannot list as occupied".
+    (tmp_path / "empty").mkdir()
+
+    def failing(_path: object) -> NoReturn:
+        raise OSError(errno.EIO, os.strerror(errno.EIO), str(tmp_path / "empty"))
+
+    monkeypatch.setattr(os, "scandir", failing)
+    with pytest.raises(OSError) as raised:
+        fsops.vacant(tmp_path / "empty")
+    assert raised.value.errno == errno.EIO
 
 
 # The calls of `is_file`, `is_dir`, `exists` and `is_symlink` under `src/` that are not `fsops`'

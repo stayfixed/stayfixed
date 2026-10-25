@@ -2791,14 +2791,14 @@ at `<home>/<name>` — or, when that clone leaves nothing there, a clone from th
 - `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
 - a refused `--overlay`: a path that names nothing under a directory that is missing or that you
   cannot create it in, a path holding something that is not an overlay, a `create:` destination
-  that holds something and is not the overlay an earlier run made, a path beginning with `~` while
-  `HOME` names no home, or a path that is not UTF-8 text and so cannot be recorded in the machine
-  file;
+  that holds something and is not the overlay an earlier run made, a directory at either that you
+  cannot search, or that holds no overlay and that you cannot both list and write, a path beginning
+  with `~` while `HOME` names no home, or a path that is not UTF-8 text and so cannot be recorded in
+  the machine file;
 - a `--home` that cannot take what this run writes under it, naming the directory you cannot write
   into, asked only where a write lands: the one the settings file is made in (its directory when
   it is there, the nearest directory above it while it is not); and for `create:`, the one the
-  clone is made in while it is not there yet, or, while it is there, whether it can be searched,
-  since `create:` looks inside it first. A `<home>`
+  clone is made in while it is not there yet. A `<home>`
   you cannot write into is not refused for that alone: with a writable `.claude` already in it, and
   no overlay to create, nothing this check asks about is made in it;
 - a settings file's directory that cannot be read, which the settings write opens;
