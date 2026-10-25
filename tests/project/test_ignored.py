@@ -13,7 +13,7 @@ from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import git_run
 from stayfixed.project import ignored as module
-from stayfixed.project.ignored import IGNORED, IGNORED_REMOVING, UNANSWERED
+from stayfixed.project.ignored import DECLINED, IGNORED, IGNORED_REMOVING
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
 from stayfixed.project.upgrade import upgrade
@@ -27,7 +27,7 @@ from tests.project.repos import (
     repository,
     tree,
 )
-from tests.runners import LsRemote
+from tests.runners import LsRemote, Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 ENV_TEXT = "SECRET=1\n"
@@ -50,7 +50,7 @@ def _upgrade(root: Path, tmp_path: Path, *, dry_run: bool = False) -> None:
 
 
 def _uninstall(root: Path, tmp_path: Path, *, dry_run: bool = False) -> None:
-    uninstall(root, machine=tmp_path / "absent.toml", dry_run=dry_run, force=())
+    uninstall(root, machine=tmp_path / "absent.toml", dry_run=dry_run, force=(), runner=Recorder())
 
 
 def _append(path: Path, text: str) -> None:
@@ -155,7 +155,7 @@ def test_uninstall_s_remedy_for_an_ignored_file_works(tmp_path: Path) -> None:
         config.read_text(encoding="utf-8").replace('\n[paths]\nroadmap = "build/marker.txt"\n', ""),
         encoding="utf-8",
     )
-    uninstall(root, machine=tmp_path / "absent.toml", dry_run=False, force=())
+    uninstall(root, machine=tmp_path / "absent.toml", dry_run=False, force=(), runner=Recorder())
     assert marker.read_text(encoding="utf-8") == MARKER
     assert not (root / ".stayfixed").exists()
 
@@ -284,15 +284,23 @@ def test_outside_a_repository_there_is_no_diff_to_hide_from(tmp_path: Path) -> N
 
 
 @needs_git
-@pytest.mark.parametrize("timed_out", [False, True], ids=["refused", "timed-out"])
-def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool
+@pytest.mark.parametrize("command", ["upgrade", "uninstall"])
+@pytest.mark.parametrize("timed_out", [False, True], ids=["declined", "timed-out"])
+def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool, command: str
 ) -> None:
-    # A guard that cannot answer must not read as a pass. `timed-out` is every `git` call ending
-    # the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this is a repository was
-    # asked of `rev-parse`, which timed out too, so the guard passed. Mutation (oracle):
-    # `mutations/`'s "a guard whose git timed out reads as no repository" (ask `rev-parse` again) ->
-    # the `timed-out` case upgrades and this reddens; returning instead of refusing reddens both.
+    # A guard that cannot answer must not read as a pass, nor as a warning the run writes past:
+    # a repository can choose either way of not answering. git reads every `.gitignore` along each
+    # path it is asked about, so a commit holding a deep decoy path under large `.gitignore` files
+    # runs `check-ignore` past `git_run`'s 5 s bound, `(-1, "")`, and a run that only noted that
+    # appended to, or deleted, a git-ignored `.env` beside it. git answers a batch holding a path
+    # inside a submodule with exit 128, the other way. `timed-out` is every `git` call here ending
+    # the way `git_run` reports its timeout: whether this is a repository was once asked of
+    # `rev-parse`, which timed out too, and the guard passed silently. Both refuse with nothing
+    # written. Mutations (oracle): `mutations/`'s "a guard whose git timed out reads as no
+    # repository" -> `timed-out`, asking `rev-parse` again; "a check-ignore that gives no answer
+    # lets the run write" -> `timed-out`; "a check-ignore that declines lets the run write" ->
+    # `declined`.
     root = initialised(tmp_path)
 
     def failing(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
@@ -303,13 +311,17 @@ def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses(
         return git_run(where, *args)
 
     monkeypatch.setattr(module, "git_run", failing)
-    # An existing file at a place a `[paths]` value chose, so there is something to ask about.
-    (root / "notes.md").write_text("ours\n", encoding="utf-8")
-    _append(root / CONFIG_FILE, '\n[paths]\nagents_md = "notes.md"\n')
+    # An existing file at a place a `[paths]` value chose, with a record stating its bytes, so
+    # `upgrade` would overwrite it and `uninstall` remove it.
+    (root / "notes.md").write_text(MARKER, encoding="utf-8")
+    _forge_roadmap(root, "notes.md", MARKER)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
-        _upgrade(root, tmp_path)
-    assert str(refused.value) == UNANSWERED
+        if command == "upgrade":
+            _upgrade(root, tmp_path)
+        else:
+            _uninstall(root, tmp_path)
+    assert str(refused.value) == DECLINED
     assert_snapshot_unchanged(root, before)
 
 

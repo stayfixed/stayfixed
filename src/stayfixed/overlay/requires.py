@@ -12,8 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from stayfixed.overlay.layout import PLUGIN_MANIFEST
-from stayfixed.overlay.naming import manifest
+from stayfixed.overlay.identity import identity_record
 from stayfixed.semver import COMPONENT, VERSION, pre_release
 
 # A floor is built from `semver`'s component, so a declared floor and a running version bound each
@@ -22,20 +21,15 @@ _FLOOR = re.compile(rf"^>={COMPONENT}\.{COMPONENT}\.{COMPONENT}$")
 
 
 def requires_of(root: Path) -> str | None:
-    """The `stayfixed.requires` string an overlay's manifest declares, stripped.
+    """The `requires` string an overlay's identity record declares, stripped.
 
-    `None` when the manifest is absent, unreadable, or does not carry a non-empty string —
+    `None` when the record is absent, unreadable, or does not carry a non-empty string —
     every one of those is "nothing declared", and none of them is this reader's business to
-    tell apart.
+    tell apart. Read through `identity.identity_record`, a regular file only, so a FIFO there
+    cannot block the SessionStart hook this is asked on.
     """
-    try:
-        # `naming.manifest`, the one reader of an overlay's manifests: a regular file only, so a
-        # FIFO there cannot block the SessionStart hook this is asked on.
-        raw = manifest(root, PLUGIN_MANIFEST)
-    except (OSError, ValueError):  # bytes that are not UTF-8 are a `ValueError` too
-        return None
-    head = raw.get("stayfixed")
-    value = head.get("requires") if isinstance(head, dict) else None
+    record = identity_record(root)
+    value = None if record is None else record.get("requires")
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 

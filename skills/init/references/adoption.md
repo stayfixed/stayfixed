@@ -1,6 +1,6 @@
 # Starting the adoption
 
-After the footprint is written:
+After the scaffold is written:
 
 1. Assess the repository. Pick the command first:
    - If `init` printed a `note: stayfixed.toml configures … custom gate(s)` line, the file the
@@ -39,7 +39,7 @@ After the footprint is written:
 5. End with one message saying:
    - what was written, and what was skipped and why;
    - how many findings the plan covers;
-   - to commit `stayfixed.toml`, `.stayfixed/manifest.json`, the footprint, the design, the plan,
+   - to commit `stayfixed.toml`, `.stayfixed/manifest.json`, the scaffold, the design, the plan,
      `trail.toml` and the roadmap together, first: CI checks out only what git tracks, so the
      `docs` and `trail` gates are not enforced while a file they read is outside git;
    - the next command, once that commit is made, `stayfixed adopt promote`, which enforces every

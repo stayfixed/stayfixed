@@ -53,6 +53,7 @@ from stayfixed.config.owned import rewrite
 from stayfixed.config.owner import Owner
 from stayfixed.config.paths import contained
 from stayfixed.config.reading import UNPARSEABLE, toml_position
+from stayfixed.config.schema import Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.project.detect import CURRENT_BRANCH, DEFAULT_BRANCH, Detected, detect
 from stayfixed.project.footprint import prepare
@@ -153,6 +154,8 @@ class Given:
     profile: str | None = None  # "" is an answer: no profile
     memory_mode: str | None = None
     local: tuple[str, ...] | None = None
+    attribution_check: bool | None = None
+    types: tuple[str, ...] | None = None
 
 
 NO_ANSWERS = Given()
@@ -183,6 +186,8 @@ class InitReport:
     # The custom gates the adopted `stayfixed.toml` configures, by name: `assess`, `gate` and
     # `adopt promote` run their commands. Names only, each held to the loader's grammar.
     custom_gates: tuple[str, ...] = ()
+    # The configuration the run wrote or adopted, from which the command says what it picked.
+    config: Config | None = None
 
     @property
     def refused(self) -> bool:
@@ -266,6 +271,13 @@ def _tables(
         tables["memory"] = {"mode": given.memory_mode}
     if given.local:
         tables["artifacts"] = {"local": list(given.local)}
+    commit_messages: dict[str, object] = {}
+    if given.attribution_check is not None:
+        commit_messages["attribution_check"] = given.attribution_check
+    if given.types is not None:
+        commit_messages["types"] = list(given.types)
+    if commit_messages:
+        tables["commit_messages"] = commit_messages
     if not ci:
         tables.setdefault("ci", {})["mode"] = "none"
     return tables, head_note
@@ -423,6 +435,7 @@ def init(
         head_note,
         stamped,
         tuple(sorted(config.gates.custom)) if existing is not None else (),
+        config,
     )
     if dry_run or report.refused:
         return report

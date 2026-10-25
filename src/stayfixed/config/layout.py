@@ -16,8 +16,8 @@ from stayfixed.config.schema import Config
 
 # Where `attach` records what it added to a project, among the local state the ignore block keeps
 # out of git; `attach` itself hides it through the repository's `info/exclude`. The core names
-# the path and never reads the ledger: `uninstall` refuses an attached repository by the file's
-# presence, and `doctor` reports on it.
+# the path and never reads the ledger: `uninstall` tells an attached repository by the file's
+# presence and detaches it first, and `doctor` reports on it.
 ATTACH_LEDGER = ".stayfixed/local/attach.json"
 # The `.gitignore` block `init` writes as a scaffold artifact, spelled once. Its region name, the
 # paths it keeps out of git — the local state, and the inventory `stayfixed assess` writes — and

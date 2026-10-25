@@ -13,9 +13,12 @@ from pathlib import Path
 import pytest
 
 import stayfixed
+from stayfixed.attach.api import detach
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Refusal
+from stayfixed.project.commands import DETACHED, DETACHED_DRY
 from stayfixed.project.footprint import LOCAL_ROOT_ONLY, ROOT_ONLY
+from stayfixed.project.init import init
 from stayfixed.project.templates import (
     CONFIG_ARTIFACT,
     IGNORE_ARTIFACT,
@@ -23,7 +26,6 @@ from stayfixed.project.templates import (
     OWN_NAME,
 )
 from stayfixed.project.uninstall import (
-    ATTACHED,
     DELETED_CONFIG,
     KEPT_AFTER,
     KEPT_LOCALLY,
@@ -45,10 +47,11 @@ from stayfixed.scaffold import (
     Verb,
     digest,
 )
+from tests.attach.test_detach import RULE, _attach, _bound, _grant, _render_of
 from tests.cli import cli
 from tests.gitfixture import needs_git, run_git
 from tests.project.repos import BEFORE, DOCUMENT, initialised, repository, tree
-from tests.runners import LsRemote
+from tests.runners import LsRemote, Recorder
 from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 LOCAL_ROADMAP = f'''[stayfixed]
@@ -68,7 +71,9 @@ mode = "none"
 def _uninstall(
     root: Path, tmp_path: Path, *, dry_run: bool = False, force: tuple[str, ...] = ()
 ) -> UninstallReport:
-    return uninstall(root, machine=tmp_path / "absent.toml", dry_run=dry_run, force=force)
+    return uninstall(
+        root, machine=tmp_path / "absent.toml", dry_run=dry_run, force=force, runner=Recorder()
+    )
 
 
 @needs_git
@@ -175,45 +180,233 @@ def test_a_dry_run_writes_nothing_and_says_the_skeleton_is_judged_after_its_regi
 
 
 @needs_git
-def test_an_attached_repository_is_refused_and_told_to_detach(tmp_path: Path) -> None:
-    root = initialised(tmp_path)
-    # The ledger's path spelled out rather than read from the constant the refusal reads, so a
-    # change to where `attach` keeps its ledger is a change this test sees.
-    ledger = root / ".stayfixed" / "local" / "attach.json"
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    ledger.write_text("{}", encoding="utf-8")
-    # The ledger lives under `.stayfixed/local/`, so without this refusal the count of files kept
-    # out of git would still stop the real run, with a remedy that is not the one. The dry run
-    # tells them apart: it reports that count, and it refuses an attached repository. Exactly
-    # this sentence, and nothing written, for both. Mutation (oracle): `mutations/`'s "an attached
-    # repository is counted as files kept out of git instead of being told to detach" -> the dry run
-    # returns a report, and the real run refuses with `KEPT_LOCALLY` instead.
+def test_an_attached_repository_is_detached_and_then_uninstalled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `uninstall` used to refuse an attached repository and send the person to `detach` first;
+    # the one remedy it named is now a step it takes. A real `init` scaffold and a real attach
+    # that merged a rule and a hook entry: the dry run says it would detach first and writes
+    # nothing, and the real run withdraws what attach placed, its ledger included, and then takes
+    # the scaffold back. The plugin commands go to a recorder, never to a real `claude`.
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "scaffold")
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    _attach(root, store, machine)
     before = snapshot(root)
-    for dry_run in (True, False):
-        with pytest.raises(Refusal) as refused:
-            _uninstall(root, tmp_path, dry_run=dry_run)
-        assert str(refused.value) == ATTACHED
-        assert_snapshot_unchanged(root, before)
+    code, printed, _ = cli(root, tmp_path, "uninstall", "--dry-run", machine=machine)
+    assert code == 0, printed
+    assert f"note: {DETACHED_DRY}\n" in printed
+    assert_snapshot_unchanged(root, before)
+    code, printed, _ = cli(root, tmp_path, "uninstall", machine=machine)
+    assert code == 0, printed
+    assert f"note: {DETACHED}\n" in printed
+    assert not (root / MANIFEST_PATH).exists()
+    assert not (root / ".stayfixed" / "local" / "attach.json").exists()
+    # The `stayfixed.toml` the repository had before `init` is its own, and is kept.
+    assert tree(root) == {"stayfixed.toml"}
 
 
 @needs_git
-def test_a_linked_worktree_of_an_attached_repository_is_refused_too(tmp_path: Path) -> None:
-    # `attach` keeps its ledger in the main checkout whichever worktree it ran from, so a worktree
-    # holds none, and `uninstall` there committed away the `stayfixed.toml` the main checkout's
-    # delivery is explained by. It reads the main checkout's ledger.
-    root = initialised(tmp_path)
+@pytest.mark.parametrize("dry_run", [False, True], ids=["real", "dry-run"])
+def test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dry_run: bool
+) -> None:
+    # A plan that refuses returns the report before `detach` runs, and the report still said the
+    # repository was detached, so the person read "uninstall ran `stayfixed detach` first" above a
+    # REFUSED section while the overlay's plugin and rules were all still in place; a dry run
+    # that refuses said it would detach, which the real run would not either. The footprint pass
+    # refuses a region whose begin marker is gone. Mutation (oracle): `mutations/`'s "a refused
+    # uninstall reports the repository detached" -> the DETACHED line prints and this reddens.
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
     run_git(root, "add", "-A")
-    run_git(root, "commit", "-qm", "installed")
+    run_git(root, "commit", "-qm", "scaffold")
+    _attach(root, store, machine)
+    agents = root / "AGENTS.md"
+    agents.write_text(
+        agents.read_text(encoding="utf-8").replace("<!-- stayfixed:harness:begin -->\n", ""),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    flags = ("--dry-run",) if dry_run else ()
+    code, printed, _ = cli(root, tmp_path, "uninstall", *flags, machine=machine)
+    assert code == 1, printed
+    verb = "would be" if dry_run else "was"
+    assert printed.startswith(f"refused, and nothing {verb} removed:"), printed
+    assert DETACHED not in printed and DETACHED_DRY not in printed, printed
+    assert_snapshot_unchanged(root, before)
+    assert (root / ".stayfixed" / "local" / "attach.json").is_file()
+    assert _render_of(root)[1].exists()
+
+
+@needs_git
+def test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `attach` keeps its ledger in the main checkout whichever worktree it ran from, so a worktree
+    # holds none, and `uninstall` there used to take the worktree's scaffold and leave the main
+    # checkout's delivery recorded by nothing the next commit would explain. It reads the main
+    # checkout's ledger and detaches that.
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "scaffold")
     side = tmp_path / "side"
     run_git(root, "worktree", "add", "-q", str(side))
+    _attach(root, store, machine)
     ledger = root / ".stayfixed" / "local" / "attach.json"
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    ledger.write_text("{}", encoding="utf-8")
-    before = snapshot(side)
+    assert ledger.is_file()
+    code, printed, _ = cli(side, tmp_path, "uninstall", machine=machine)
+    assert code == 0, printed
+    assert f"note: {DETACHED}\n" in printed
+    assert not ledger.exists() and not (side / MANIFEST_PATH).exists()
+
+
+@needs_git
+@pytest.mark.parametrize("dry_run", [False, True], ids=["real", "dry-run"])
+def test_an_attached_repository_without_its_stayfixed_toml_is_detached_before_its_ledger_goes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dry_run: bool
+) -> None:
+    # A `stayfixed.toml` the project wrote before `init` is recorded nowhere, so once it is gone
+    # only the scaffold's ledger goes. On an attached repository `attach`'s ledger, the one record
+    # of what it placed, is under `.stayfixed/local/` too, and the `.stayfixed/` the ledger's
+    # removal prunes would take the attachment's record while its plugin and rules stayed. The
+    # real run detaches first; the dry run writes nothing, the attachment included, and says it
+    # would detach. Mutations (oracle): `mutations/`'s "uninstall without stayfixed.toml leaves the
+    # repository attached" -> `real`; "an uninstall dry run without stayfixed.toml detaches" ->
+    # `dry-run`.
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    assert CONFIG_ARTIFACT not in Manifest.read(root).records
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+    _attach(root, store, machine)
+    (root / CONFIG_FILE).unlink()
+    ledger = root / ".stayfixed" / "local" / "attach.json"
+    render = _render_of(root)[1]
+    before = snapshot(root)
+    flags = ("--dry-run",) if dry_run else ()
+    code, printed, _ = cli(root, tmp_path, "uninstall", *flags, machine=machine)
+    assert code == 0, printed
+    if dry_run:
+        assert f"note: {DETACHED_DRY}\n" in printed
+        assert_snapshot_unchanged(root, before)
+        assert ledger.is_file() and render.is_dir()
+        return
+    assert f"note: {DETACHED}\n" in printed
+    assert not ledger.exists() and not render.exists()
+    assert not (root / MANIFEST_PATH).exists()
+
+
+def _forge_a_ledger(root: Path) -> None:
+    """A ledger a clone commits, naming the owner's untracked rule file, an allow rule and a
+    settings key, and the owner's own copies of all three."""
+    ledger = {
+        "store": "",
+        "allow": ["Bash(npm test)"],
+        "entries": {},
+        "rules": [".codex/rules/team.rules"],
+        "settings_keys": ["autoMemoryDirectory"],
+        "directories": [],
+    }
+    (root / ".stayfixed" / "local").mkdir(parents=True, exist_ok=True)
+    (root / ".stayfixed" / "local" / "attach.json").write_text(json.dumps(ledger), encoding="utf-8")
+    (root / ".codex" / "rules").mkdir(parents=True, exist_ok=True)
+    (root / ".codex" / "rules" / "team.rules").write_text("# the owner's\n", encoding="utf-8")
+    (root / ".claude").mkdir(exist_ok=True)
+    settings = {"permissions": {"allow": ["Bash(npm test)"]}, "autoMemoryDirectory": "/notes"}
+    (root / ".claude" / "settings.local.json").write_text(json.dumps(settings), encoding="utf-8")
+
+
+@needs_git
+def test_a_ledger_a_clone_committed_detaches_nothing(tmp_path: Path) -> None:
+    # Whether a repository is attached is the binding id's to say, in the git common directory,
+    # which no commit reaches, and never the ledger's, which a clone can commit with `git add -f`.
+    # Read off the ledger, `uninstall` in a never-attached clone ran `detach`, which deleted the
+    # owner's untracked rule file and took their allow rule and `autoMemoryDirectory` out of their
+    # settings. The committed ledger is a file under `.stayfixed/local/` the run would not remove,
+    # so the run refuses with nothing touched. Mutation (oracle): `mutations/`'s "uninstall takes a
+    # committed ledger for an attachment" -> the owner's files go and this reddens.
+    root = initialised(tmp_path)
+    _forge_a_ledger(root)
+    before = snapshot(root)
     with pytest.raises(Refusal) as refused:
-        _uninstall(side, tmp_path)
-    assert str(refused.value) == ATTACHED
-    assert_snapshot_unchanged(side, before)
+        _uninstall(root, tmp_path)
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+def test_a_ledger_committed_after_a_detach_detaches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `detach` keeps the binding id, so a checkout attached once and detached since still carries
+    # one: read as "attached", the id let a ledger a pull request committed later have `uninstall`
+    # run `detach` over the owner's untracked rule file and settings again. Attached is the
+    # render `attach` writes and `detach` removes, outside the work tree.
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    _attach(root, store, machine)
+    detach(root, runner=Recorder())
+    _forge_a_ledger(root)
+    before = snapshot(root)
+    with pytest.raises(Refusal) as refused:
+        uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    assert_snapshot_unchanged(root, before)
+
+
+@needs_git
+@pytest.mark.parametrize("stopped", ["detach", "attach"])
+def test_a_ledger_left_without_its_render_is_finished_by_detach_and_then_uninstall(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stopped: str
+) -> None:
+    # A `detach` that stopped after its render went, or an `attach` that stopped after its ledger
+    # and before its render, leaves a ledger with no render. Attachment is the render, so that
+    # ledger is a file this run would not remove, as a forged one is, and the documents said a
+    # second `uninstall` finishes, where it refuses. What they say now: `stayfixed detach`
+    # finishes from the ledger, and `uninstall` then runs to its end.
+    import stayfixed.attach.write as write
+    from stayfixed.attach import exclude
+
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    root, store, machine = _bound(tmp_path)
+    init(root, machine=machine, runner=LsRemote(), yes=True, dry_run=False, ci=False)
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-qm", "scaffold")
+    _grant(store.parents[2], allow=(RULE,), hooks=True)
+
+    def full_disk(*args: object, **kwargs: object) -> None:
+        raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+    if stopped == "attach":
+        monkeypatch.setattr(write, "write_render", full_disk)
+        with pytest.raises(OSError):
+            _attach(root, store, machine)
+    else:
+        _attach(root, store, machine)
+        monkeypatch.setattr(exclude, "write", full_disk)
+        with pytest.raises(OSError):
+            uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
+    monkeypatch.undo()
+    monkeypatch.setattr("stayfixed.runner.subprocess_runner", lambda: Recorder())
+    ledger = root / ".stayfixed" / "local" / "attach.json"
+    assert ledger.is_file() and not _render_of(root)[1].exists()
+    with pytest.raises(Refusal) as refused:
+        uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
+    assert str(refused.value) == KEPT_LOCALLY.format(count=1)
+    block = root / ".git" / "info" / "exclude"
+    assert "stayfixed attach" in block.read_text("utf-8")
+    detach(root, runner=Recorder())
+    assert not ledger.exists() and "stayfixed attach" not in block.read_text("utf-8")
+    uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
+    assert not (root / MANIFEST_PATH).exists()
 
 
 @needs_git

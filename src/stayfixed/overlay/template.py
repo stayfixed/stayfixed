@@ -1,15 +1,15 @@
 """Where the shipped overlay tree is, and what `plan()` is handed for it.
 
 `templates/overlay/` lives **under the module root**, beside `presets/`, and for the same
-reason: it is read at *runtime* — `overlay create --local` renders it — so the copy that has to
+reason: it is read at *runtime* — `setup --overlay <path>` renders it — so the copy that has to
 answer is the one an installed stayfixed carries. The conventional plugin layout puts the tree at
 the plugin root, and this repository has already departed from that layout once, for
 `presets/recommended.toml`, which `load_preset` reads out of the package. Two facts settle it
 here. `uv_build` has no wheel includes at all: "all data files must either be under the module
 root or in the appropriate data directory", so `source-include` reaches the sdist and nothing
-else. And `--local` is the fallback for an unreachable template repository, while the skills
-reference the CLI by name — so the copy that runs is the one on `PATH`, and a fallback absent
-from the wheel is not a fallback.
+else. And `setup --overlay <path>` renders it with no network call, the way to an overlay when the
+template repository is out of reach, while the skills reference the CLI by name — so the copy that
+runs is the one on `PATH`, and a render absent from the wheel is no way at all.
 `hooks/` stays at the plugin root, because the *harness* reads it from there and Python never
 does.
 
@@ -29,23 +29,27 @@ from functools import partial
 from pathlib import Path
 
 from stayfixed.errors import Failure
-from stayfixed.overlay.layout import OVERLAY_FILES, RETIRED_MEMORY_README
+from stayfixed.overlay.layout import COMMON_CLAUDE, OVERLAY_FILES, RETIRED_MEMORY_README
 from stayfixed.scaffold import Kind, Template
 from stayfixed.templates import tree
 
 OVERLAY = "overlay"
 
-# Every file an earlier release shipped and this one does not, which `overlay upgrade` and
-# `overlay init` remove where it still holds what stayfixed wrote: the sha256 of each copy a
-# release shipped there, and the way out for a copy kept because it holds other bytes. An overlay
-# generated from a template carries no ledger (`publish-template` strips it), so these digests are
-# the only evidence that such an overlay's copy is stayfixed's to remove.
+# Every file an earlier release shipped and this one does not whose bytes owe nothing to the owner,
+# which `overlay upgrade` removes where it still holds what stayfixed wrote: the sha256 of each copy
+# a release shipped there, and the way out for a copy kept because it holds other bytes. An overlay
+# generated from a template carries no ledger (`scripts/publish_template.py` strips it), so these
+# digests are the only evidence that such an overlay's copy is stayfixed's to remove. The plugin
+# manifests the overlay carried until it stopped being a plugin are not here: each was renamed
+# after its owner, so no digest a release shipped says a copy is stayfixed's, and the upgrading
+# note tells the owner to delete them.
 #
 # The memory README is the same bytes in 0.1.0 and 0.1.1. The template's own `attach` skill, a
 # subset of the plugin's, which also covers detaching and a moved remote, is the same bytes in
 # 0.1.0, 0.1.1 and 0.2.0. The README of `common/rules/`, a directory nothing read, is one file in
-# 0.1.x and another in 0.2.0, which said so. `tests/overlay/test_upgrade.py` holds each copy whole,
-# and `tests/overlay/test_template.py` holds that none of these is a file the template ships.
+# 0.1.x and another in 0.2.0, which said so. The hooks file the overlay fired as a plugin is the
+# same bytes from 0.1.0 to 0.3.1. `tests/overlay/test_upgrade.py` holds each copy whole, and
+# `tests/overlay/test_template.py` holds that none of these is a file the template ships.
 _RETIRED = {
     RETIRED_MEMORY_README: (
         frozenset({"407236dd35a9c1810465b8460271379fc54036b76d4bf64c0f1947eef0fe7322"}),
@@ -65,6 +69,12 @@ _RETIRED = {
         ),
         "nothing read this directory; a standing rule is a note with `metadata.startup`, so move "
         "your rules into such notes and delete this copy",
+    ),
+    "hooks/hooks.json": (
+        frozenset({"78922a784ee78e9e50587e93628cd3b9d4dfbe49087adc4514e6781cea38cbb9"}),
+        "the overlay is no plugin any more and nothing reads this file; `stayfixed attach` "
+        f"renders the hook entries in `{COMMON_CLAUDE}/hooks.json`, so move yours there and "
+        "delete this copy",
     ),
 }
 
@@ -99,7 +109,7 @@ def templates() -> list[Template]:
     if not root.is_dir():
         raise Failure(
             f"the overlay template tree is not readable at {root}; this stayfixed was installed "
-            "without it, so `--local` cannot render one"
+            "without it, so `setup --overlay <path>` cannot render one"
         )
     return [
         Template(

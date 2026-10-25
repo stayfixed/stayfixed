@@ -145,7 +145,7 @@ def contained(
             # checkout the ancestor's name is the repository's, and a caller may show this refusal
             # to a terminal or a CI runner. Both by their place under the root: the ancestor's
             # absolute path said where this machine keeps the tree and nothing about the tree,
-            # and a command relaying the refusal (`overlay init`'s `left` line) printed that.
+            # and a command relaying the refusal (a `left` line) printed that.
             # `ancestor` is below `root`, since the walk starts below it.
             named = ancestor.relative_to(root).as_posix()
             raise PathEscape(f"{relative!r} passes through a symlink at {named!r}")

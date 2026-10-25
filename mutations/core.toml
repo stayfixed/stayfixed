@@ -101,7 +101,6 @@ before = '    answer = completed.stdout.decode(codec, "surrogateescape")'
 after = '    answer = completed.stdout.decode(codec)'
 reddens = [
   "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
-  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
   "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
   "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
   "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
@@ -130,7 +129,6 @@ after = """    try:
     return completed.returncode, answer"""
 reddens = [
   "tests/test_git_run.py::test_a_path_the_locale_cannot_decode_is_answered_and_not_raised",
-  "tests/setup/test_setup.py::test_a_sibling_checkout_git_names_in_bytes_that_are_not_utf_8_is_still_refused",
   "tests/guards/test_attribute.py::test_a_tracked_name_that_is_not_utf_8_does_not_switch_off_the_export_rule_check",
   "tests/assess/test_probes.py::test_a_path_git_prints_raw_hides_no_committed_env_file",
   "tests/docs/test_plans.py::test_a_touched_plan_named_in_bytes_that_are_not_utf_8_is_listed_and_linted",
@@ -663,7 +661,7 @@ reddens = [
 # Every call through this seam captures its output, so a `git` or `gh` that asks for a
 # credential on an inherited stdin is invisible and blocks for the whole of
 # NETWORK_TIMEOUT_SECONDS. What makes that a finding is which callers reach the network through
-# it: `overlay create --template` launches `gh` with the machine owner's own authentication, and
+# it: `setup --overlay create:` launches `gh` with the machine owner's own authentication, and
 # `release.pins.released` runs `git ls-remote` for `stayfixed init` and for `doctor`'s `ci-ref`
 # row. (This used to cite that row's URL as repository-authored; it is
 # `stayfixed.REPOSITORY_URL`, a module constant. See `stayfixed.runner._ENV_FORCE`.)
@@ -1986,7 +1984,6 @@ before = "            named = ancestor.relative_to(root).as_posix()"
 after = "            named = str(ancestor)"
 reddens = [
   "tests/config/test_paths.py::test_a_crafted_symlink_on_the_way_is_named_escaped_never_raw",
-  "tests/overlay/test_upgrade.py::test_init_names_a_retired_file_behind_a_symlink_by_its_place_in_the_overlay",
 ]
 
 # `contained` asks each ancestor with `lstat` and gives each fault its answer, rather than
@@ -2152,8 +2149,7 @@ file = "src/stayfixed/printed.py"
 before = '    return clipped(done.stderr.strip() or done.stdout.strip() or f"exit {done.code}")'
 after = '    return done.stderr.strip() or done.stdout.strip() or f"exit {done.code}"'
 reddens = [
-  "tests/overlay/test_publish.py::test_what_gh_prints_cannot_drive_a_terminal",
-  "tests/attach/test_write.py::test_what_pre_commit_prints_cannot_drive_a_terminal",
+  "tests/scripts/test_publish_template.py::test_what_gh_prints_cannot_drive_a_terminal",
   "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[marketplace add]",
   "tests/setup/test_setup.py::test_what_a_plugin_command_prints_cannot_drive_a_terminal[install]",
   "tests/overlay/test_create.py::test_what_gh_and_git_print_cannot_drive_a_terminal[repo-create]",
@@ -2202,7 +2198,6 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[nested]",
   "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_nested_past_the_parsers_reach_removes_nothing",
-  "tests/overlay/test_requires.py::test_a_manifest_past_the_parsers_reach_is_nothing_declared",
 ]
 
 # The same document holding an integer literal longer than the interpreter converts: `json.loads`
@@ -2221,23 +2216,6 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[long-number]",
   "tests/attach/test_write.py::test_a_ledger_holding_a_number_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
   "tests/attach/test_detach.py::test_a_ledger_holding_a_number_past_the_parsers_reach_removes_nothing",
-]
-
-# The other half of the overlay's requires reader's "this reader answers for every string", after
-# the digit bound `mutations/`'s "the version grammar stops bounding its components" holds.
-# `json.loads` answers for a list, a string and a number as readily as for an object and `raw.get`
-# exists on none of them, so without the shared reader's object arm a manifest an owner can save
-# raised `AttributeError` out of a function whose docstring promises `None` for anything it cannot
-# read. The session handler rests on that promise: its backstop swallows a raised reader together
-# with every other line of the same result — which is how an overlay manifest silenced
-# `NOT_ATTACHED` once already.
-[[mutation]]
-name = "the requires reader raises for a manifest that is not an object"
-file = "src/stayfixed/jsonobject.py"
-before = "    if not isinstance(raw, dict):"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_requires.py::test_a_manifest_whose_top_level_is_not_an_object_is_nothing_declared",
 ]
 
 # stayfixed declares that it makes no network request of its own; that holds only while no module
@@ -2276,8 +2254,8 @@ reddens = [
 [[mutation]]
 name = "a source comment names the overlay command by its old name"
 file = "src/stayfixed/gitenv.py"
-before = "and not through `git_run`, on purpose: `stayfixed overlay publish-template`, a maintainer"
-after = "and not through `git_run`, on purpose: `stayfixed overlay publish`, a maintainer"
+before = "    `stayfixed attach` when the real fault is their `git` — the state a macOS machine is in when"
+after = "    `stayfixed overlay init` when the real fault is their `git` — the state a macOS machine is in when"
 reddens = [
   "tests/test_documents.py::test_every_command_a_tracked_file_names_is_one_the_parser_registers",
 ]
@@ -3002,7 +2980,6 @@ before = '    return f"{label} cannot be read ({said(error)})"'
 after = '    return f"{label} cannot be read: {error}"'
 reddens = [
   "tests/setup/test_setup.py::test_a_user_settings_file_that_cannot_be_read_is_a_failure_saying_why_in_words",
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read",
   "tests/scaffold/test_manifest.py::test_a_manifest_past_the_read_cap_is_unreadable_and_never_read_whole",
 ]
 
@@ -3345,9 +3322,7 @@ reddens = [
   "tests/config/test_paths.py::test_a_root_through_a_symlink_loop_is_an_oserror_naming_it[this-one]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[claude]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[home]",
-  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
-  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
 ]
 
 [[mutation]]
@@ -6212,7 +6187,6 @@ before = """        elif name == _SKIPPED_BY and attributes.get("type") == TODO:
 after = """        elif False:"""
 reddens = ["tests/prove/test_junit.py::test_a_todo_testcase_is_skipped_whatever_else_stands_in_it[failing]"]
 
-
 # The project a checkout is bound to comes from this machine's record for the id in its git common
 # directory, never from the name the repository commits: a clone naming itself after one of the
 # owner's projects has no id, and falling back to its `[project] name` would bind it.
@@ -6286,9 +6260,9 @@ before = "    origin = without_userinfo(origin) if origin is not None else None"
 after = "    pass"
 reddens = ["tests/attach/test_commands.py::test_an_origin_carrying_credentials_is_neither_printed_nor_recorded_with_them"]
 
-# In the block led by `mutations/`'s "setup splits git's listing of checkouts at a carriage return
-# inside a path": a line-oriented git answer is split where git ended each line, never at a `\r` or
-# a line separator inside a name.
+# In the block led by `mutations/`'s "the overlay's sync row counts a name holding a line separator
+# twice": a line-oriented git answer is split where git ended each line, never at a `\r` or a line
+# separator inside a name.
 [[mutation]]
 name = "attach splits git's worktree listing at a carriage return inside a path"
 file = "src/stayfixed/binding.py"
@@ -6308,4 +6282,55 @@ before = '    if "bare" in lines:'
 after = "    if False:"
 reddens = [
   "tests/attach/test_write.py::test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing",
+]
+
+# In the block led by `mutations/`'s "setup records a created overlay at its link and not where it
+# leads": a link at a created overlay's destination, dangling or not, is something there, which
+# `fsops.vacant` answers, and never a destination this run clones into.
+[[mutation]]
+name = "setup takes a dangling link at a created overlay's destination for no destination"
+file = "src/stayfixed/fsops.py"
+before = "    if is_symlink(path):"
+after = "    if is_symlink(path) and is_dir(path):"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything",
+  "tests/test_fsops.py::test_vacant_is_nothing_there_or_an_empty_directory_that_is_no_link_whoever_may_write_it",
+]
+
+[[mutation]]
+name = "setup takes a link to an empty directory at a created overlay's destination for no destination"
+file = "src/stayfixed/fsops.py"
+before = "    if is_symlink(path):"
+after = "    if is_symlink(path) and not is_dir(path):"
+reddens = [
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[a-link-to-an-empty-directory]",
+  "tests/test_fsops.py::test_vacant_is_nothing_there_or_an_empty_directory_that_is_no_link_whoever_may_write_it",
+]
+
+# A directory holding something is no place to clone or render into: read as vacant, `create:` ran
+# `gh repo create` over it and `--overlay <path>` rendered into what the owner kept there.
+[[mutation]]
+name = "vacant takes a directory holding something for an empty one"
+file = "src/stayfixed/fsops.py"
+before = "        return next(entries, None) is None"
+after = "        return True"
+reddens = [
+  "tests/test_fsops.py::test_vacant_is_nothing_there_or_an_empty_directory_that_is_no_link_whoever_may_write_it",
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[not-an-overlay]",
+]
+
+# A listing that fails leaves the question open, and every predicate here raises for that: read as
+# occupied, the caller refused the directory in words about what it holds, which nobody had read.
+[[mutation]]
+name = "vacant reads a directory it cannot list as occupied"
+file = "src/stayfixed/fsops.py"
+before = """    with os.scandir(path) as entries:
+        return next(entries, None) is None"""
+after = """    try:
+        with os.scandir(path) as entries:
+            return next(entries, None) is None
+    except OSError:
+        return False"""
+reddens = [
+  "tests/test_fsops.py::test_vacant_raises_for_a_directory_it_cannot_list",
 ]

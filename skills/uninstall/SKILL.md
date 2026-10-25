@@ -1,6 +1,6 @@
 ---
 name: uninstall
-description: Remove stayfixed's footprint from a repository, leaving hand-edited files in place and listed. Use when the user asks to uninstall or remove stayfixed from a project.
+description: Remove stayfixed's scaffold from a repository, leaving hand-edited files in place and listed. Use when the user asks to uninstall or remove stayfixed from a project.
 ---
 
 # Uninstalling
@@ -9,8 +9,9 @@ description: Remove stayfixed's footprint from a repository, leaving hand-edited
 takes its sections out of files that hold other text, and removes its ledger. A file the user
 edited stays where it is and is listed.
 
-1. If the repository is attached to an overlay, run `stayfixed detach` first. `uninstall`
-   refuses otherwise, and says so.
+1. An attached repository needs no step of its own: `uninstall` runs `detach` first, and a
+   `note:` line says so, which the dry run says it would. Relay it: the overlay's plugin and the
+   allow rules `attach` placed go with it.
 2. Run `stayfixed uninstall --dry-run` and relay both reports and every `note:` line. The note
    about `AGENTS.md` means the real run judges the skeleton after taking stayfixed's section
    out, so a file the dry run calls edited there may still go.
@@ -33,15 +34,21 @@ edited stays where it is and is listed.
 
 ## Rules
 
-- **An exit of 1 removed nothing.** A `REFUSED` section names each artifact and why. Relay it
-  and stop.
-- **An exit of 2 is a refusal, and it may have come part-way through.** Attached, files kept
-  under `.stayfixed/local/` counted before the run, and a `--force` path outside the root come
-  before anything is removed. A file that cannot be removed, or files still under
-  `.stayfixed/local/` after the write-once pass, stop the run part-way: what was removed stays
-  removed, and `stayfixed.toml` and the manifest stay so the next run can finish. Relay it as
-  printed, run `git status` to show the user what changed, and after they deal with the cause run
-  `stayfixed uninstall --dry-run` again.
+- **An exit of 1 from a plan removed nothing.** A `REFUSED` section names each artifact and why.
+  Relay it and stop. An exit of 1 from the `detach` it runs first on an attached repository may
+  come after part of what `attach` placed was withdrawn: relay its sentence, and once its cause is
+  dealt with run `stayfixed uninstall` again, which finishes while the render is still there. Once
+  that `detach`, or an `attach` cut short, has left the ledger without the render, `uninstall`
+  refuses counting the ledger among the files under `.stayfixed/local/`: run `stayfixed detach`,
+  which finishes from the ledger, then `stayfixed uninstall`.
+- **An exit of 2 is a refusal, and it may have come part-way through.** Files kept under
+  `.stayfixed/local/` counted before the run, and a `--force` path outside the root come before
+  anything is removed. A refusal from the `detach` it runs comes before its own first removal.
+  A file that cannot be removed, or files still under `.stayfixed/local/` after the write-once
+  pass, stop the run part-way: what was removed stays removed, and `stayfixed.toml` and the
+  manifest stay so the next run can finish. Relay it as printed, run `git status` to show the
+  user what changed, and after they deal with the cause run `stayfixed uninstall --dry-run`
+  again.
 - **A refusal saying git ignores files at a place a `[paths]` value chose removed nothing.**
   Relay it with the files it names. Taking stayfixed's part out of them by hand, or taking that
   key out of `stayfixed.toml` so the run leaves them in place and lists them, is the user's

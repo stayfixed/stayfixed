@@ -39,7 +39,6 @@ from stayfixed.doctor.api import OK, RED, SKIP, run_checks
 from stayfixed.memory.api import DELIMITER, PROJECTS, markers
 from tests.floor import developer_free_environ
 from tests.gitfixture import git
-from tests.overlay.test_upgrade import SHIPPED_MEMORY_README
 from tests.runners import Recorder
 from tests.snapshot import (
     assert_snapshot_changed,
@@ -218,13 +217,12 @@ def _install_path(
     *,
     initialised: bool = False,
     attach: bool = True,
-    earlier_template: bool = False,
 ) -> Walkthrough:
     """Steps 1-6: the overlay, the machine layer, a repository, attach, and a note in it, promoted.
 
-    Every step is the real launcher with the real argv. Step 1's overlay is created **outside** the
-    project root on purpose: `setup` refuses to record one inside it, because a path inside the
-    project is exactly the shape of tree a hostile clone can ship.
+    Every step is the real launcher with the real argv. Step 1's overlay is rendered **outside** the
+    project root, where an owner keeps it: `setup` refuses no place for it, and `doctor` warns when
+    another repository's work tree holds it, since that repository can put files into it.
 
     `initialised` walks the same steps over a repository that already has its notes in
     `paths.memory` and has had `stayfixed init` run over it, which is the shape the owner's own
@@ -235,11 +233,6 @@ def _install_path(
 
     `attach=False` stops before step 4 and answers the unattached state, which is what a
     session's first `SessionStart` sees on a project nobody has bound yet.
-
-    `earlier_template` turns step 1's tree into what a template published at 0.1.x generates:
-    no ledger, since `publish-template` leaves it out, and the `common/memory/README.md` those
-    releases shipped. `gh` is out of reach offline, so the rendered tree is made that shape
-    before step 2, which is where such an overlay meets this release first.
 
     `init` runs here rather than in `_project`, which has no launcher environment: `_cli` needs
     the scratch home, the fake `PATH` and the plugin data root, and those are built from this
@@ -255,8 +248,7 @@ def _install_path(
     root = _project(tmp_path, mode="overlay", initialised=initialised)
     overlays = tmp_path / "overlays"
     overlays.mkdir()
-    # Where `overlay create --root <overlays> --name stayfixed-private` puts it, which
-    # `overlay.create.target_root` computes from the arguments alone.
+    # Where `setup --overlay <path>` renders it: a path that names nothing yet.
     overlay = overlays / "stayfixed-private"
     store = overlay / PROJECTS / PROJECT / "memory"
     walk = Walkthrough(root, overlay, machine, home, data, store, bin_dir)
@@ -273,28 +265,10 @@ def _install_path(
     if initialised:
         step("init", "--yes", "--root", str(root), "--machine", str(machine))
         assert (root / ".stayfixed" / "manifest.json").is_file(), "`init` recorded no manifest"
-    # 1. the overlay, rendered from the shipped template with no network call.
-    step(
-        "overlay",
-        "create",
-        "--owner",
-        OWNER,
-        "--name",
-        "stayfixed-private",
-        "--local",
-        "--root",
-        str(overlays),
-    )
-    if earlier_template:
-        shutil.rmtree(overlay / ".stayfixed")
-        (overlay / "common" / "memory" / "README.md").write_text(
-            SHIPPED_MEMORY_README, encoding="utf-8"
-        )
-    # 2. make it this owner's, and install its commit-time secret scan.
-    step("overlay", "init", "--owner", OWNER, "--root", str(overlay))
-    # 3. the machine layer, into a scratch machine file and a scratch home. **Two runs**, as
+    # 1-3. the machine layer, into a scratch machine file and a scratch home. **Two runs**, as
     # the walkthrough had before it was converted: the first writes the machine file with no
-    # overlay in it, the second records one into a file that already exists. "A second `setup`
+    # overlay in it, the second renders the overlay from the shipped template with no network
+    # call and records it into a file that already exists. "A second `setup`
     # records an overlay the first did not" is a merge seam between two areas, and collapsing
     # the two runs into one would have left it to `tests/setup/` alone -- which is the shape of
     # gap this whole module exists to close. The assertion between them is what makes it a
@@ -307,8 +281,6 @@ def _install_path(
         str(home),
         "--machine",
         str(machine),
-        "--root",
-        str(root),
     )
     assert str(overlay) not in machine.read_text(encoding="utf-8"), (
         "the first `setup` named no overlay and must have recorded none"
@@ -323,12 +295,11 @@ def _install_path(
         str(machine),
         "--overlay",
         str(overlay),
-        "--root",
-        str(root),
     )
     assert str(overlay) in machine.read_text(encoding="utf-8"), (
         "the second `setup` recorded the overlay into the file the first one wrote"
     )
+    assert (overlay / ".git" / "HEAD").is_file(), "`setup` rendered no repository at the overlay"
     if not attach:
         return walk
     # 4. attach: the diff first, then the write. `--check` writes nothing and prints what the
@@ -426,29 +397,6 @@ def test_setup_then_overlay_then_attach_then_a_session_sees_memory(tmp_path: Pat
     calls = (walk.bin / "calls.log").read_text(encoding="utf-8").splitlines()
     assert "pre-commit install" in calls
     assert not [line for line in calls if line.startswith("gh ")], calls
-
-
-def test_an_overlay_from_a_template_an_earlier_release_published_passes_the_index_check(
-    tmp_path: Path,
-) -> None:
-    # `overlay create --template` and `setup --overlay create:` generate the overlay from a
-    # template repository, which carries no ledger, and one published at 0.1.x ships
-    # `common/memory/README.md`, which the note reader reads as a note with no frontmatter:
-    # `memory index --check` failed right after the first attach, and only an `overlay upgrade`
-    # nobody had been told to run put it right. `overlay init`, which every such overlay runs,
-    # now removes it where it holds the bytes a release shipped.
-    #
-    # Mutation: `mutations/`'s "overlay init leaves the memory README a release shipped".
-    walk = _install_path(tmp_path, earlier_template=True)
-    assert not (walk.overlay / "common" / "memory" / "README.md").exists()
-    # Non-vacuous: the new name is there, and the tree still has no ledger of its own.
-    assert (walk.overlay / "common" / "memory" / "_README.md").is_file()
-    assert not (walk.overlay / ".stayfixed").exists()
-    # Step 5 writes a note after the attach, which leaves any index out of date; without it the
-    # store is what the first attach rendered its index from.
-    (walk.store / "project-stable" / "no-force-push.md").unlink()
-    checked = _cli(walk, "memory", "index", "--check", "--machine", str(walk.machine))
-    assert checked.returncode == 0, checked.stdout + checked.stderr
 
 
 def test_the_machine_file_is_the_only_thing_that_says_where_the_overlay_is(
@@ -555,18 +503,6 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
         assert done.returncode == 0, f"`{' '.join(argv)}`: {done.stderr}"
 
     step(
-        "overlay",
-        "create",
-        "--owner",
-        OWNER,
-        "--name",
-        "stayfixed-private",
-        "--local",
-        "--root",
-        str(overlays),
-    )
-    step("overlay", "init", "--owner", OWNER, "--root", str(overlay))
-    step(
         "setup",
         "--preset",
         "recommended",
@@ -576,8 +512,6 @@ def test_detach_returns_the_project_to_where_it_started(tmp_path: Path) -> None:
         str(machine),
         "--overlay",
         str(overlay),
-        "--root",
-        str(root),
     )
     before = snapshot(root)
     # The walk's own non-vacuity guard: `snapshot` is a walk, so the comparison below passes

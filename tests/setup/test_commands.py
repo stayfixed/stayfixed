@@ -8,18 +8,18 @@ invocation exits 0.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from stayfixed import fsops
 from stayfixed.cli import build_parser, discover_registrars, run
-from stayfixed.overlay.api import MARKETPLACE_MANIFEST, PLUGIN_MANIFEST
+from stayfixed.overlay.identity import NOT_A_RECORD
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from stayfixed.printed import quoted
 from stayfixed.setup.api import SetupReport
 from stayfixed.setup.machine import SETUP_SANDBOXED
-from tests.parserlimits import LONG_NUMBER, NESTED
+from tests.parserlimits import LONG_NUMBER
 from tests.runners import Recorder
 from tests.sandboxed import refuse_writes_under
 
@@ -33,15 +33,41 @@ def test_the_command_is_discovered() -> None:
     assert "setup" in help_text
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["Superpowers", "-flag", "a b", "x@evil", "../x", "a\x1b[2J"],
+    ids=["capital", "option-shaped", "space", "marketplace", "path", "escape"],
+)
+def test_the_parser_refuses_a_plugin_name_outside_its_grammar_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    # `--plugin NAME` is joined to the preset's marketplace into one argv element, so a name is
+    # lowercase letters, digits and `-`, led by a letter or a digit: nothing that reads as an
+    # option, names a marketplace of its own or reaches past the name. Refused by the parser, naming
+    # the rule and never the value, before anything is written or run. Mutation: `mutations/`'s
+    # "setup --plugin takes any name".
+    from stayfixed.setup.commands import PLUGIN_RULE
+
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    machine = tmp_path / "config.toml"
+    argv = ["setup", "--home", str(tmp_path / "home"), "--machine", str(machine)]
+    with pytest.raises(SystemExit):
+        invoke([*argv, f"--plugin={name}"])
+    err = capsys.readouterr().err
+    assert PLUGIN_RULE in err, err
+    assert name not in err, err
+    assert not machine.exists() and not stub.calls
+
+
 def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Patched at `stayfixed.setup.commands` itself, not at `overlay.api`: that module-level import
     # is what `run_setup` calls directly, so a test that wants to keep this command away from a real
     # `claude`/`codex` monkeypatches a name this module owns rather than reaching two hops into a
-    # dependency's own attribute. The recorder answers every call with success, because installing
-    # the preset's plugins is unconditional and a test here must never reach a real `claude` or
-    # `codex`.
+    # dependency's own attribute. The recorder answers every call with success, because the run
+    # names a plugin to install and a test here must never reach a real `claude` or `codex`.
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
@@ -51,16 +77,18 @@ def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
             "setup",
             "--preset",
             "recommended",
-            "--yes",
             "--home",
             str(home),
             "--machine",
             str(machine),
+            "--plugin",
+            "superpowers",
         ]
     )
     assert code == 0
     assert (home / ".claude" / "settings.json").is_file()
     assert machine.is_file()
+    assert ["claude", "plugin", "install", "superpowers@claude-plugins-official"] in stub.calls
     # The seam actually fired: at least the marketplace-add call reached the stub rather than
     # a real binary. An empty list here would mean the patch above stopped applying.
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
@@ -78,9 +106,29 @@ def test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup(
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
-    argv = ["setup", "--uninstall", "--yes", "--home", str(home), "--machine", str(machine)]
+    argv = ["setup", "--uninstall", "--home", str(home), "--machine", str(machine)]
     assert invoke(argv) == 2
     assert "--git-hooks" in capsys.readouterr().err
+    assert not machine.exists()
+    assert not stub.calls
+
+
+def test_machine_setup_refuses_root_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--root` says which repository `--git-hooks` installs into, and machine setup reads no
+    # repository: it took the flag, read nothing of it and configured the machine, exit 0, for a
+    # person who named a repository. Refused before anything is written, as `--uninstall` is.
+    #
+    # Mutation: `mutations/`'s "setup drops --root and runs the machine setup".
+    from stayfixed.setup.commands import _ROOT_ALONE
+
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    machine = tmp_path / "config.toml"
+    argv = ["setup", "--root", str(tmp_path), "--home", str(tmp_path / "home")]
+    assert invoke([*argv, "--machine", str(machine)]) == 2
+    assert capsys.readouterr().err == f"stayfixed: refused: {_ROOT_ALONE}\n"
     assert not machine.exists()
     assert not stub.calls
 
@@ -107,7 +155,8 @@ def test_the_machine_default_is_the_file_every_reader_reads(
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
-    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 0
+    argv = ["setup", "--preset", "recommended", "--home", str(home), "--plugin", "superpowers"]
+    assert invoke(argv) == 0
     assert (home / ".config" / "stayfixed" / "config.toml").is_file()
     assert not (xdg / "stayfixed" / "config.toml").exists()
     assert stub.calls, "the stubbed runner was never called; the patch may have stopped applying"
@@ -152,7 +201,7 @@ def test_a_relative_home_is_no_default_for_home_from_any_directory(
     for name in ("a", "b"):
         (tmp_path / name).mkdir()
         monkeypatch.chdir(tmp_path / name)
-        assert invoke(["setup", "--preset", "recommended", "--yes"]) == 1
+        assert invoke(["setup", "--preset", "recommended"]) == 1
         assert capsys.readouterr().err == (
             "stayfixed: failed: HOME names no home directory, so there is no default for --home "
             "or --machine; set HOME to your home directory, or pass --home PATH and --machine "
@@ -176,49 +225,41 @@ def test_setup_help_names_no_path_from_the_machine_the_parser_was_built_on(
     assert "~/.config/stayfixed/config.toml" in printed
 
 
-# Two manifests that are valid JSON past this interpreter's parser: nested deeper than it follows,
-# and holding an integer longer than it converts (4,300 digits by default).
+# An identity record `tomllib` meets with neither a `TOMLDecodeError` nor an answer: nested past
+# what it follows, and holding an integer longer than it converts (4,300 digits by default).
 PAST_THE_PARSER = {
-    "nested": NESTED,
-    "long-number": '{"name": ' + LONG_NUMBER + "}",
+    "nested": "layout = " + "[" * 20_000 + "]" * 20_000,
+    "long-number": "layout = " + LONG_NUMBER,
 }
 
 
-@pytest.mark.parametrize("manifest", [PLUGIN_MANIFEST, MARKETPLACE_MANIFEST])
 @pytest.mark.parametrize("case", sorted(PAST_THE_PARSER))
-def test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli(
+def test_an_overlay_record_past_the_parser_is_refused_as_unreadable_through_the_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     case: str,
-    manifest: str,
 ) -> None:
-    # `overlay_fault` caught only `JSONDecodeError`, and `json.loads` meets neither document with
-    # one: nesting past what it follows raises `RecursionError`, and the long integer a plain
-    # `ValueError`. So `stayfixed setup --overlay` ended in an internal error instead of refusing
-    # a tree whose manifests it cannot read. Each manifest in turn, the other one well-formed, so
-    # the refusal is about the one asked. Nothing is recorded, and the runner is never reached:
-    # the probe runs above every write.
+    # `tomllib` meets neither document with a `TOMLDecodeError`: nesting past what it follows
+    # raises `RecursionError`, and the long integer a plain `ValueError`. A reader catching only
+    # the first would end `stayfixed setup --overlay` in an internal error instead of refusing a
+    # tree whose record it cannot read. Nothing is recorded, and the runner is never reached: the
+    # probe runs above every write.
     #
-    # Mutation (oracle): `mutations/`'s "an overlay manifest is read with a bare json.loads" -> the
-    # internal error comes back and the nested cases redden; a long integer is a `ValueError` the
-    # probe reads as unreadable either way.
+    # Mutation (oracle): `mutations/`'s "the identity record reader lets a document past the
+    # parser raise" -> the internal error comes back and both cases redden.
     overlay = tmp_path / "overlay"
-    (overlay / ".claude-plugin").mkdir(parents=True)
-    (overlay / PLUGIN_MANIFEST).write_text(json.dumps({"name": "stayfixed-overlay"}), "utf-8")
-    (overlay / MARKETPLACE_MANIFEST).write_text(
-        json.dumps({"name": "stayfixed-overlay-marketplace", "plugins": []}), "utf-8"
-    )
-    (overlay / manifest).write_text(PAST_THE_PARSER[case], encoding="utf-8")
+    overlay.mkdir()
+    (overlay / IDENTITY_RECORD).write_text(PAST_THE_PARSER[case], encoding="utf-8")
     stub = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     machine = tmp_path / "config.toml"
-    argv = ["setup", "--yes", "--overlay", str(overlay), "--home", str(tmp_path / "home")]
-    code = invoke([*argv, "--machine", str(machine), "--root", str(tmp_path / "project")])
+    argv = ["setup", "--overlay", str(overlay), "--home", str(tmp_path / "home")]
+    code = invoke([*argv, "--machine", str(machine)])
     err = capsys.readouterr().err
     assert "internal error" not in err
-    shown = quoted(str(overlay))
-    assert f"stayfixed: refused: {shown} carries a {manifest} that cannot be read as JSON" in err
+    refused = NOT_A_RECORD.format(root=quoted(str(overlay)))
+    assert f"stayfixed: refused: {refused}" in err
     assert code == 2
     assert not machine.exists()
     assert stub.calls == []
@@ -234,7 +275,7 @@ def test_setup_with_no_home_names_machine_and_writes_nothing(
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
     home = tmp_path / "home"
     home.mkdir()
-    assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 1
+    assert invoke(["setup", "--preset", "recommended", "--home", str(home)]) == 1
     assert "--machine PATH" in capsys.readouterr().err
     assert not stub.calls
     assert list(tmp_path.rglob("config.toml")) == []
@@ -250,7 +291,7 @@ def test_setup_where_the_home_cannot_be_written_fails_naming_the_directory(
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
     try:
         monkeypatch.setenv("HOME", str(locked))
-        assert invoke(["setup", "--preset", "recommended", "--yes", "--home", str(home)]) == 1
+        assert invoke(["setup", "--preset", "recommended", "--home", str(home)]) == 1
     finally:
         locked.chmod(0o755)
     err = capsys.readouterr().err
@@ -273,7 +314,7 @@ def test_setup_whose_named_machine_file_cannot_be_written_says_nothing_of_runnin
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: Recorder())
     named = locked / "stayfixed" / "config.toml"
     try:
-        argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+        argv = ["setup", "--preset", "recommended", "--home", str(home)]
         assert invoke([*argv, "--machine", str(named)]) == 1
     finally:
         locked.chmod(0o755)
@@ -312,7 +353,7 @@ def test_setup_from_a_sandboxed_shell_says_a_person_must_run_it(
         monkeypatch.setattr(
             fsops, "creatable", lambda path: path.parent != home / ".claude" and real(path)
         )
-    argv = ["setup", "--preset", "recommended", "--yes", "--home", str(home)]
+    argv = ["setup", "--preset", "recommended", "--home", str(home)]
     assert invoke([*argv, "--machine", str(machine)]) == 2
     assert capsys.readouterr().err == f"stayfixed: refused: {SETUP_SANDBOXED}\n"
     assert (

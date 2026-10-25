@@ -15,7 +15,7 @@ pinned commit to `stayfixed/stayfixed-plugin`, the repository the plugin is inst
 your own authenticated checkout → the `pypi` approval, whose two jobs first check that the plugin
 repository's tag names the pinned commit and then release the PyPI upload and the GitHub Release,
 attached to `vX.Y.Z` only and never to the floating `v1`, which immutable releases would freeze →
-`main` moves to the release commit → `stayfixed overlay publish-template`, which renders
+`main` moves to the release commit → `scripts/publish_template.py`, which renders
 `templates/overlay/` and pushes it to the template repository from your own authenticated
 checkout → from `1.0.0` on, the `v1` alias moves → the cross-repository smoke runs at the new tag →
 the release returns to `dev` (section 5). Both pushes to a second repository are yours, so the
@@ -467,12 +467,14 @@ is added to `PLUGIN_PATHS` in `scripts/plugin_tree.py`, or the plugin repository
    key GitHub knows:
 
    ```bash
-   uv run stayfixed overlay publish-template --owner stayfixed        # read the plan
-   uv run stayfixed overlay publish-template --owner stayfixed --yes  # do it
+   uv run python scripts/publish_template.py --owner stayfixed        # read the plan
+   uv run python scripts/publish_template.py --owner stayfixed --yes  # do it
    ```
 
    Without `--yes` nothing outward-facing happens: it renders, asks `gh` what is there, and
-   reports what it would create, mark and push.
+   reports what it would create, mark and push. It is this repository's script and no command
+   stayfixed ships, since only a publisher publishes the template; an owner's
+   `stayfixed setup --overlay create:` generates from it.
 
 9. **Move the alias — from `1.0.0` on; a `0.x` release moves none.** The alias is the major:
    a project that writes `@v1` takes every release the alias moves to. Under semantic
@@ -766,8 +768,8 @@ projects only.
   `uv.lock`: `uv sync` was not run after the version bump, so the lockfile still carries the old
   one. The other candidate is `hooks/hashes.json`, if a shipped file moved without
   `scripts/release.py hashes`.
-- **`publish-template` pushed the wrong tree.** The next `publish-template` fixes it: it
-  replaces the tree whole rather than merging into it.
+- **`scripts/publish_template.py` pushed the wrong tree.** Its next run fixes it: it replaces the
+  tree whole rather than merging into it.
 
 ## 6. The release scripts
 

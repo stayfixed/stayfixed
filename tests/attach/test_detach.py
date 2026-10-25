@@ -102,7 +102,7 @@ def test_detach_removes_exactly_what_attach_added(tmp_path: Path) -> None:
 def _render_of(root: Path) -> tuple[str, Path]:
     """The binding id of `root`'s repository and the render directory it names."""
     from stayfixed import binding
-    from stayfixed.attach.render import delivery_directory
+    from stayfixed.binding import delivery_directory
 
     id = binding.read_id(root)
     assert id is not None
@@ -345,8 +345,9 @@ def test_detach_keeps_the_allow_rule_claude_code_added_to_a_rewritten_settings_f
 
 
 def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) -> None:
-    # The lifecycle's "uninstalled after a detach": `stayfixed uninstall` refuses an attached
-    # repository, so what a detach leaves behind decides whether it runs at all. An `init`
+    # The lifecycle's "uninstalled after a detach": what a detach leaves behind decides whether
+    # `stayfixed uninstall` reads the repository as attached, and so whether it detaches again
+    # before it takes the scaffold back. An `init`
     # footprint, a real attach that merged a rule and a hook entry, a detach, and the tree is the
     # one `init` left; `uninstall` then runs and takes the footprint back, and a second one finds
     # nothing to take. Mutation: `mutations/`'s "detach leaves its ledger behind".
@@ -360,10 +361,10 @@ def test_uninstall_after_a_real_detach_takes_the_footprint_back(tmp_path: Path) 
     assert_snapshot_changed(root, initialised)
     _detach(root)
     assert_snapshot_unchanged(root, initialised)
-    uninstall(root, machine=machine, dry_run=False, force=())
+    uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
     assert not (root / MANIFEST_PATH).exists() and not (root / LEDGER).exists()
     with pytest.raises(Refusal):
-        uninstall(root, machine=machine, dry_run=False, force=())
+        uninstall(root, machine=machine, dry_run=False, force=(), runner=Recorder())
 
 
 def test_detach_leaves_a_rule_the_ledger_does_not_claim(tmp_path: Path) -> None:

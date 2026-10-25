@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,11 @@ import pytest
 from stayfixed import __version__
 from stayfixed.config.loader import preset_defaults
 from stayfixed.hooks.api import EVENTS
-from stayfixed.overlay.layout import OVERLAY_FILES
+from stayfixed.overlay.identity import NO_RECORD, NOT_A_RECORD, overlay_fault
+from stayfixed.overlay.layout import IDENTITY_RECORD, OVERLAY_FILES
 from stayfixed.overlay.template import retired, template_root, templates
 from stayfixed.presets import load_preset
+from stayfixed.printed import quoted
 from stayfixed.scaffold import MANIFEST_PATH
 
 
@@ -200,7 +203,7 @@ def test_the_scan_workflow_never_runs_a_forks_head_with_the_repositorys_own_toke
 
 def test_the_scan_workflow_can_read_a_pull_requests_commits_in_a_private_repository() -> None:
     # On `pull_request` the gitleaks action calls `GET /repos/{owner}/{repo}/pulls/{n}/commits`
-    # to find what to scan, and on a private repository -- which an overlay is, `overlay create`
+    # to find what to scan, and on a private repository -- which an overlay is, `create:`
     # passes `--private` -- that endpoint needs the "Pull requests: read" permission. A
     # `permissions:` block naming `contents` alone leaves every other scope at none, so the scan
     # would fail for want of it. The block is asserted by value and in full: exactly these two
@@ -294,6 +297,13 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
     assert present == set(OVERLAY_FILES)
 
 
+def test_the_identity_record_is_the_last_file_a_render_writes_and_a_clone_checks_out() -> None:
+    # A tree is an overlay exactly when its record parses, so the record comes last both ways a
+    # tree is made, and one cut short is never an overlay: a render writes in this order, and git
+    # checks a tree out in path order, in which the record's path has to sort after every other.
+    assert OVERLAY_FILES[-1] == IDENTITY_RECORD == max(OVERLAY_FILES)
+
+
 def test_no_retired_file_is_one_the_template_ships() -> None:
     # `overlay upgrade` plans a retired file's removal beside the shipped files' refresh, under
     # the same id. A name in both would be refreshed and removed by one run, and the tree would
@@ -363,7 +373,7 @@ _STATED_COUNT = re.compile(r"renders (\w+) files here")
 
 
 def _rendered_paths() -> tuple[str, ...]:
-    """Every file `overlay create` leaves in a fresh instance, as the README has to describe it.
+    """Every file a render leaves in a fresh instance, as the README has to describe it.
 
     `OVERLAY_FILES` plus the scaffold manifest, which is the one path the template tree does not
     hold: `scaffold.apply` writes `.stayfixed/manifest.json` as the record `overlay upgrade` keys
@@ -415,7 +425,7 @@ def test_the_capability_files_are_spelled_once_and_are_shipped_files() -> None:
 def _is_placeholder(relative: str) -> bool:
     """Whether this path is a directory's own documentation rather than a file in its own right.
 
-    `overlay create` drops a README into each directory the owner fills — `common/memory/`'s
+    A render drops a README into each directory the owner fills — `common/memory/`'s
     `_README.md` and `projects/`'s `README.md`. The template README describes those as
     *directories* on purpose, and naming the placeholders inside them would be noise. Derived
     from the basename rather than listed, so a third such directory needs no edit here. The root
@@ -430,14 +440,8 @@ def test_the_overlay_readme_accounts_for_every_file_a_create_leaves() -> None:
     # sixteen rows describing the wrong sixteen files, and only this half says which.
     #
     # **A file is accounted for by its full path**, and an ancestor directory is accepted only
-    # for a placeholder. The first draft of this accepted any ancestor, and the declared mutation
-    # that renames `hooks/hooks.json` in the README *survived* it — `hooks/` was still there and
-    # stood in for the file. That is the one pair this document exists to tell apart, because
-    # `hooks/hooks.json` and `common/claude/hooks.json` are both `{"hooks": {}}` and nothing but
-    # this README says which fires where. An accounting rule that cannot see that rename is not
-    # an accounting rule.
-    #
-    # Mutation: `mutations/`'s "the overlay README stops naming the hooks file".
+    # for a placeholder. The first draft of this accepted any ancestor, and a mutation that
+    # renamed a file in the README survived it, the file's directory standing in for it.
     text = (template_root() / "README.md").read_text(encoding="utf-8")
     assert text.strip(), "an empty README accounts for nothing"
     missing = []
@@ -473,9 +477,9 @@ def test_the_overlay_tree_is_the_shared_resolvers_answer() -> None:
 
 
 def _render_into(tmp_path: Path) -> Path:
-    from stayfixed.overlay.create import _render_locally
+    from stayfixed.overlay.api import render_template
 
-    return _render_locally(tmp_path, "rendered")
+    return render_template(tmp_path, "rendered")
 
 
 def test_nothing_in_a_fresh_common_memory_fails_the_note_reader(tmp_path: Path) -> None:
@@ -497,35 +501,47 @@ def test_nothing_in_a_fresh_common_memory_fails_the_note_reader(tmp_path: Path) 
     assert walked.unreadable == []
 
 
-def test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates() -> None:
-    # `claude plugin validate` refuses a marketplace with no `owner` and warns on a plugin
-    # manifest with no `author`. The template carries a neutral placeholder for both, and
-    # `overlay init` puts the account in (`tests/overlay/test_create.py`).
-    root = template_root()
-    market = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
-    assert isinstance(market.get("owner"), dict), "a marketplace with no owner does not validate"
-    assert market["owner"].get("name"), market["owner"]
-    for relative in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
-        manifest = json.loads((root / relative).read_text(encoding="utf-8"))
-        assert isinstance(manifest.get("author"), dict), relative
-        assert manifest["author"].get("name"), relative
+# --- what names a tree an overlay -------------------------------------------------------------
 
 
-def test_the_overlay_documents_its_own_install_where_a_user_reads_it() -> None:
-    # An overlay is a plugin repository and nothing installed it: the two `claude plugin`
-    # commands, with the names `overlay init` produces, are what makes its `hooks/` and
-    # `skills/` reach a session. Documented in the template README, which is the overlay's own
-    # first page, and in the `overlay init` section of the reference, where the names come from.
-    add = "claude plugin marketplace add git@github.com:<owner>/<name>.git"
-    install = (
-        "claude plugin install stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>"
-    )
-    readme = (template_root() / "README.md").read_text(encoding="utf-8")
-    assert add in readme
-    assert install in readme
-    reference = (Path(__file__).resolve().parents[2] / "docs" / "cli.md").read_text(
-        encoding="utf-8"
-    )
-    section = reference.split("## `stayfixed overlay init", 1)[1].split("\n## ", 1)[0]
-    assert add in section
-    assert install in section
+def test_a_rendered_overlay_carries_its_identity_record_and_no_plugin_manifest(
+    tmp_path: Path,
+) -> None:
+    # The overlay is no plugin any more: the delivery stayfixed renders on the machine carries
+    # its hooks, skills and rules, so the manifests that made the tree installable, and the hooks
+    # file it fired as a plugin, went. What names it an overlay is its identity record.
+    rendered = _render_into(tmp_path)
+    record = tomllib.loads((rendered / IDENTITY_RECORD).read_text(encoding="utf-8"))
+    assert set(record) == {"requires", "layout"}, record
+    assert record["layout"] == 1
+    for gone in (".claude-plugin", ".codex-plugin", "hooks"):
+        assert not (rendered / gone).exists(), gone
+    assert overlay_fault(rendered) is None
+
+
+def test_a_tree_without_the_identity_record_is_no_overlay_and_is_told_what_to_add(
+    tmp_path: Path,
+) -> None:
+    # An overlay made before the record shipped carries plugin manifests and no record, and no
+    # code migrates it: the refusal names the file and the keys it holds, so the owner adds it in
+    # one step. Mutation: `mutations/`'s "the overlay probe stops asking for the identity record".
+    rendered = _render_into(tmp_path)
+    (rendered / IDENTITY_RECORD).unlink()
+    assert overlay_fault(rendered) == NO_RECORD.format(root=quoted(str(rendered)))
+    for named in (IDENTITY_RECORD, "requires = ", "layout = 1"):
+        assert named in NO_RECORD, named
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["owner = 'o'\nlayout = 2\n", 'layout = "1"\n', "layout = true\n", "owner = \n", "\n"],
+    ids=["another-layout", "a-string", "a-boolean", "not-toml", "no-layout"],
+)
+def test_a_record_that_is_not_a_layout_1_record_is_no_overlay(tmp_path: Path, body: str) -> None:
+    # The one layout this stayfixed reads is 1; a record naming another, or one that does not
+    # parse, names nothing it can act on. `true` is no 1, though Python compares them equal.
+    # Mutations: `mutations/`'s "the overlay probe takes any record for an overlay" ->
+    # `another-layout`; "the overlay probe takes true for layout 1" -> `a-boolean`.
+    rendered = _render_into(tmp_path)
+    (rendered / IDENTITY_RECORD).write_text(body, encoding="utf-8")
+    assert overlay_fault(rendered) == NOT_A_RECORD.format(root=quoted(str(rendered)))

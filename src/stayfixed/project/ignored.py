@@ -44,11 +44,17 @@ footprint's ignore block keeps out of git on purpose.
 
 **No repository, no guard.** Outside a git work tree there is no diff for a change to hide
 from, and every write still goes through `contained()` and the `O_NOFOLLOW` walk. Inside one, a
-`check-ignore` that answers neither "some matched" nor "none matched" is a refusal too, because a
-guard that cannot answer must not read as a pass: a `git` that timed out, or that is not there
-to run. Which of the two this is, is read off the disk (`gitenv.in_work_tree`) and never asked
-of the same `git`, which fails the same way under the same load: a `rev-parse` that timed out
-beside the `check-ignore` read as "no repository" and let the write through.
+`check-ignore` that answers neither "some matched" nor "none matched" refuses the run before any
+write (`DECLINED`), dry run included, because a guard that cannot answer must not read as a pass,
+and a repository can choose either way of not answering. git reads every `.gitignore` along each
+path it is asked about, so a commit holding a deep path under large `.gitignore` files runs it
+past `git_run`'s bound (`-1`, no answer), and git answers a batch holding a path inside a
+submodule with exit 128; a no-answer that was only a note let a pulled commit write past the guard
+to a git-ignored `.env`. A `git` slow under load or not installed is refused the same way, and
+the refusal says to run the command again. Whether this is a work tree at all is read off the disk
+(`gitenv.in_work_tree`) and never asked of the same `git`, which fails the same way under the same
+load: a `rev-parse` that timed out beside the `check-ignore` read as "no repository" and let the
+write through with nothing said.
 """
 
 from __future__ import annotations
@@ -81,7 +87,9 @@ IGNORED_REMOVING = (
     "take that [paths] key out of stayfixed.toml: uninstall then leaves those files where they "
     "are and lists them"
 )
-UNANSWERED = (
+# One refusal for every answer that is not one, a timeout and a `git` that cannot start included:
+# what the person can do about each is the same, run it again once git answers. 0.3.1's words.
+DECLINED = (
     "git could not say whether the files this run would write or remove are ignored, so nothing "
     "was written; run it again once `git check-ignore` works in this repository"
 )
@@ -110,7 +118,8 @@ def _preset_places(config: Config) -> Mapping[str, frozenset[str]]:
 
 def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = False) -> None:
     """Refuse when git ignores an existing file a write or removal in `plans` targets at a place
-    a `[paths]` value chose; `removing` picks `uninstall`'s remedy."""
+    a `[paths]` value chose, or cannot say whether it does inside a work tree; `removing` picks
+    `uninstall`'s remedy."""
     existing = [
         action
         for planned in plans
@@ -148,4 +157,4 @@ def refuse_ignored(root: Path, config: Config, *plans: Plan, removing: bool = Fa
             raise Refusal(text.format(count=len(ignored), names=names))
         return
     if in_work_tree(root):
-        raise Refusal(UNANSWERED)
+        raise Refusal(DECLINED)

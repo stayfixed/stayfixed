@@ -9,6 +9,7 @@ by the lazy value its `register()` creates. The fixtures are the doctor area's o
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -17,7 +18,7 @@ import pytest
 import stayfixed
 from stayfixed.config.overlay import overlay_root
 from stayfixed.doctor.api import OK, RED, SKIP, WARN
-from stayfixed.overlay.api import PLUGIN_MANIFEST
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from tests.doctor.test_checks import (
     OVERLAY,
     _attached,
@@ -34,8 +35,8 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 
 def test_the_overlays_secret_scan_is_reported_when_it_is_not_installed(tmp_path: Path) -> None:
     # The overlay holds the machine owner's own notes, so its commit-time secret scan is
-    # the one that matters. `overlay init` installs it on the machine that created the overlay
-    # and never on a second one that cloned it.
+    # the one that matters. `setup --overlay` installs it on the machine that made the overlay
+    # and never on a second one that cloned it and only recorded it.
     root = _attached(tmp_path)
     (tmp_path / "overlay" / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     checks = _checks(tmp_path, root, machine=_machine(tmp_path))
@@ -144,7 +145,7 @@ def test_overlay_requires_is_ok_when_the_floor_is_met_and_skips_without_an_overl
 def test_overlay_requires_warns_on_a_form_it_cannot_read(tmp_path: Path) -> None:
     machine = _recorded_overlay(tmp_path, "~=1.0")
     row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
-    assert row.status == WARN and PLUGIN_MANIFEST in row.remedy
+    assert row.status == WARN and IDENTITY_RECORD in row.remedy
 
 
 def test_a_local_only_project_is_not_judged_by_an_unrelated_overlays_floor(tmp_path: Path) -> None:
@@ -233,3 +234,31 @@ def test_a_machine_file_that_does_not_load_is_not_reported_as_one_that_records_n
     for name in ("pre-commit", "overlay-requires"):
         row = _by_name(rows, name)
         assert (row.status, row.detail, row.remedy) == (SKIP, unread, ""), row
+
+
+def test_an_overlay_root_inside_another_repositorys_work_tree_is_a_warning(tmp_path: Path) -> None:
+    # `setup --overlay` no longer refuses where the owner puts the overlay: where it lives is the
+    # owner's choice. A work tree that holds it is still a place another repository can put files
+    # into, so the row says so, as a warning and never red, and names that work tree.
+    #
+    # Mutation: `mutations/`'s "doctor says nothing of the work tree that holds the overlay".
+    from stayfixed.overlay.doctor import NESTED
+    from stayfixed.printed import quoted
+
+    outer = tmp_path / "dotfiles"
+    (outer / ".git").mkdir(parents=True)
+    overlay = overlay_with(outer / "overlay", ">=0.0.1")
+    machine = tmp_path / "machine.toml"
+    machine.write_text(f'[overlay]\nroot = "{overlay}"\n', encoding="utf-8")
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    assert (row.status, row.detail) == (WARN, NESTED.format(holder=quoted(str(outer))))
+    # Without that `.git`, the next work tree up holds it, if any does: a temporary directory under
+    # a checkout (a `TMPDIR` inside one) is in that checkout's work tree, and the row names it.
+    # With none, the row is the floor's again.
+    shutil.rmtree(outer / ".git")
+    above = next((d for d in tmp_path.parents if os.path.lexists(d / ".git")), None)
+    row = _by_name(_checks(tmp_path, _initialised(tmp_path), machine=machine), "overlay-requires")
+    if above is None:
+        assert row.status == OK, row
+    else:
+        assert (row.status, row.detail) == (WARN, NESTED.format(holder=quoted(str(above))))

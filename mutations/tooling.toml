@@ -114,8 +114,8 @@ reddens = [
   "tests/scripts/test_check_artifacts.py::test_a_wrapper_that_lost_its_executable_bit_in_the_sdist_is_named",
 ]
 
-# `overlay create --local` leaves a git repository, and the rendered check asks for it rather than
-# stepping over it: a tree that is exact but has no `.git/` is a `--local` that stopped initialising.
+# `setup --overlay <path>` leaves a git repository, and the rendered check asks for it rather than
+# stepping over it: a tree that is exact but has no `.git/` is a render that stopped initialising.
 [[mutation]]
 name = "the rendered check stops asking for the repository"
 file = "scripts/check_artifacts.py"
@@ -1755,7 +1755,7 @@ reddens = [
 ]
 
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood
-# in for the repository `overlay create --local` makes on `main`.
+# in for the repository `setup --overlay <path>` makes on `main`.
 [[mutation]]
 name = "the rendered-artifact check takes any directory named .git"
 file = "scripts/check_artifacts.py"
@@ -3653,3 +3653,134 @@ file = ".github/workflows/ci.yml"
 before = """          echo "$RUNNER_TEMP/go/$GO_TOOLCHAIN/bin" >> "$GITHUB_PATH""""
 after = """          ls "$RUNNER_TEMP/go/$GO_TOOLCHAIN/bin""""
 reddens = ["tests/test_runners_job.py::test_the_runners_job_puts_the_pinned_go_first_on_path"]
+
+# --- scripts/publish_template.py: the overlay template's publisher -----------------------------
+#
+# Moved here with the publisher, which left the CLI for a maintainer's script.
+
+# The `--yes` gate, and the whole reason the command has one. Remove it and the documented dry run
+# creates a public repository on the owner's account and pushes a tree to it.
+[[mutation]]
+name = "publish-template pushes without --yes"
+file = "scripts/publish_template.py"
+before = "        if not yes:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_publish_template.py::test_without_yes_nothing_is_pushed_and_the_push_is_named",
+  "tests/scripts/test_publish_template.py::test_without_yes_no_repository_is_created_or_marked",
+]
+
+# The template is the PUBLIC half: a private template is one no other account can generate from, and
+# `setup --overlay create:` fails against it for everyone but the owner.
+[[mutation]]
+name = "publish-template creates the template repository private"
+file = "scripts/publish_template.py"
+before = '            runner, ["repo", "create", slug, "--public", "--description", DESCRIPTION], cwd'
+after = '            runner, ["repo", "create", slug, "--private", "--description", DESCRIPTION], cwd'
+reddens = ["tests/scripts/test_publish_template.py::test_a_missing_repository_is_created_public_and_marked_as_a_template"]
+
+# An existing repository under the given name that is not public is refused, not flipped. A template
+# is generated from by other accounts only when it is public, and a repository somebody made private
+# is not this command's to change a flag on.
+[[mutation]]
+name = "publish-template marks a private repository as a template instead of refusing"
+file = "scripts/publish_template.py"
+# A TOML *literal* string (single quotes) keeps `\n` as two characters, so the first spelling of
+# this entry matched nothing and the oracle reported it as drift rather than as a survivor —
+# which is the behaviour that guard exists for. Basic strings from here.
+before = "        if existing.visibility.upper() != \"PUBLIC\":\n            raise Refusal(_not_public(slug, existing.visibility))"
+after = "        if False:\n            raise Refusal(_not_public(slug, existing.visibility))"
+reddens = [
+  "tests/scripts/test_publish_template.py::test_an_existing_repository_that_is_not_public_is_refused_not_marked",
+]
+
+# The scaffold ledger, stripped from the render before the clone. Held over the RENDER and not
+# over the pushed tree: `_replace_tree` writes only the files the render left, so an assertion over what
+# was pushed is satisfied by that whitelist alone and survives this mutation — measured, with
+# every case in `tests/scripts/test_publish_template.py` still green.
+#
+# **Both strip lines, and this is the second time this entry was wrong.** Removing only the
+# `remove_within` left `rmdir_within` pointed at a `.stayfixed/` that still held the manifest,
+# which raises `OSError: Directory not empty` — so all twelve cases in the module failed and
+# the oracle said `caught` for a reason with nothing to do with the ledger. It would have gone
+# on saying `caught` with the assertion this entry exists to prove deleted. Measured with both
+# lines replaced: exactly one case fails, and it fails on `.stayfixed/manifest.json` being in
+# the render.
+[[mutation]]
+name = "publish-template publishes the scaffold ledger"
+file = "scripts/publish_template.py"
+before = "        fsops.remove_within(rendered, str(MANIFEST_PATH))\n        fsops.rmdir_within(rendered, str(MANIFEST_PATH.parent))"
+after = "        pass"
+reddens = [
+  "tests/scripts/test_publish_template.py::test_the_render_the_publisher_clones_beside_carries_no_scaffold_ledger",
+]
+
+# The case is named for the repository and matched on `refused by a ruleset`, which is the
+# STUB's own stderr — quoted back whatever this message says about where the push went. The
+# slug is the half only this line produces.
+[[mutation]]
+name = "the declined push stops naming the repository"
+file = "scripts/publish_template.py"
+before = '            raise Failure(f"`git push` to {slug} exited {pushed.code} ({answered(pushed)})")'
+after = '            raise Failure(f"`git push` exited {pushed.code} ({answered(pushed)})")'
+reddens = [
+  "tests/scripts/test_publish_template.py::test_a_push_that_is_declined_is_a_failure_naming_the_repository",
+]
+
+# `overlay publish-template --yes` returned "nothing to push", exit 0, whenever `git` was absent,
+# hung or blocked: the `git` half of the module had no `_gh`-style guard, and an empty `git status`
+# stdout read as "already current".
+[[mutation]]
+name = "the git half of publish-template stops guarding the two sentinels"
+file = "scripts/publish_template.py"
+before = """
+    if done.code in (NOT_FOUND, TIMED_OUT):
+        raise Failure(
+            f"`git """
+after = """
+    if False:
+        raise Failure(
+            f"`git """
+reddens = [
+  "tests/scripts/test_publish_template.py::test_a_git_that_cannot_run_is_a_failure_and_not_a_report_that_nothing_changed",
+]
+
+# And the other half of the same reading: `git` runs, answers non-zero, and its empty stdout
+# is byte-identical to "nothing changed".
+[[mutation]]
+name = "publish-template reads an empty git status without reading its exit code"
+file = "scripts/publish_template.py"
+before = "        if status.code != 0:"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_publish_template.py::test_a_git_status_that_fails_is_never_read_as_an_unchanged_template",
+]
+
+# Every non-zero `gh repo view` read as "the repository does not exist", so an unauthenticated `gh`
+# made the dry run offer to create a repository that exists and is private — the case `_not_public`
+# exists to refuse.
+[[mutation]]
+name = "any gh failure is read as a repository that is not there"
+file = "scripts/publish_template.py"
+before = "        if not _NOT_FOUND_REMOTELY.search(answered(view)):"
+after = "        if False:"
+reddens = [
+  "tests/scripts/test_publish_template.py::test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent",
+]
+
+[[mutation]]
+name = "publish-template parses the repository view with a bare json.loads"
+file = "scripts/publish_template.py"
+before = """
+    document = json_object(
+        view.stdout or "{}",
+"""
+after = """
+    document = json.loads(view.stdout or "{}") or json_object(
+        view.stdout or "{}",
+"""
+reddens = [
+  "tests/scripts/test_publish_template.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[nested]",
+  "tests/scripts/test_publish_template.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[long]",
+  "tests/scripts/test_publish_template.py::test_a_repository_view_past_the_depth_bound_is_a_failure",
+]

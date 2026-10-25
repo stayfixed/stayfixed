@@ -276,14 +276,10 @@ LISTED = {
     ),
     ("src/stayfixed/project/templates.py", "claude"): (5, "`init` renders `CLAUDE.md`"),
     ("src/stayfixed/project/layout.py", "claude"): (1, "from the template `claude.md`"),
-    ("src/stayfixed/overlay/layout.py", "claude"): (3, "(`overlay.layout`"),
-    ("src/stayfixed/overlay/layout.py", "codex"): (2, "(`overlay.layout`"),
+    ("src/stayfixed/overlay/layout.py", "claude"): (1, "(`overlay.layout`"),
+    ("src/stayfixed/overlay/layout.py", "codex"): (1, "(`overlay.layout`"),
     ("src/stayfixed/overlay/api.py", "claude"): (1, "re-exported by `overlay.api`"),
-    ("src/stayfixed/overlay/api.py", "codex"): (2, "re-exported by `overlay.api`"),
-    ("src/stayfixed/overlay/create.py", "claude"): (
-        1,
-        "the manifest directory\n  `overlay.create`",
-    ),
+    ("src/stayfixed/overlay/api.py", "codex"): (1, "re-exported by `overlay.api`"),
     ("src/stayfixed/attach/permissions.py", "claude"): (
         1,
         "(`attach.permissions`, `attach.write`)",
@@ -304,6 +300,10 @@ LISTED = {
     ),
     ("src/stayfixed/doctor/checks.py", "plugin_data"): (1, "`${CLAUDE_PLUGIN_DATA}` in the"),
     ("src/stayfixed/trust/boundary.py", "claude"): (2, "`trust.boundary` spells"),
+    ("src/stayfixed/guards/commands.py", "claude"): (
+        1,
+        "`commit strip` gives way to Claude Code's `attribution.commit`",
+    ),
 }
 # The mentions that are no fact the code acts on, each with how many constants make it and why.
 PROSE = {
@@ -316,6 +316,9 @@ PROSE = {
     # author of a commit, not as a harness stayfixed runs under.
     ("src/stayfixed/guards/commit.py", "claude"): 2,
     ("src/stayfixed/guards/commit.py", "codex"): 2,
+    # The recommended plugins question's lines, which say where `setup` installs them and how to
+    # take one out: Claude Code is the one harness with a verified marketplace for them.
+    ("src/stayfixed/project/questions.py", "claude"): 3,
 }
 
 

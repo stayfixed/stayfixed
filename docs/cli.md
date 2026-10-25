@@ -60,22 +60,20 @@ Three things hold everywhere:
 - [`stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#stayfixed-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
 - [`stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
 - [`stayfixed memory refs`](#stayfixed-memory-refs)
-- [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
+- [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--attribution-check] [--commit-type TYPE …] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---attribution-check---commit-type-type----local-id----no-ci---root-path---machine-path)
 - [`stayfixed init --questions [--root PATH] [--machine PATH]`](#stayfixed-init---questions---root-path---machine-path)
 - [`stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-upgrade---dry-run---force-path---root-path---machine-path)
 - [`stayfixed uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-uninstall---dry-run---force-path---root-path---machine-path)
-- [`stayfixed overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`](#stayfixed-overlay-create---owner-owner---name-name---template----local---root-path)
-- [`stayfixed overlay init --owner OWNER [--root PATH]`](#stayfixed-overlay-init---owner-owner---root-path)
 - [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
-- [`stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
 - [`stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
-- [`stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`](#stayfixed-setup---preset-name---yes---home-path---machine-path---overlay-value---root-path)
+- [`stayfixed setup [--preset NAME] [--plugin NAME …] [--home PATH] [--machine PATH] [--overlay VALUE]`](#stayfixed-setup---preset-name---plugin-name----home-path---machine-path---overlay-value)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
 - [`stayfixed setup --approval-boundary [--home PATH] [--machine PATH]`](#stayfixed-setup---approval-boundary---home-path---machine-path)
 - [`stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`](#stayfixed-doctor---json---root-path---home-path---machine-path)
 - [The reusable workflow](#the-reusable-workflow)
 - [Shared flags](#shared-flags)
+- [Terms](#terms)
 - [Configuration](#configuration)
 
 ---
@@ -471,8 +469,8 @@ count but the one that names two remotes, joined by newlines in this order: **no
 **could not be asked** about, which is a machine configuration file that will not parse; this
 repository **not attached** to that overlay, or, for a bound one, its **`origin` moved** from
 the remote its binding was recorded with — the one line that names repository bytes, both remotes,
-each escaped where it is not a plain path; the overlay's
-`stayfixed.requires` in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
+each escaped where it is not a plain path; the `requires` of the overlay's identity record
+(`stayfixed-overlay.toml`) in **a form this stayfixed cannot read**, or naming **a floor this stayfixed
 does not meet**, a pre-release of the floor's version included; and — only when none of those fired — the overlay's branch having **no
 upstream**, and the counts of its **unpushed commits and uncommitted changes**. A bound,
 up-to-date repository on a satisfied stayfixed hears nothing. But for the moved-`origin` line, not
@@ -497,8 +495,8 @@ later, over an overlay the conversation may have left dirty, and an invocation s
 place in a context is treated as a new one rather than as one already answered. The cost is that
 an overlay which becomes unpushed *during* a session that started clean is not reported at that
 session's compactions, only at its next resume or startup; `stayfixed doctor` answers on demand. And the overlay is never a plugin stayfixed
-executes anything from — its
-`hooks/hooks.json` stays empty; hook entries the owner keeps in *common/claude/hooks.json* and
+executes anything from: it carries no plugin manifest and no
+`hooks/hooks.json`, and hook entries the owner keeps in *common/claude/hooks.json* and
 `projects/<name>/claude/hooks.json` reach a session only through the plugin `attach` renders from
 them, named by this machine's binding id.
 
@@ -513,9 +511,9 @@ two paragraphs — and it ends at the first paragraph holding any body line. Bod
 judged. A trailer's display name is judged whole: one that is a product's name and nothing else
 (`Cursor`, `Devin`, `ChatGPT`) is a violation whatever its address, and a person's name that holds
 a product word (`Cursor Smith`, `Claude Lemaire`) is not, by its name.
-`[commit_messages] attribution_check = false` stops the rules being applied: no message is ever
-a violation, but the range must still be readable, because the report says how many messages it
-read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
+The rules apply only where `[commit_messages] attribution_check = true`; the preset leaves it
+`false`, and then no message is ever a violation, but the range must still be readable, because
+the report says how many messages it read. Exits `1` naming up to eight offences as `sha line N [label]` and counting the rest —
 never the text, which is the repository's; `--json`'s `violations` carries every one — and `2`
 when git cannot read the range or the range looks like an option.
 
@@ -532,9 +530,20 @@ file is there before it runs the gate.
 
 Rewrite a commit-message file in place with the attribution lines of its trailing attribution
 block removed — never a line of the body. Exits `0` whether or not anything was stripped, and
-says which; a message that is *only* attribution is left alone, because emptying it aborts the
-commit with a confusing error and CI explains better. Refuses a symlink, and fails (`1`) on a
-file it cannot read, a file that is not UTF-8 included.
+prints one line saying which: `stripped N attribution line(s) from FILE`, `nothing to strip`, or
+`kept N attribution line(s): …` with the reason below. A message that is *only* attribution is
+left alone and reads `nothing to strip`, because emptying it aborts the commit with a confusing
+error and CI explains better. It strips nothing where your own Claude Code settings,
+`~/.claude/settings.json`, set `attribution.commit` to text: what a commit carries is then your
+choice in the harness, and when a line would have gone the run says it kept it and why; a message
+with nothing to strip still says `nothing to strip`, which the hook keeps off the terminal. It is
+all or nothing: with text there, every attribution line the strip would take is kept, not only
+the one the setting names. Set empty, or to whitespace alone, it says your commits carry nothing,
+so a trailer that arrives anyway is stripped as it is with the setting unset. The file is read as
+a regular file only: one that is not there, is not a regular file (a FIFO, which would hold every
+commit), cannot be read or is not one JSON object sets nothing. A repository's own
+`.claude/settings.json` is not read for it, since a clone could then turn the hook off. Refuses a symlink, and fails (`1`) on a file it cannot read, a
+file that is not UTF-8 included.
 
 Git's own trailing comment block is kept, and so is everything below the scissors line that
 `commit.verbose = true` puts the staged diff under — the message is what lies above both.
@@ -544,6 +553,8 @@ commit exists; `git commit --no-verify` skips `commit-msg` but not that hook. In
 hook is `stayfixed setup --git-hooks`, and removing it — restoring whatever it chained to — is
 `stayfixed setup --git-hooks --uninstall`; both are documented below.
 `stayfixed.guards.api.install` is the same call for a caller embedding stayfixed.
+
+**Reads** `FILE` and `~/.claude/settings.json` under your home, and nothing a repository holds.
 
 **Writes** `FILE`.
 
@@ -1553,9 +1564,9 @@ the resolver's reason. Write a path that deliberately does not resolve in *itali
 
 ---
 
-## `stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`
+## `stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--attribution-check] [--commit-type TYPE …] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`
 
-Writes a repository's stayfixed footprint, once. It is the only command that creates the
+Writes a repository's stayfixed scaffold, once. It is the only command that creates the
 documents every other command reads, and the only one that writes `stayfixed.toml`.
 
 **`--yes` is required, and it means "take the defaults `stayfixed init --questions` shows".**
@@ -1568,7 +1579,21 @@ Each answer flag replaces one default and writes one key:
 - `--agent`, once per harness, writes `[stayfixed] agents`;
 - `--profile` writes `[stayfixed] profile`, an empty value meaning none;
 - `--memory-mode` writes `[memory] mode`;
+- `--attribution-check` writes `[commit_messages] attribution_check = true`, which is off unless
+  answered;
+- `--commit-type`, once per type, writes `[commit_messages] types`, each lowercase ASCII letters;
 - `--local`, once per file, writes `[artifacts] local`.
+
+`--no-ci` answers the CI question (below). The recommended plugins are not `init`'s to install:
+`init --questions` asks about them, and the answer is `stayfixed setup`'s.
+
+After the CI line the run prints `picked:`, one line per question in the order
+`init --questions` asks them, with the value this run took: the name, the base branch, the memory
+mode, the profile, the CI mode, the attribution check (`on` or `off`), the commit types, the
+files kept out of git, the agents stayfixed serves among those listed, and `plugins: none`, since
+`init` installs none. Taking every default gives the attribution check `off`, the preset's commit
+types and no plugin. A value a `stayfixed.toml` you wrote holds outside the plain-path grammar
+prints as `<unprintable; see stayfixed.toml>`.
 
 The parser refuses a value outside its grammar or its choices (`2`), and it refuses a name or
 a branch by naming the rule, never the value. A branch is a name git accepts as one, written in
@@ -1619,7 +1644,7 @@ written. One the next command could not load fails (`1`) with the loader's own s
 nothing is written: no `[project] name`, a `state` outside `initialised`, `adopting` and
 `installed`, or an `enforced` list the loader holds against `state` and the gates.
 
-The paths it declares are where the footprint lands. A repository with no `stayfixed.toml` gets
+The paths it declares are where the scaffold lands. A repository with no `stayfixed.toml` gets
 one written from the detected values and your answers, headed by a comment naming the four
 keys that are stayfixed's to rewrite: `[stayfixed] version`, `state` and `enforced`, and
 `[ci] ref`. A file that cannot be read, is not UTF-8 text or is not valid TOML is a failure
@@ -1632,7 +1657,7 @@ those are commands the clone wrote, and the dry run you read before `--yes` says
 commands themselves never print.
 
 **Two passes, both planned before either is applied.** The three write-once files are one pass
-and the rest of the footprint is the other, because two artifacts cannot target one file in one
+and the rest of the scaffold is the other, because two artifacts cannot target one file in one
 pass and both the `AGENTS.md` skeleton and its `harness` region land on `AGENTS.md`. A refusal
 in either plan stops the run with nothing written and no manifest, and `--dry-run` is that same
 branch rather than a second code path — it reports both plans and writes nothing. On a
@@ -1646,20 +1671,20 @@ either way.
 | `config` | write-once | once | `stayfixed.toml` | the document this run rendered |
 | `agents-skeleton` | write-once | once | `[paths] agents_md` | a skeleton headed with the project's name, stating this project's own budgets |
 | `claude-md` | write-once | once | `CLAUDE.md` | a one-line pointer at `[paths] agents_md`, whatever that file is called |
-| `documentation-policy` | footprint | template | `<architecture>/documentation.md` | where each kind of fact belongs |
-| `adr-template` | footprint | template | `<adr>/0000-template.md` | the four-heading decision record |
-| `ledger-runbook` | footprint | template | `<runbooks>/bug-reports.md` | how to file, close and reference an entry |
-| `ledger-audits` | footprint | template | `<bugs>/audits/README.md` | what an audit record is |
-| `bug-index` | footprint | template | `[paths] bug_index` | the generated index, rendered empty |
-| `roadmap` | footprint | template | `[paths] roadmap` | `Now`, `Next`, and the trail block |
-| `roadmap-history` | footprint | template | `[paths] roadmap_history` | an empty history |
-| `trail` | footprint | template | `trail.toml` beside the roadmap | one theme, no declared states |
-| `specs-keep`, `plans-keep` | footprint | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
-| `gitignore` | footprint | managed region | `.gitignore` | `.stayfixed/local/` and `.stayfixed/assessment.json` |
-| `agents-md` | footprint | managed region | `[paths] agents_md` | which paths this repository's stayfixed uses |
-| `ci-workflow` | footprint | template | `.github/workflows/stayfixed.yml` | the pinned call to the reusable gate |
-| `profile-rules` | footprint | template | `<stayfixed>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[stayfixed] profile` set |
-| `claude-rules` | footprint | template | `.claude/rules/stayfixed-<profile>.md` | a `paths:`-scoped pointer at `profile-rules` for Claude Code; only when `[stayfixed] agents` lists `claude` |
+| `documentation-policy` | scaffold | template | `<architecture>/documentation.md` | where each kind of fact belongs |
+| `adr-template` | scaffold | template | `<adr>/0000-template.md` | the four-heading decision record |
+| `ledger-runbook` | scaffold | template | `<runbooks>/bug-reports.md` | how to file, close and reference an entry |
+| `ledger-audits` | scaffold | template | `<bugs>/audits/README.md` | what an audit record is |
+| `bug-index` | scaffold | template | `[paths] bug_index` | the generated index, rendered empty |
+| `roadmap` | scaffold | template | `[paths] roadmap` | `Now`, `Next`, and the trail block |
+| `roadmap-history` | scaffold | template | `[paths] roadmap_history` | an empty history |
+| `trail` | scaffold | template | `trail.toml` beside the roadmap | one theme, no declared states |
+| `specs-keep`, `plans-keep` | scaffold | template | `<specs>/.gitkeep`, `<plans>/.gitkeep` | nothing, so the trail lists no documents |
+| `gitignore` | scaffold | managed region | `.gitignore` | `.stayfixed/local/` and `.stayfixed/assessment.json` |
+| `agents-md` | scaffold | managed region | `[paths] agents_md` | which paths this repository's stayfixed uses |
+| `ci-workflow` | scaffold | template | `.github/workflows/stayfixed.yml` | the pinned call to the reusable gate |
+| `profile-rules` | scaffold | template | `<stayfixed>/rules/<profile>.md` | the profile's rules, the one copy a project edits; only with `[stayfixed] profile` set |
+| `claude-rules` | scaffold | template | `.claude/rules/stayfixed-<profile>.md` | a `paths:`-scoped pointer at `profile-rules` for Claude Code; only when `[stayfixed] agents` lists `claude` |
 
 With a profile set, the `agents-md` region also names the profile's rules file and lists the
 lines under its *Before the first command* heading, so every harness that reads `AGENTS.md` has
@@ -1754,10 +1779,10 @@ either, that resolve to one file (`roadmap` and `roadmap_history` set to one pat
 only the `AGENTS.md` skeleton and its region share a file by design, an `[artifacts] local` list
 naming a profile artifact, which every pointer at it reads at its committed path, one naming
 `config` or `gitignore`, which only work at the repository root, and a write git would hide, at an
-existing file a `[paths]` value chose, which the refusal names, or one git cannot answer for inside
-a repository because it timed out or is not installed (see `upgrade`'s boundary).
+existing file a `[paths]` value chose, which the refusal names, or one inside a repository whose
+`git` cannot say whether it is ignored (see `upgrade`'s boundary).
 
-`--json` carries `dry_run`, `adopted`, `once` and `footprint` (each the plan's own rendered
+`--json` carries `dry_run`, `adopted`, `once` and `scaffold` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
 `{tag, sha}` or `null`), `asked`, `note`, `ref` — what `[ci] ref` says on disk after the run
 and so what the workflow pins, empty when no workflow was planned — `stamped`, whether this
@@ -1776,9 +1801,11 @@ when this run writes the file.
 
 ## `stayfixed init --questions [--root PATH] [--machine PATH]`
 
-Prints the values `stayfixed init --yes` would take for the six things a person may answer, where
-each came from, and the flag on `init --yes` that replaces it. It writes nothing. The `init` skill
-asks its questions from it, and a person reads it to see the defaults before choosing any.
+Prints the values `stayfixed init --yes` would take for the ten things a person may answer, where
+each came from, and the flag that replaces it: on `init --yes`, but for the recommended plugins,
+which `stayfixed setup` installs on the machine. It writes nothing. The `init` skill asks its
+questions from it, taking every default offered first, and a person reads it to see the defaults
+before choosing any.
 
 The summary is one line per question, `<key>: <default> (<where it came from>; <flag>)`, then
 one line saying how each is answered:
@@ -1787,11 +1814,15 @@ one line saying how each is answered:
 detected:
   project.name: widget (origin remote; --name)
   project.base_branch: main (origin/HEAD; --base-branch)
-  stayfixed.agents: claude, codex (default; --agent)
-  stayfixed.profile: python (profile markers; --profile)
   memory.mode: harness (default; --memory-mode)
+  stayfixed.profile: python (profile markers; --profile)
+  ci.mode: reusable (the preset's default; --no-ci)
+  commit_messages.attribution_check: off (the preset's default; --attribution-check)
+  commit_messages.types: feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test (the preset's default; --commit-type)
   artifacts.local: none (the preset's default; --local)
-each is answered by the flag its line names, on `stayfixed init --yes`; `stayfixed init --questions --json` carries them as a JSON Schema
+  stayfixed.agents: claude, codex (default; --agent)
+  plugins: none (default; stayfixed setup --plugin)
+each is answered by the flag its line names, on `stayfixed init --yes` but the plugins'; `stayfixed init --questions --json` carries them as a JSON Schema, each with what it gives, what it gives up, what it leaves and how to undo it
 ```
 
 Where a value came from is one of a fixed set of phrases. The name comes from the
@@ -1803,25 +1834,34 @@ when that names a plain branch under `refs/remotes/origin/`; with no remote at a
 remotes git could not list included, it is the `default`, `main`. The agents come from the `harness
 directories` the root carries; otherwise the `default` is every harness. The profile comes from
 `profile markers`, or there are `no profile markers`. The memory mode is the `default`,
-`harness`, since the preset chooses none, and the files kept out of git are `the preset's
-default`. Each default is exactly what `stayfixed init --yes` writes when
-that question is not answered. `origin/HEAD` goes stale after the remote's default branch is
+`harness`, since the preset chooses none; the CI mode, the attribution check (off), the commit
+types and the files kept out of git are `the preset's default`; and the plugins are the `default`,
+none, because a third-party plugin runs in every session and is installed only when named. Each
+default is exactly what `stayfixed init --yes` writes when that question is not answered. `origin/HEAD` goes stale after the remote's default branch is
 renamed, because git does not refresh one it has. That is why its source is printed: you can
 catch it.
 
-`--json` carries `questions`: a JSON Schema object (draft 2020-12) with six required
-`properties`. Each is keyed by the `stayfixed.toml` key its answer writes: `project.name`,
-`project.base_branch`, `stayfixed.agents`, `stayfixed.profile`, `memory.mode` and
-`artifacts.local`. Each property carries three keys: `default` (absent for a name that is not
-derivable), `x-stayfixed-source` (the phrase above) and `x-stayfixed-flag` (the `init --yes` flag
-that answers it). A choice is a `oneOf` of `const` and `title`, or `items.enum` for a list. The
-two free-text properties carry `pattern`, the grammar their flag enforces.
+`--json` carries `questions`: a JSON Schema object (draft 2020-12) with ten `properties`, and
+`required` naming all ten in the order the `init` skill asks them; read the order there, since
+`--json` prints every object's keys sorted, so the properties arrive by name. Each but the last is
+keyed by the
+`stayfixed.toml` key its answer writes: `project.name`, `project.base_branch`, `memory.mode`,
+`stayfixed.profile`, `ci.mode`, `commit_messages.attribution_check`, `commit_messages.types`,
+`artifacts.local` and `stayfixed.agents`; the last, `plugins`, offers the plugins the preset
+recommends, which `stayfixed setup --plugin` installs. Each property carries four keys: `default`
+(absent for a name that is not derivable), `x-stayfixed-source` (the phrase above),
+`x-stayfixed-flag` (the flag that answers it) and `x-stayfixed-tradeoff`, four lines of fixed
+text: `get`, what the answer gives; `give_up`, what it costs; `trace`, what it leaves behind; and
+`undo`, how to take it back. A choice is a `oneOf` of `const` and `title`, `items.enum` for a list
+of choices, or `boolean`. The two free-text properties and each commit type carry `pattern`, the
+grammar their flag enforces.
 
 The schema is modelled on MCP elicitation's flat form schema. A client may send it as a
 `requestedSchema` once it drops `pattern` and the `x-stayfixed-*` keys, which that subset does not
 carry. Harness ask tools take lists of questions and options rather than a schema, so the `init`
-skill turns the properties into questions: the first four as one confirmation of their defaults,
-the rest one at a time, within each harness's limits. The flags validate the answers; the schema
+skill turns the properties into questions: every default at once first, then the name and the
+base branch as one confirmation, the rest one at a time with their four lines, within each
+harness's limits. The flags validate the answers; the schema
 does not.
 
 It is refused (`2`) before anything beyond the root is read, in three cases:
@@ -1846,8 +1886,8 @@ Exits `0` with the questions printed; `2` on a refusal.
 
 ## `stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`
 
-Refreshes a repository's footprint after a stayfixed update, keeping every hand edit. It moves
-`[stayfixed] version` to the stayfixed running, re-plans every footprint artifact against
+Refreshes a repository's scaffold after a stayfixed update, keeping every hand edit. It moves
+`[stayfixed] version` to the stayfixed running, re-plans every scaffold artifact against
 `.stayfixed/manifest.json` by hash, and never re-plans the write-once files: `stayfixed.toml`,
 `CLAUDE.md` and the `AGENTS.md` skeleton are yours after `init`.
 
@@ -1884,7 +1924,7 @@ have edited the file, it is not, so `stayfixed.toml` stays yours.
 and the `uses:` line in `.github/workflows/stayfixed.yml` are one value. When no released commit
 of the stayfixed running is found — before its tag exists, or with the network unreachable — or
 when the workflow would not be rewritten to the new pin, neither key moves: a `note:` line says
-`[stayfixed] version` and `[ci] ref` were left as they are and why, and the rest of the footprint
+`[stayfixed] version` and `[ci] ref` were left as they are and why, and the rest of the scaffold
 is still refreshed. A workflow you edited by hand, or one stayfixed never wrote, is reported
 `skip_modified` and moves with them only under `--force` with the path the report prints for it.
 When the report refuses the workflow, or the `CI:` line says none was rendered (a `[ci]
@@ -1963,9 +2003,13 @@ rule) and a preset's own place are never refused, so a `CLAUDE.md` in your globa
 pattern is not ignored, because git shows every change to it; the artifacts `[artifacts] local`
 keeps under `.stayfixed/local/artifacts/` are exempt, since keeping them out of git is what that
 setting asks for; and outside a git work tree there is no guard, because there is no diff to hide
-from. Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer, because
-it timed out or is not installed, refuses the run rather than letting it through. Run it on a
-checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
+from. Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer refuses
+the run (`2`) before anything is written, dry run included, and the refusal says to run it again
+once `git check-ignore` works: one that timed out, is not installed, or failed on the batch. A
+repository can cause the first and the last: git reads every `.gitignore` along each
+path it is asked about, so a deep enough path under large enough ignore files outlasts its time
+bound, and git answers a whole batch with exit 128 when one path in it lies inside a submodule.
+Run it on a checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
 entries, so an upgrade changes none.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every
@@ -1973,7 +2017,7 @@ file an artifact targets, `git check-ignore` for each existing file a write or r
 a place a `[paths]` value chose, and, under `[ci] mode = "reusable"`, the public repository's
 tags.
 
-**Writes** the footprint through the scaffold engine — every `create`, `update`, `region_update`,
+**Writes** the scaffold through the scaffold engine — every `create`, `update`, `region_update`,
 `remove` and `relocated` in the report, and each file `--force` takes — then
 `.stayfixed/manifest.json`, the committed record, written even when a write or removal fails
 part-way, and `.stayfixed/local/artifacts.json`, the record kept out of git, only when what it
@@ -1996,7 +2040,7 @@ and running the command again re-plans from there.
 
 `--json` carries `dry_run`, `moved` (each `{key, before, after}`; a `before` outside its grammar
 prints as `(not a version)` or `(not a commit)`), `held` (the note's sentence, or empty),
-`footprint` (the plan's rendered report), `writes`, `skipped`, `orphans` (a count), `pin`
+`scaffold` (the plan's rendered report), `writes`, `skipped`, `orphans` (a count), `pin`
 (`{tag, sha}` or `null`) and `asked`.
 
 ---
@@ -2020,7 +2064,7 @@ old place (`relocated and hand-edited`), which is yours to keep or delete by han
 are `upgrade`'s: a leading `./` is dropped, an absolute path or one with a `..` component is refused
 (`2`), and a forced path no planned action names is counted in a `note:` line and forces nothing.
 
-**Two passes, the footprint first.** The footprint pass removes files and takes the regions out;
+**Two passes, the scaffold first.** The scaffold pass removes files and takes the regions out;
 a region taken out of a file that keeps other text is reported as
 `remove  AGENTS.md  (retired; stayfixed's part only, the file stays)`, and a line without that
 tail means the file itself goes. Every command that prints a plan says it the same way.
@@ -2029,7 +2073,7 @@ after it, so the skeleton is judged once stayfixed's region has left `AGENTS.md`
 byte for byte what `init` wrote and goes. A dry run cannot take the region out first, so it
 judges the skeleton with the region still in it and calls it edited; a `note:` line says so.
 **Forcing `AGENTS.md` takes stayfixed's region out of it and never the skeleton**: a forced path
-the footprint pass targets never reaches the write-once pass, compared as the engine places each
+the scaffold pass targets never reaches the write-once pass, compared as the engine places each
 file, so what you wrote into the skeleton is judged on its own bytes.
 
 **The ignore block goes last, and only over an empty `.stayfixed/local/`.** The `.gitignore` region
@@ -2047,10 +2091,27 @@ someone committed where a ledger file belongs stays. So does a harness's own dir
 empty directory, and to `init` its presence means the project uses that harness. So a later `init`
 detects that harness and lists it in `[stayfixed] agents` until you remove the directory.
 
-**Refused before any write** (`2`): the repository is not initialised; it is attached to an overlay
-(the ledger is in this checkout or in the main checkout, where `attach` keeps it from every
-worktree), so run `stayfixed detach` first; `stayfixed.toml` is missing while the manifest records it, so restore
-it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
+**An attached repository is detached first.** When `attach`'s ledger is in this checkout or in the
+main checkout, where `attach` keeps it from every worktree, and the render `attach` writes for the
+repository's binding id is in `~/.local/share/stayfixed/delivery/`, outside the work tree where no
+commit reaches, the run asks every refusal below, then
+runs [`stayfixed detach`](#stayfixed-detach---root-path---machine-path) before its first write,
+which withdraws what `attach` placed, the overlay's plugin and the allow rules among it, and takes
+the ledger; a `note:` line says so, and a dry run says it would. A run whose plans refuse stops
+before `detach`, and neither it nor its dry run says it detached or would. A `detach` that refuses
+or stops part-way stops the run there with nothing of its own done, its own sentence and exit code
+given.
+While the render is still there, running `uninstall` again finishes from what is left. A `detach`
+that stopped after removing the render, or an `attach` that stopped after writing its ledger and
+before the render, leaves the ledger with no render, which the next `uninstall` refuses as below:
+run `stayfixed detach`, which finishes from the ledger, then `uninstall`. The ledger is not counted
+among the files `.stayfixed/local/` holds while the repository is attached. A ledger with no
+render, which a clone can commit and a pull request can commit after a `detach`, detaches nothing:
+it is a file the run would not remove, and refused as one, so run `stayfixed detach` over a ledger
+only when your own `attach` wrote it.
+
+**Refused before any write** (`2`): the repository is not initialised; `stayfixed.toml` is missing
+while the manifest records it, so restore it; `[artifacts] local` names `config` or `gitignore`, which only work at the repository root, so
 take them out of the list; two artifacts resolve to one file, named as `init` names it;
 `.stayfixed/local/` holds files this run would not remove, such as notes, or an artifact kept out of
 git that changed since stayfixed wrote it, which the refusal counts and never names; git ignores an
@@ -2094,23 +2155,27 @@ commit records, and a region only where its key names; the diff shows both. No `
 name git's control directory or stayfixed's own `.stayfixed/`, and a symlinked `.stayfixed/` is
 refused. An existing file git ignores at a place a `[paths]` value chose is never removed or
 rewritten: the run is refused (`2`) before any removal, dry run included, by `upgrade`'s rule,
-naming the files, and so is a run inside a repository whose `git` cannot answer because it timed out
-or is not installed. Take stayfixed's part out of them by hand, or take the `[paths]` key out of
-`stayfixed.toml`; the run then leaves those files where they are and lists them. That includes a file
-stayfixed itself created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
+naming the files, and so is a run inside a repository whose `git` cannot answer, as `upgrade`'s
+is. Take
+stayfixed's part out of them by hand, or take the `[paths]` key out of `stayfixed.toml`; the run
+then leaves those files where they are and lists them. That includes a file stayfixed itself
+created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`
 under an ignored `build/`, say): creating it was allowed because nothing was there, and by the time
 `uninstall` runs it exists, so this refusal meets it, and taking the key out is the remedy that
 finishes the run. A `CLAUDE.md` or `AGENTS.md` your own excludes ignore is taken back like any
 other. Run it on a checkout you trust.
 
-**What stays on the machine.** `uninstall` takes back one repository's footprint, and what is the
+**What stays on the machine.** `uninstall` takes back one repository's scaffold, and what is the
 machine's stays: the deny rules `stayfixed setup` added to the user settings file, and every
 approval in `~/.config/stayfixed/trust.json`. `stayfixed trust revoke reviewed --subject KEY`, with a
 key `stayfixed trust list --json` prints, withdraws one.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every file
 an artifact targets, `git check-ignore` for each existing file a removal targets at a place a
-`[paths]` value chose, and what is under `.stayfixed/local/`.
+`[paths]` value chose, and what is under `.stayfixed/local/`; and, to tell whether the repository is
+attached, `attach`'s ledger in this checkout and in the main checkout, which `git` names, the binding
+id in the git common directory, and whether `~/.local/share/stayfixed/delivery/<id>/` is there. On an
+attached repository, what `stayfixed detach` reads.
 
 **Writes** only removals, and region removals, through the scaffold engine, and after each pass
 the two records of what is left: `.stayfixed/manifest.json`, which every pass rewrites, whether or
@@ -2121,181 +2186,24 @@ above a file it removed, once that directory is empty. After the write-once pass
 `.stayfixed/local/artifacts/`, deepest first, that directory included; after the last pass, the
 ledger: `.stayfixed/assessment.json`, `.stayfixed/manifest.json`, then `.stayfixed/local/` and
 `.stayfixed/`, each once it is empty. A harness's own directory is never removed. When
-`stayfixed.toml` is gone and nothing records it, only the ledger is removed. Under `--dry-run`,
-nothing.
+`stayfixed.toml` is gone and nothing records it, only the ledger is removed. On an attached
+repository it first writes and removes what `stayfixed detach` does, which that section names,
+`attach`'s ledger among them, and runs the same `claude plugin` commands, which write what Claude
+Code records about the plugin. Under `--dry-run`, nothing.
 
 Exits `0` when it applied the plans, including when every recorded file was edited and nothing
 was removed but the ledger. `1` on a finding: a plan carries refusals — the report's REFUSED
-section names each, and nothing was removed — or a `stayfixed.toml` that does not load. `2` on the
+section names each, and nothing was removed — or a `stayfixed.toml` that does not load; and on an
+attached repository, a `detach` that fails as `stayfixed detach` does (`1`), part of what `attach`
+placed withdrawn and nothing of the scaffold removed, which the next run finishes. `2` on the
 refusals above, before any write or part-way; a repository with no `.stayfixed/manifest.json` is
 one of them.
 
-`--json` carries `dry_run`, `footprint` and `once` (each the plan's rendered report), `left` (the
+`--json` carries `dry_run`, `scaffold` and `once` (each the plan's rendered report), `left` (the
 files left in place, each as the reports print it), `orphans` (a count), `note` (the dry run's
-order note, or the missing-configuration count, or empty) and `kept_locally` (how many files
+order note, or the missing-configuration count, or empty), `kept_locally` (how many files
 under `.stayfixed/local/` the run would leave, on a dry run and on a run whose plans refuse; `0` on
-a run that removed what it planned).
-
----
-
-## `stayfixed overlay create --owner OWNER [--name NAME] (--template | --local) [--root PATH]`
-
-Creates the private overlay: the repository that holds your standing rules, your cross-project
-notes, and one record per repository bound to them. Nothing in it is any project's, which is why
-it is a repository of its own and why it is private.
-
-`--owner` is the account it belongs to and `--name` the repository name (default
-`stayfixed-private`). Both are held to one path segment matching `[a-z0-9][a-z0-9._-]*`, because
-each becomes a directory name, half a remote path and later a marketplace selector; a value
-shaped like an option is refused rather than quoted. `--root` is the directory the instance is
-created *in*, not a project root, and defaults to the current directory.
-
-**Neither source is a default.** `--template` asks GitHub to generate a private repository from
-a template repository and clone it; `--local` renders the shipped template here, makes a git
-repository of it, and makes no network call. An invocation with neither is refused (`2`) naming
-both, so that creating a repository on an account is never something an omitted flag does.
-
-**`--template` uses your template when you have published one, and the publisher's otherwise.**
-It asks `gh repo view <owner>/stayfixed-overlay-template --json isTemplate` once. A template
-there is generated from, and it is the one
-[`stayfixed overlay publish-template`](#stayfixed-overlay-publish-template---owner-owner---name-name---yes)
-publishes to your account. A repository of that name that is not a template, and `gh`'s explicit
-answer that there is no such repository, both mean you have published none, and the template is
-`github.com/stayfixed/stayfixed-overlay-template`, the publisher's public copy, named with its
-host: `gh` looks an unqualified name up on `GH_HOST`, so on a GitHub Enterprise host
-`stayfixed/…` would be whoever owns that name there, while your own template's question stays on
-your host. The result names the template it used. Any other failure of that question — an expired token, a network error, a
-`gh` that is not installed or hung, an answer that is not the JSON asked for — stops the command
-with `gh`'s own message and creates nothing (`1`): it is not known whether you have a template of
-your own, and guessing "no" would generate your overlay from somebody else's. `--local` renders
-exactly the same tree here with no network call, so an owner setting up a first overlay can use
-either. `stayfixed setup --overlay create:<owner>/<name>` makes the same choice.
-
-A template and not a fork: a fork's visibility is bound to the upstream network and cannot be
-made private, which is the one outcome this command exists to prevent.
-
-The `--template` path is idempotent, because `gh` can give up on the clone with the repository
-already created: a directory that already carries `.claude-plugin/` is left alone and reported,
-before `gh` is asked anything. When the template question or `gh repo create` itself fails, the
-command stops there and reports **its** exit code and **its** stderr: a `gh` that is not installed,
-or one that hung, costs one launch rather than three, and the failure names the binary rather than
-sending you to `gh auth status` for a repository that was never there. It also names which
-template repository each source uses, because a template that does not exist yet is the usual
-reason this source cannot work. When `gh` reports success and the clone brings nothing down,
-`gh repo view` is asked whether the repository exists at all — the answer tells "not created"
-from "created, and the clone raced its generation" — and the clone is retried once, after a
-ten-second wait when it was the second. **That retry is carried on reasoning rather than on a
-measurement:** the one trial run against it did not reproduce the race, and one clean run cannot
-rule out an asynchronous generation step that sometimes outlasts a clone. If the second attempt
-is still empty, the command fails (`1`) naming both attempts and what GitHub said in between.
-
-**`--local` leaves a git repository.** After rendering, it runs `git init` and
-`git symbolic-ref HEAD refs/heads/main` in the instance directory (not `git init -b main`, which a
-`git` older than 2.28 refuses) and prints the two commands that give it a remote once you have
-created the private repository on GitHub: `git remote add origin git@github.com:<owner>/<name>.git`
-and `git push -u origin main`. A `git` that cannot run, or that runs and fails, is a note, not a
-failure: the tree is there, and the note says how the command ended and the commands to run. An
-instance directory that is already a git repository is left as it is — no `git init`, its branch
-and remotes unchanged — and the note says so. `pre-commit install` is `overlay init`'s.
-
-What `gh`, `git` and `pre-commit` print is quoted in these lines as it came, except that one
-holding anything but a plain path is escaped, so a line break or an escape sequence in it cannot
-start a line of its own or drive a terminal, and one longer than 120 characters is cut to its
-first 120 and its length.
-
-**Writes**, on `--local`, the instance directory `<root>/<name>` with every file of the template
-plus `.stayfixed/manifest.json`, and `<root>/<name>/.git`, the repository `git init` makes there
-when there is none yet. On
-`--template`, through `gh repo create <owner>/<name> --private --template <template> --clone`, where
-`<template>` is `<owner>/stayfixed-overlay-template` or
-`github.com/stayfixed/stayfixed-overlay-template` as above, a new private repository on GitHub under
-`<owner>` and its clone at `<root>/<name>` — or, when that clone brings nothing down, a clone
-from the retried `git clone`; a directory that already carries `.claude-plugin/` gets nothing.
-A template published at an earlier release also brings the files that release shipped and this
-one does not — `common/memory/README.md` from 0.1.x, `skills/attach/SKILL.md` and
-`common/rules/README.md` from any — which `overlay init` removes (below). Exits `0` on success, `1`
-when no tree arrived, `2` on a refused name or a missing `--root`.
-
----
-
-## `stayfixed overlay init --owner OWNER [--root PATH]`
-
-Makes a created overlay yours. It rewrites all three manifests — `.claude-plugin/plugin.json`,
-`.claude-plugin/marketplace.json` and `.codex-plugin/plugin.json` — so their names carry your
-account (`stayfixed-overlay-octocat`, `stayfixed-overlay-marketplace-octocat`), because a harness
-installs a plugin by the name in its manifest, and two owners' overlays under one configuration
-directory would otherwise be one plugin fighting itself; the Codex half is included for the same
-reason as the other two. The marketplace's own plugin entries are suffixed with it, so the
-listing still names a manifest that answers. A manifest this overlay does not carry is reported
-and skipped, not a failure.
-
-It also puts your account where the harness asks for one: the marketplace's `owner` (without it
-`claude plugin validate` refuses the marketplace) and each plugin manifest's `author`, as
-`{"name": "<account>"}`. Only where nobody has put a name: the template's placeholder is replaced
-and an absent key is added, so an overlay generated from an older template becomes valid, but a
-name you wrote yourself, and anything else beside it, stays.
-
-**Installing the overlay as a plugin is two commands**, with the names this command produced
-(`<owner>` is your account and `<name>` the overlay repository's name), and nothing runs them for
-you:
-
-```bash
-claude plugin marketplace add git@github.com:<owner>/<name>.git
-claude plugin install stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>
-```
-
-A rewrite of a manifest that still held what stayfixed wrote there is re-stamped into
-`.stayfixed/manifest.json`, so `overlay upgrade` still sees the file as stayfixed's own: without
-that, the file carrying `stayfixed.requires` read as hand-edited from the moment you ran `init` and
-no release could ever refresh it again. A manifest you edited is renamed all the same, but its
-record is left as it was, so `overlay upgrade` goes on listing it as hand-edited and never
-refreshes your edit away. Every manifest is read before any is rewritten, so one that cannot be
-read stops `init` with none of them changed. One it reads and then cannot write is named with a
-`<path> cannot be written (<reason>)` line and left as it was, record included; the others are
-renamed and recorded all the same, and the next run names the one left.
-
-It then runs `pre-commit install` in the overlay, which is one of the two secret scans the
-template ships; the other is the workflow that runs on every push, so `--no-verify` is not the
-last word. `pre-commit` is optional: a missing or failing one is a reported note and never a
-traceback.
-
-Both halves are idempotent. A manifest that already carries the suffix and names an account is
-not rewritten, so running `init` again reports nothing renamed. An overlay named at 0.1.x carries
-the suffix but no `owner` or `author`, so the first `init` of this release rewrites its manifests
-once more, to add them.
-
-**Writes** each of the three manifests that does not already carry the suffix or has no account
-under its `owner` or `author` and, where the overlay carries one that records a manifest it
-rewrote or a file below, `.stayfixed/manifest.json` — through the same contained walk every other
-write in this project goes through; and, through the `pre-commit install` it runs in the overlay,
-the overlay's `pre-commit` git hook. It also **removes** the files an earlier release shipped and
-this one does not, by the rule and from the list
-[`overlay upgrade`](#stayfixed-overlay-upgrade---root-path---dry-run) gives below, and each directory
-above one of them that this leaves empty: `init` is the step every generated overlay runs, and a
-template published at an earlier release still ships those files.
-When it removes `common/memory/README.md` and `common/memory/_README.md` is not there, it
-**writes** the shipped `_README.md` in its place: a template from 0.1.x carries only the old name,
-and a directory left empty is one git does not keep, so a clone of the overlay elsewhere would
-have no `common/memory/` for the `developer` link to reach. A copy holding anything else is left,
-and the line says so and names the way out `overlay upgrade` gives for it. Until then each run
-names the copy again. A retired file it cannot read or
-cannot remove is left too, with a `left <path>: <reason>` line, and a `_README.md` it cannot
-write is named with `overlay upgrade`, which writes it — or, when this stayfixed was installed
-without its overlay template tree, which `overlay upgrade` reads too, with a reinstall first — and
-`common/memory/` is kept for it rather than removed as empty. None of the three is a failure: the
-run goes on, and `.stayfixed/manifest.json` drops the records of the files it did remove and keeps
-the others, so the next run finishes the job. A record of a retired file that is already gone, at
-its own place or at its place under `.stayfixed/local/artifacts/`, is dropped with a
-`dropped the record of <path>, which was already gone` line, since there was nothing to remove;
-for `common/memory/README.md`, `_README.md` is then written in its place as after a removal.
-A path these lines name that the manifest supplied and that holds anything but a plain path is
-escaped, so a line break or an escape sequence in it cannot start a line of its own or drive a
-terminal.
-A tree that arrived without a manifest is not given one. Exits `0`; `1` on a manifest that exists
-and cannot be read or is not JSON, with nothing written; `2` on an owner that is not one path
-segment or on a scaffold manifest that cannot be trusted. A manifest it cannot write is not a
-failure either: once every manifest has been read, nothing stops the run, and
-`.stayfixed/manifest.json` is written once, at the end, with the records of what it did.
+a run that removed what it planned) and `kept_config`.
 
 ---
 
@@ -2303,24 +2211,23 @@ failure either: once every manifest has been read, nothing stops the run, and
 
 **`--root` must name an overlay, and that is checked before anything is planned.** It defaults
 to `.`, and pointed at a directory that is not one this command used to create the overlay's
-files there — both plugin manifests, `hooks/hooks.json`, `.gitignore` and
-`.github/workflows/scan.yml` among them — report them as work done and exit `0`. An overlay is a
-tree whose two `.claude-plugin/` manifests name it `stayfixed-overlay[-<owner>]` and
-`stayfixed-overlay-marketplace[-<owner>]`, which is what `overlay create` renders and `overlay
-init` renames; anything else is refused (`2`) with nothing written.
+files there — `.gitignore` and `.github/workflows/scan.yml` among them — report them as work done
+and exit `0`. An overlay is a tree whose identity record, `stayfixed-overlay.toml` at its root,
+parses as TOML and holds `layout = 1`; the record also holds `requires`, the floor `stayfixed
+doctor` and a session's first lines read, and nothing else. Anything else is refused (`2`) with
+nothing written, and the refusal names the file and its two keys: an overlay made before the
+record shipped carries plugin manifests instead, and no code migrates it, so its owner adds the
+record by hand.
 
 Brings an overlay up to date with the template a newer stayfixed ships. It is the project rule
 and not a second copy of it: a skeleton file you have not touched is refreshed, one you have
 edited is skipped and named, and the oracle is the digest `.stayfixed/manifest.json` recorded when
 the file was written. An overlay is where your own rules live, so a silent overwrite here would
-destroy the only copy of something.
-
-**The three manifests keep the names `overlay init` gave them.** What a refresh writes there is
-the template named after the account the manifests already carry, exactly as `init` names it, so
-running `upgrade` right after `init` changes none of them, and a release that moves a manifest
-refreshes it under your name rather than back to `stayfixed-overlay` — the name two owners'
-overlays would collide on. A manifest the overlay lacks is written under that name too. An overlay
-`init` has not named gets the template as it ships.
+destroy the only copy of something. An overlay `setup --overlay create:` generated has no
+`.stayfixed/manifest.json` (the template repository carries none), and an identity record you
+added by hand has no entry in one, so neither is recorded as stayfixed's: a file there that differs
+from this release's is skipped as `exists and stayfixed did not write it`, and only the retired
+files below are removed by the bytes a release shipped.
 
 **Two files are always listed, however their hashes compare.**
 `common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries
@@ -2335,76 +2242,31 @@ file is empty, both held by a test. `--dry-run` first is how you read them befor
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.stayfixed/manifest.json`. It also **removes** three files a release no longer ships:
+`.stayfixed/manifest.json`. It also **removes** four files a release no longer ships:
 `common/memory/README.md`, which is `_README.md` now because the note reader reads every other `.md`
 there as a note; `skills/attach/SKILL.md`, the template's own copy of the `attach` skill, which the
-plugin's own replaces, since it covers detaching and a moved remote as well; and
-`common/rules/README.md`, the README of a directory nothing read. It does so only when a file holds
+plugin's own replaces, since it covers detaching and a moved remote as well;
+`common/rules/README.md`, the README of a directory nothing read; and `hooks/hooks.json`, the hooks
+file the overlay fired while it was a plugin of its own. It does so only when a file holds
 what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, in an overlay with
-no manifest (one generated from a template, since `publish-template` leaves it out), a file a
+no manifest (one generated from a template, since `scripts/publish_template.py` leaves it out), a file a
 release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
-other two. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
+skill and the rules README, and any release up to 0.3.1 for the hooks file. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
 nothing is removed, and its record is dropped. An unrecorded one that is gone is not listed at all,
 nor counted as unchanged, so a run after the removal, or on an overlay that never had the file,
 does not name it. Any other copy may hold your own words, so it is
 listed as `skip_modified` with the way out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
 template's, so delete your copy once you no longer need your edits; a standing rule is a note with
-`metadata.startup`, so move your rules into such notes and delete the README. Until then each run
+`metadata.startup`, so move your rules into such notes and delete the README; `stayfixed attach`
+renders the hook entries in `common/claude/hooks.json`, so move yours there and delete the hooks
+file. Until then each run
 lists the copy again. Each directory above a file it removed then goes once that leaves it empty,
 up to the first that still holds anything and never the overlay root: `skills/attach/` and
-`skills/`, and `common/rules/`. A directory that is a symbolic link is left, and so is one above a
+`skills/`, `common/rules/`, and `hooks/`. A directory that is a symbolic link is left, and so is one above a
 file that was already gone when the run began. Exits `0`; `1` when the report
 carries a REFUSED section, because nothing would be written while one of those stands; `2` when
 `--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
 by the containment walk.
-
----
-
-## `stayfixed overlay publish-template --owner OWNER [--name NAME] [--yes]`
-
-Publishes the repository `overlay create --template` generates from: the shipped
-`templates/overlay/` tree, as one commit on `<owner>/stayfixed-overlay-template`.
-
-```bash
-stayfixed overlay publish-template --owner you          # what it would create, mark and push
-stayfixed overlay publish-template --owner you --yes    # do it
-```
-
-Six steps, in this order. It renders the shipped template into a scratch directory; it strips
-the scaffold ledger, because a repository generated from a template carries none and publishing
-one would make every generated overlay read as hand-edited to `overlay upgrade`; it asks `gh`
-what exists under that name; it creates the repository **public** and marks it
-`is_template` if it is not one already; it clones it and replaces the tree with the render; and
-it commits and pushes to the repository's default branch.
-
-**`--yes` is the gate, and it covers three acts rather than one** — creating the repository,
-marking it a template, and pushing. Without it the command renders, asks `gh` what is there,
-and reports what it *would* create, mark and push. That is the dry run; there is no separate
-`--dry-run` flag, because a second way to say the same thing is a second thing to get wrong.
-The gate is a parameter and not a step in a procedure: in a session driven by an agent, a flag
-a model can type is not a control, so the flag is where the consent is recorded.
-
-**An existing repository that is not public is refused (`2`), never flipped.** A template is
-generated from by other accounts only when it is public, and a repository somebody made private
-under that name is not one this command may change a flag on — publish under another `--name`,
-or make it public yourself first.
-
-**It runs from your own authenticated checkout by design.** The public repository's CI holds no
-credential that can write a second repository, so this is not a workflow and does not become
-one: `gh` decides the protocol and carries the token. `gh` that cannot be run at all is a
-finding (`1`) naming it.
-
-`--owner` is your account and `--name` the repository (default `stayfixed-overlay-template`);
-both are held to one path segment, and the owner is lower-cased the way `overlay create` folds
-it. There is no `--root`: the tree is rendered from this stayfixed's own package.
-
-**Writes**, without `--yes`, nothing outside a temporary directory this command creates and
-removes. With it, on GitHub through `gh` and `git`: the public repository `<owner>/<name>`, when
-there is none; its template flag, when it is not set; and a commit pushed to its default branch,
-unless it already carries this stayfixed's template. The clone and the commit are made in the
-same temporary directory. Exits `0`; `1` on a `gh` or `git` that failed, with what it printed
-quoted as `overlay create` quotes it (escaped, and cut to its first 120 characters and its
-length); `2` on a refusal.
 
 ---
 
@@ -2551,12 +2413,11 @@ Code reads from every worktree, and — in the overlay — `projects/<name>/proj
 records no remote, this project's note directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the store's index link never dangles and `memory index --check` passes right after
-a first attach in an overlay this release rendered; one generated from a template published at
-0.1.x passes once `overlay init` has run on it, and an older overlay once `overlay upgrade` has,
-because both remove the `common/memory/README.md` 0.1.x shipped unless it was edited) and, through
-the
-`pre-commit install` it runs there when the overlay carries a `.pre-commit-config.yaml` and no
-`pre-commit` hook yet, the overlay's `pre-commit` git hook. The ledger is the only record
+a first attach in an overlay this release rendered, and in an older one once `overlay upgrade` has
+run on it, because it removes the `common/memory/README.md` 0.1.x shipped unless it was edited).
+It runs no program in the overlay: its commit-time secret scan is `setup --overlay`'s, which makes
+or records the overlay, and where that scan is missing `doctor`'s `pre-commit` row says it is not
+installed. The ledger is the only record
 of which allow rules are stayfixed's, because an allow rule cannot carry a marker the way a hook
 entry can; `detach` reads it and nothing else. **`.gitignore` is never written**: it is tracked, so
 any line there would be a change every collaborator gets. A `stayfixed:ignore` region an earlier
@@ -2603,12 +2464,6 @@ no key. `stayfixed memory` reads the same store in overlay mode, so the bundles 
 with and the harness read one directory. Nothing is placed under `paths.memory` or under
 `~/.claude/projects/`: the link tree and the harness memory link an earlier release made there are
 yours to remove by hand.
-
-It also runs `pre-commit install` in the overlay when the overlay carries a pre-commit
-configuration and no hook is installed — the machine that cloned an overlay someone else created
-never ran `overlay init`. A missing `pre-commit` is a reported note, never a traceback, and what a
-failing one printed is quoted as `overlay create` quotes it (escaped, and cut to its first 120
-characters and its length).
 
 Exits `0` on success. A failure or refusal below that the run meets before its first write ends
 `--check` with the run's code and line.
@@ -2662,7 +2517,6 @@ It exits `2` on a refusal, in the order the run meets them:
   64 MiB it reads, whether or not this run would rewrite it: a short document many levels deep
   grows by its depth on every line, and `would be longer than this reader reads once written
   back` keeps a run from leaving a file its next read refuses. `--check` refuses it too.
-- A widening without `--yes`.
 - A `memory.groups` entry that leaves this project's share of the overlay.
 - A `.stayfixed` that is a symlink, or an existing ledger naming files, settings keys or
   directories `attach` could not have written.
@@ -2760,7 +2614,7 @@ empty, and left standing otherwise. A link tree under `paths.memory` or a harnes
 `~/.claude/projects/` an earlier release made is not touched: remove those by hand.
 
 **`.gitignore` is never touched.** `attach` writes nothing there, so `detach` takes nothing out:
-a `stayfixed:ignore` region `stayfixed init` wrote is the footprint's, and one an earlier release's
+a `stayfixed:ignore` region `stayfixed init` wrote is the scaffold's, and one an earlier release's
 `attach` wrote stays until you remove it.
 
 **Directories come back too.** `attach` records which of `.stayfixed/local/`, `.stayfixed/`,
@@ -2811,12 +2665,12 @@ with part of the attach already undone:
 
 ---
 
-## `stayfixed setup [--preset NAME] [--yes] [--home PATH] [--machine PATH] [--overlay VALUE] [--root PATH]`
+## `stayfixed setup [--preset NAME] [--plugin NAME …] [--home PATH] [--machine PATH] [--overlay VALUE]`
 
 Configures this machine from a preset, `recommended` unless `--preset` names another: the
 machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
-values in `<home>/.claude/settings.json`, and the preset's plugins, one install per plugin per
-configured harness. That file is read as Claude Code reads it, past a leading byte-order mark,
+values in `<home>/.claude/settings.json`, and each plugin `--plugin` names, one install per plugin
+per configured harness. Without `--plugin` no plugin is installed and no plugin command runs. That file is read as Claude Code reads it, past a leading byte-order mark,
 which a rewrite keeps. The deny rules are merged in beside the owner's own, with one removal: a
 rule an earlier preset wrote and this one retired (its `[deny] retired`) is taken out where it
 stands verbatim. `recommended` retired the masks `Read(.env*)` and `Read(**/.env*)`, which also
@@ -2840,9 +2694,9 @@ is written through a link at it the same way.
 own sections: `stayfixed trust revoke` withdraws an approval from `~/.config/stayfixed/trust.json`,
 and `stayfixed attach` keeps its binding record, render and composed store under
 `~/.local/share/stayfixed/`. It is the only
-one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` (default `.`) is the project this invocation
-was run from; the only thing it is used for is refusing an `--overlay` any checkout of it could
-reach (below).
+one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` names
+the repository `--git-hooks` installs into (below); machine setup reads no repository, so it refuses
+`--root` (`2`) with nothing written, where it used to take the flag and read nothing of it.
 
 `setup` is the only writer of the machine configuration file, and its readers do not change to
 suit it: `[personal]`, `[guards]` and the session `[budgets]` are `config.owner`'s, which every
@@ -2854,21 +2708,26 @@ recorded survives a run that only changes something else. A table `setup` knows 
 carried through untouched, and so is a key at the top level; **comments are not** — the file is
 parsed and rewritten, and there is no standard-library parser that keeps them.
 
-The `[personal]` values are mirrored into `pluginConfigs` in `<home>/.claude/settings.json`,
-where Claude Code reads this plugin's own options, and that mirror is recomputed from the machine
-file on every run. The machine file wins: a value you set in Claude Code's plugin-config UI is
-overwritten by the next `setup`, because one of the two copies has to decide and the machine file
-is the one everything in stayfixed reads.
+The `[personal]` values are copied into `pluginConfigs` in `<home>/.claude/settings.json`, where
+Claude Code reads this plugin's own options, only where it holds no value for them: a value
+already there — one you set in Claude Code's plugin-config screen, or one an earlier `setup`
+copied — is kept on every run. So a personal value you change in the machine file after the first
+run does not reach `pluginConfigs`; change it there too, or delete it there and run `setup` again.
 
 **From an agent's sandboxed shell** `setup` cannot write the machine directory or the user
 settings: with Claude Code's sandbox on, an agent's shell writes nothing outside the working
 directory and the temporary directory. It says so in one sentence (below, under the exits), naming a
 person outside the agent's sandbox as the one to run it, and never ends in a traceback.
 
-**Plugins are installed per configured harness**, from `[defaults.stayfixed] agents` (`claude`
-and `codex` by default) and from the preset's own per-harness marketplace table
-(`[plugins.<harness>]`). For each harness the preset declares a marketplace for, `setup`
-registers it (`claude plugin marketplace add <source>`; idempotent — an already-registered
+**Plugins are installed only when named**, with `--plugin NAME` once per plugin: a plugin name is
+lowercase ASCII letters, digits and `-`, led by a letter or a digit, and the parser refuses any
+other, naming that rule. A third-party plugin runs in every session of its harness, hooks
+included, and none is pinned, so none is installed unasked; the preset's `[plugins] recommended`
+lists the ones `stayfixed init --questions` offers (`superpowers` and `context7` in
+`recommended`). A named plugin is installed per configured harness, from
+`[defaults.stayfixed] agents` (`claude` and `codex` by default) and from the preset's own
+per-harness marketplace table (`[plugins.<harness>]`). For each harness the preset declares a
+marketplace for, `setup` registers it (`claude plugin marketplace add <source>`; idempotent — an already-registered
 source is a no-op reported as such) and then installs each plugin bare (`claude plugin install
 <name>@<marketplace>`; no `--scope` or `-y` — the spike record's own measured output reports
 `(scope: user)` as the *default*, and `-y` only ever appears there on `uninstall`). Codex adds
@@ -2877,84 +2736,105 @@ marketplace for it. A harness with no declared marketplace for a plugin is not a
 nothing here is vendored on a guessed marketplace name — and a missing binary or a
 failed call is a reported note, never a failure.
 
-**The overlay is touched only when `--overlay` names an answer**, and `--yes` does not imply one.
-`--overlay <path>` records an existing overlay's root; `--overlay create:<owner>/<name>` asks GitHub
-for a private repository from the template and initialises it, the same as `stayfixed overlay create
---template` followed by `overlay init` — and makes the same choice of template that flag makes:
-yours when you have published one, `github.com/stayfixed/stayfixed-overlay-template` otherwise.
-Creating one needs `--yes` — explicit confirmation for the one irreversible, outward-facing act this
-command performs — and refuses (`2`) without it. Recording an *existing* path needs no `--yes` (a
-model-written command line reaches `--overlay X --yes` exactly as easily as `--overlay X`, so the
-flag would be theatre there); instead the path itself is validated **before the first write** —
-before the machine file, the settings merge and the plugin installs, and for `create:` before `gh
-repo create` runs on anybody's account. It must exist; its two `.claude-plugin/` manifests must name
-it `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`, which is what
-`overlay create` renders and `overlay init` renames, rather than merely being present; and it must
-lie outside the repository `--root` is in — not inside it, not above it, and not in another checkout
-of it, since a worktree is not a different repository and a clone ships its tree into all of them —
-and outside every checkout of any other repository, a checkout of its own nested in one included,
-because a repository can put files into any directory of its work tree. For the same reason a linked
-worktree of the overlay's own repository nested in another checkout of it is refused, and the
-refusal says it is the overlay's own repository. Where git finds no repository for `--root` (no
-`.git` at or above it), there are no other checkouts to compare, and only a `create:` destination is
-exempt from the comparison with `--root` itself, and only while it is not there when the command
-asks, which this run then makes, or is the overlay root the machine configuration already records,
-the clone an earlier run made and recorded. A `create:` destination that is there and not recorded
-is compared like any overlay already on disk: `create:` leaves a populated destination alone and
-records it. A link there is there, wherever it leads, and `create:`, like `--overlay <path>`, judges
-and records the destination resolved, so the record does not follow a link a repository retargets. A
-link there whose target is not there is refused before `gh` runs, and an exemption holds only for
-the directory these questions judged: a link put at the destination, or re-pointed, while the
-command runs is compared. An existing `--overlay <path>` inside, around or equal to a `--root` in no
-repository is refused, because a tree there can still have come from someone else — a project
-downloaded as an archive, or a checkout of another version control system, can ship one. So `setup
---overlay create:<owner>/<name> --yes` run in a home directory that is no repository passes, `setup
---overlay ~/stayfixed-private` run there is refused (run it from another directory), and the
-`create:` command run in a home that is a git work tree with its `.git` there (a dotfiles clone) is
-refused before `gh` runs. What git cannot find has no other checkouts compared: a work tree of
-another version control system, and a git work tree whose git directory is elsewhere and named only
-by `--git-dir` and `--work-tree` or `GIT_DIR`, as in a bare-repository dotfiles home. Containment is
-anchored on `--root`, which the command line chooses. Everywhere a `.git` is at or above the
-directory `git` is asked from, a `git` that gives no answer (it cannot be run, runs past its time
-limit, exits non-zero, is ended by a signal or prints nothing), that answers in a shape git does not
-give (an extra line, as git 2.30 and older print for the `--path-format` they do not know, or a
-wrapper's banner), that refuses the repository it found (another user's under `safe.directory`, or
-one whose `.git` it cannot read) or that cannot list its checkouts is a refusal.
+**The overlay is touched only when `--overlay` names an answer.** It is the one entry for an
+overlay, in three forms, below; naming one is the request, and no flag stands in front of it. Each
+is validated **before the first write** — before the machine file, the settings merge and the
+plugin installs, and for `create:` before `gh repo create` runs on anybody's account — and the
+place it names is judged by one rule. Nothing there, or an empty directory that is no link, is a
+place to render or clone into. A tree that carries the identity record `stayfixed-overlay.toml`,
+parsing as TOML and holding `layout = 1`, is an overlay; the refusal of a tree without it names the
+file and its keys. Anything else is refused (`2`): a file, a link at a `create:` destination, a
+directory holding something that is not an overlay, and, in one sentence for both forms, a
+directory you cannot search, or one holding no overlay that you cannot both list and write. Where
+the overlay lives is yours to choose and `setup` refuses no place for it; `stayfixed doctor`'s
+`overlay-requires` row warns when another repository's work tree holds it, since that repository
+can put files into it. Each path is judged and recorded resolved, so the record does not follow a
+link someone retargets later, and a run that records a root other than the one the machine file
+held says so in a note naming the root it replaced, and how to record that one again. A leading
+`~` is the home `HOME` names, as in the machine file's `[overlay] root`; where `HOME` is empty or
+relative, such a path is refused (`2`) rather than read against `/` or the directory the command
+ran from. Every overlay a form makes or records gets the commit-time secret scan with `pre-commit
+install`; a missing `pre-commit` is a note. What `gh`, `git` and `pre-commit` print is quoted in
+these notes as it came, except that one holding anything but a plain path is escaped, and one
+longer than 120 characters is cut to its first 120 and its length.
+
+**Record: `--overlay <path>` naming an overlay** records its root and writes nothing in its tree;
+its `pre-commit` git hook is installed, so a second machine records its clone with the scan armed.
+
+**Render: `--overlay <path>` naming nothing**, or an empty directory, renders the shipped template
+there, with no network call. The directory it is made in has to be one you can write: a path whose
+parent is missing or not writable is refused before the first write. So a mistyped path is not
+refused: it is rendered at and recorded, with the note above when it replaces a recorded root. The
+render writes the identity record after every other file, so a render cut short is never taken for
+an overlay. It is made a git repository with `git init` and `git symbolic-ref HEAD refs/heads/main`
+(not `git init -b main`, which a `git` older than 2.28 refuses), on `main` with no remote, and the
+note says how to give it one; a `git` that cannot run, or runs and fails, is a note and not a
+failure, since the tree is there.
+
+**`create:`: `--overlay create:<owner>/<name>`** asks GitHub for a private repository generated
+from a template — a template and not a fork, since a fork's visibility is bound to the upstream
+network and cannot be made private — and clones it to `<home>/<name>`. What is there already is
+judged first, before the first write and before `gh` is asked anything: nothing, or an empty
+directory, which this run clones into; the overlay an earlier run made, which is left alone and
+nothing is generated; or anything else, refused (`2`) by the rule above, since the clone would meet
+it only after `gh repo create` had made a repository nothing then records. It then asks `gh repo
+view <owner>/stayfixed-overlay-template --json isTemplate` once: a template there is generated
+from, and a repository of that name that is not one, or `gh`'s explicit answer that there is none,
+means you have published none, and the template is `github.com/stayfixed/stayfixed-overlay-template`,
+the publisher's public copy, named with its host: `gh` looks an unqualified name up on `GH_HOST`,
+so on a GitHub Enterprise host `stayfixed/…` would be whoever owns that name there. Any other
+failure of that question — an expired token, a network error, a `gh` that is not installed or
+hung, an answer that is not the JSON asked for — stops the command with `gh`'s own message and
+creates nothing (`1`). Once `gh repo create` has run, the repository may exist on GitHub whatever
+`gh` answered, and a second `create:` would fail on the name it holds, so every refusal from then
+on says so and gives the remedy that works: once `<home>/<name>` holds a clone of it, record it
+with `stayfixed setup --overlay <home>/<name>`. When `gh repo create` itself fails, the command
+stops there with its exit code and stderr; when it reports success and the clone leaves nothing at
+`<home>/<name>`, `gh repo view` is asked whether the repository exists, and the clone is retried
+once, after a ten-second wait when it does — a wait carried on reasoning rather than a measurement,
+since the one trial run against it did not reproduce the race. A clone checks the identity record
+out last as far as git's order goes: git writes a tree in path order, where the record's path sorts
+after every file the template ships, but parallel checkout (`checkout.workers`) keeps no order, and
+a file of yours whose path sorts after the record comes after it, so a clone cut short can carry
+the record. A generated overlay has no `.stayfixed/manifest.json`, so `stayfixed overlay upgrade`
+refreshes none of its files once they differ from a release's (`overlay upgrade`, above).
 
 **Writes** `<home>` itself when it is not there yet; `--machine`'s file, with the directories above
 it, once for the preset and again for the overlay root `--overlay` records;
 `<home>/.claude/settings.json`, where its links lead; and, through the plugin
-commands it runs for each harness with a declared marketplace (`claude plugin marketplace add` and
+commands it runs for each plugin `--plugin` names, on each harness with a declared marketplace (`claude plugin marketplace add` and
 `claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
 registrations and installed plugins those commands write into each harness's own configuration.
-`--overlay <path>` writes nothing in the overlay; it is only recorded.
-`--overlay create:<owner>/<name>` writes what `overlay create --template` writes — a private
-repository on GitHub and its clone — and then what `overlay init` writes in that clone, including
-its removal of the files a template published at an earlier release ships and this one does not.
-Run again over the overlay it made, it generates nothing, but `overlay init` still runs there, and
-the report names each file `init` changed (an overlay named by 0.1.x gains its account) or says it
-changed none of the overlay's tracked files (`pre-commit install` may still have written its git
-hook).
+`--overlay <path>` naming an overlay writes nothing in its tree: it is recorded, and its
+`pre-commit` git hook is installed through `pre-commit install`. Naming nothing or an
+empty directory, it writes the directory with every file of the template plus `.stayfixed/manifest.json`, the
+repository `git init` makes there, and, through `pre-commit install`, its `pre-commit` git hook.
+`--overlay create:<owner>/<name>` writes, through `gh repo create <owner>/<name> --private
+--template <template> --clone`, a new private repository on GitHub under `<owner>` and its clone
+at `<home>/<name>` — or, when that clone leaves nothing there, a clone from the retried `git clone`
+— then its `pre-commit` git hook. Run again over the overlay it made, it generates nothing.
 
 **Exits** `0` on success, and `2` on each of these refusals:
 
 - `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
-- a refused `--overlay`: missing, not an overlay, reachable from the project root, inside a
-  checkout of another repository, where `git` gives no answer inside a checkout, at a path that is
-  not UTF-8 text and so cannot be recorded in the machine file, or `create:` without `--yes`;
+- `--root`, which names the repository `--git-hooks` installs into, before anything is written;
+- a refused `--overlay`: a path that names nothing under a directory that is missing or that you
+  cannot create it in, a path holding something that is not an overlay, a `create:` destination
+  that holds something and is not the overlay an earlier run made, a directory at either that you
+  cannot search, or that holds no overlay and that you cannot both list and write, a path beginning
+  with `~` while `HOME` names no home, or a path that is not UTF-8 text and so cannot be recorded in
+  the machine file;
 - a `--home` that cannot take what this run writes under it, naming the directory you cannot write
   into, asked only where a write lands: the one the settings file is made in (its directory when
   it is there, the nearest directory above it while it is not); and for `create:`, the one the
-  clone is made in while it is not there yet, or,
-  while it is there, whether it can be searched, since `create:` looks inside it first. A `<home>`
+  clone is made in while it is not there yet. A `<home>`
   you cannot write into is not refused for that alone: with a writable `.claude` already in it, and
   no overlay to create, nothing this check asks about is made in it;
 - a settings file's directory that cannot be read, which the settings write opens;
 - a `<home>` that could not be created;
-- any other path this command cannot ask about before its first write, named with why: `<home>`,
-  an `--overlay` or a `--root` directory below a directory nobody may search, and a
-  symbolic-link loop at `~/.claude`, `--home`, `--root` or `--overlay`, on every
-  Python;
+- any other path this command cannot ask about before its first write, named with why: `<home>`
+  or an `--overlay` directory below a directory nobody may search, and a symbolic-link loop at
+  `~/.claude`, `--home` or `--overlay`, on every Python;
 - a write refused as an agent's sandbox refuses one, met by the machine file or the user settings
   file (`EPERM` on macOS and `EROFS` on Linux and WSL2, as Claude Code's sandboxing reference gives
   them), or by the question asked of the settings directory before the first write (a directory
@@ -2970,19 +2850,19 @@ be read or is not one JSON object the parser reaches ends the run `1`, naming it
 repaired the next run finishes what this one began.
 
 These questions are asked in one fixed order, and the first refusal ends the run: what `--overlay`
-names, and whether an existing path is an overlay; the preset; where a write under `--home`
-lands; and last where the overlay lies, the one that runs `git`. Every one of
-those refusals happens before the first write, **with one exception**: for
+names, whether an existing path is an overlay and what a `create:` destination holds; the preset;
+and where a write under `--home` lands. Every one of those refusals happens before the first write,
+**with one exception**: for
 `--overlay create:<owner>/<name>`, "not an overlay" is a check on the tree that arrived, so it runs
 after the repository has been created on GitHub and cloned — along with the machine file, the
-settings merge and the plugin installs. That refusal says so, and names the repository and where it
-was cloned to, because nothing else would. Everything else `create:` can be refused for — the
-missing `--yes`, a malformed spec, a name that is not one path segment, a destination the project
-root could reach or a checkout of another repository holds, a `<home>` you cannot write into, or
-one the machine file could not record — still happens before `gh` is run at all.
+settings merge and the plugin installs. That refusal, like every one after `gh repo create`, says
+the repository may now exist, and how to record it, because nothing else would. Everything else `create:` can be refused for — a
+malformed spec, a name that is not one path segment, a destination that holds something else, a
+`<home>` you cannot write into, or one the machine file could not record — still happens before
+`gh` is run at all.
 
 A plugin that fails to install or a harness that is absent is a note in the report, not a
-nonzero exit. What the failing plugin command printed is quoted as `overlay create` quotes it
+nonzero exit. What the failing plugin command printed is quoted as the overlay's notes quote it
 (escaped, and cut to its first 120 characters and its length).
 
 ---
@@ -3019,9 +2899,9 @@ file, is not refused there, because on a case-sensitive volume it names another 
 would refuse a chain that cannot loop. A hook past the 64 MiB read cap is not read, so it is not
 judged either: it is kept and chained, as below.
 
-**Refuses (`2`) together with `--preset`, `--overlay` or `--yes`.** Each asks machine setup to do
-something, which this form does not do, so it names `--git-hooks` and writes nothing, where
-`--overlay` and `--yes` used to be dropped and the hook installed. `--home` and `--machine` say
+**Refuses (`2`) together with `--preset`, `--overlay` or `--plugin`.** Each asks machine setup to
+do something, which this form does not do, so it names `--git-hooks` and writes nothing, where
+`--overlay` used to be dropped and the hook installed. `--home` and `--machine` say
 only where machine setup would write, and are ignored.
 
 **Refuses (`2`) `--uninstall` without `--git-hooks`.** It removes the hook this form installs and
@@ -3039,8 +2919,8 @@ was: it is not stayfixed's hook; nothing was removed`; `--json` carries it as `f
 is neither stayfixed's nor foreign: either form refuses (`2`) naming it and the reason, and leaves
 it. A regular file past the 64 MiB read cap is foreign, since stayfixed's own hook is a couple of
 kilobytes: it is kept and chained, and `--uninstall` leaves it. Exits `0`; `2` when `--preset`,
-`--overlay` or `--yes` is also given, `--uninstall` is given without `--git-hooks`, the hook cannot
-be read, or a hook names `prepare-commit-msg.local`.
+`--overlay` or `--plugin` is also given, `--uninstall` is given without `--git-hooks`, the hook
+cannot be read, or a hook names `prepare-commit-msg.local`.
 
 ---
 
@@ -3078,8 +2958,8 @@ and `managed`.
 
 **Writes** nothing.
 
-**Exits** `0`; `2` beside `--preset`, `--overlay`, `--yes`, `--git-hooks` or `--uninstall`, which
-name a write this run does not make; `1` for a `HOME` that is empty with no `--home` or no
+**Exits** `0`; `2` beside `--preset`, `--overlay`, `--plugin`, `--git-hooks` or `--uninstall`,
+which name a write this run does not make; `1` for a `HOME` that is empty with no `--home` or no
 `--machine`.
 
 ---
@@ -3150,7 +3030,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `memory` | the memory a session gets: the active `memory.mode` and the layer that set it (or that none does, and memory is the coding agent's own), the store, which settings file sets the harness's `autoMemoryDirectory` — the checkout's `.claude/settings.local.json`, the main checkout's, the committed `.claude/settings.json` or `~/.claude/settings.json`, the first that holds it, named as information and never with its value, since a committed file may point the harness elsewhere — and the store's unreviewed notes as a count; a warning only for files in the note store that are not notes, counted (at most 500,000 entries) | the resolution `preferences` reads, the note store, the machine's trust record, those settings files |
 | `pre-commit` | whether the overlay's commit-time secret scan is installed on this machine | the overlay |
-| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not | the overlay's `.claude-plugin/plugin.json`, `stayfixed.toml` |
+| `overlay-requires` | whether the overlay this machine records requires a stayfixed the running one satisfies — red when this project keeps its notes in that overlay, a warning when it does not — and, where that finds nothing, a warning when another repository's work tree holds the overlay root (a `.git` in a directory above it), naming that directory, since that repository can put files into the overlay | the overlay's `stayfixed-overlay.toml`, `stayfixed.toml`, the directories above the overlay root |
 
 **How `attached` reads the delivery.** With no ledger, a repository whose `memory.mode` is not
 `overlay` is simply not attached, and the row is green. Once this machine's binding confirms the
@@ -3214,8 +3094,9 @@ no overlay root is recorded on this machine **or** when the root it records is n
 — two different arms with two different sentences, because a machine that recorded an overlay
 and then moved it is not a machine that recorded none; `attached`, `pre-commit` and
 `overlay-requires` again, each in a sentence of its own, when the machine file does not load, so
-whether it records an overlay is not known, which is neither of those; `overlay-requires` again when the
-overlay declares no stayfixed requirement; `bundles`, when the note store does not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
+whether it records an overlay is not known, which is neither of those; `overlay-requires` again
+when the overlay declares no stayfixed requirement and no other repository's work tree holds it;
+`bundles`, when the note store does not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
 `stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
 is recorded. `files` has a
 second state arm of its own — a plugin built before the release record existed carries none, and
@@ -3403,7 +3284,7 @@ called the result green, would be worse than one that says it could not vouch fo
 
 `.github/workflows/check.yml` is a `workflow_call` workflow a project runs its stayfixed gates
 through. `stayfixed init` writes the caller —
-[`.github/workflows/stayfixed.yml`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---local-id----no-ci---root-path---machine-path)
+[`.github/workflows/stayfixed.yml`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---attribution-check---commit-type-type----local-id----no-ci---root-path---machine-path)
 — so most projects never type these lines; what follows is what that file contains, and what to
 write by hand if you would rather:
 
@@ -3651,33 +3532,46 @@ in a parser, which is the whole point of the rule.
 anything differs. `stayfixed bugs index`, `stayfixed docs trail` and `stayfixed memory index` all
 take it with that meaning.
 
-Five commands mean something else by a shared name. Each is a **named exception** — a decision
-that the flag means something else, not a sentence that drifted — and each has its own constant
-beside the six above:
+Three commands mean something else by a shared name, `setup` by two. Each of the four is a
+**named exception** — a decision that the flag means something else, not a sentence that drifted —
+and each has its own constant beside the six above:
 
 | Command and flag | What it means there |
 |---|---|
-| `stayfixed overlay create --root` | directory to create it in (default: current directory) |
-| `stayfixed overlay init --root`, `stayfixed overlay upgrade --root` | the overlay root (default: current directory) |
-| `stayfixed setup --root` | the repository --git-hooks installs into, and the project root --overlay must not be recorded inside of (default: .) |
+| `stayfixed overlay upgrade --root` | the overlay root (default: current directory) |
+| `stayfixed setup --root` | the repository --git-hooks installs into (default: .) |
 | `stayfixed setup --machine` | the machine configuration file to write (default: ~/.config/stayfixed/config.toml, the file every reader reads) |
 | `stayfixed attach --check` | report the binding and the diff, and write nothing |
 
-`attach --check` reports the way the other four do and exits differently on purpose: never on a
+`attach --check` reports the way the three `--check`s above do and exits differently on purpose: never on a
 non-empty diff. A diff carrying allow rules is the ordinary state of a first attach, which
 `attach` shows and proceeds with. A `--check` that failed on it would make reading the diff first a
 failure.
 
 Every command that reads a project's configuration takes `--root` and `--machine`, with the
 meanings in the first table, whether or not its heading spells them.
-Neither flag is taken by `stayfixed commit strip`, `stayfixed hook`,
-`stayfixed overlay publish-template` and `stayfixed prove`, because none of them reads a project's
-configuration: the first reads only what it is handed, `hook` finds the project from the
-harness's own event, `publish-template` renders the shipped overlay template, and `prove` runs its
-command where it is typed and answers for that directory's repository. The other `overlay`
-commands take `--root` alone, in the sense the second table gives it, and read no
+Neither flag is taken by `stayfixed commit strip`, `stayfixed hook` and `stayfixed prove`,
+because none of them reads a project's configuration: the first reads the message file it is
+handed and your own `~/.claude/settings.json`, `hook` finds the project from the harness's own
+event, and `prove` runs its command where it is typed and answers for that directory's repository.
+`overlay upgrade` takes `--root` alone, in the sense the second table gives it, and reads no
 `stayfixed.toml`; `setup` takes both, in its own senses. `tests/test_documents.py` holds both
 lists to the real parser.
+
+---
+
+## Terms
+
+**Scaffold** means three things on this page, and the sentence says which:
+
+- everything `stayfixed init` writes into a repository, which `upgrade` refreshes and `uninstall`
+  takes back: the write-once files (`stayfixed.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton) and
+  the rest;
+- the rest alone, the second of the two passes those commands plan: the report headed `scaffold:`
+  and the `scaffold` key of their `--json`, beside the write-once pass's `write-once:` report and
+  `once` key (`upgrade` plans this pass alone, so it prints no `write-once:`);
+- the scaffold engine, which plans and writes both passes and reports every action in the same
+  verbs, `stayfixed overlay upgrade`'s included.
 
 ---
 
@@ -3754,8 +3648,8 @@ custom_timeout_seconds = 600  # seconds a gate of your own may run: a whole numb
 # run = ["pytest", "-q"]       # an argv, never a shell string
 
 [commit_messages]
-attribution_check = true # whether `commit check` enforces the attribution block
-types = ["feat", "fix", "docs", "test", "refactor", "style", "chore", "harden", "guard"]
+attribution_check = false # whether `commit check` enforces the attribution block
+types = ["feat", "fix", "build", "chore", "ci", "docs", "perf", "refactor", "revert", "style", "test"]
 
 [guards]
 bg_cleanup = true        # false switches the bg-cleanup session guard off by default here;

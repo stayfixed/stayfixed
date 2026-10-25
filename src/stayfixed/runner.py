@@ -70,7 +70,7 @@ _ENV_DROP = (
 # for a credential on stdin, and every call here runs with output captured -- so a prompt is
 # invisible and blocks for the whole of `NETWORK_TIMEOUT_SECONDS`, which a caller cannot tell
 # from a hang. What makes that a finding rather than an annoyance is which callers reach the
-# network through here: `overlay create --template` launches `gh repo create` and a clone, whose
+# network through here: `setup --overlay create:` launches `gh repo create` and a clone, whose
 # authentication is the machine owner's and which prompts when it is missing, and
 # `release.pins.released` runs `git ls-remote` against the public repository for `stayfixed init`
 # and for `doctor`'s `ci-ref` row -- a write meant to run non-interactively and a read-only

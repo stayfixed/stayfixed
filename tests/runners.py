@@ -4,8 +4,8 @@
 A module states what its runner answers at the call site, as keyword arguments, and keeps no
 private runner class of its own unless the question it asks is not "record the argv and answer
 from a script": `tests/guards/test_attribute.py`'s `_Coded` (answers by the tree it is run in) and
-`tests/overlay/test_publish.py`'s `_GitHub` (models a repository's state) are the two that are
-not, and each says why.
+`tests/scripts/test_publish_template.py`'s `_GitHub` (models a repository's state) are the two
+that are not, and each says why.
 
 `git_that_cannot_run` is here too, though it is no `Runner`: the product runs `git` through
 `gitenv.git_run` rather than a `Runner`, and a `git` that cannot be launched is a double every
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -136,3 +137,24 @@ def claude_code(main: Path, *, ignoring: tuple[str, ...] = ()) -> Callable[[list
         path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
     return on_call
+
+
+def real_git(argv: list[str], cwd: Path) -> None:
+    """A `Recorder.on_call` that runs each `git` argv for real, for a case about the repository a
+    command leaves behind; every other program stays recorded and answered from the script, so
+    `pre-commit`, `gh` and `claude` are never launched.
+
+    In `tests.gitfixture.env`'s sealed environment, as every fixture `git` is: inherited, the
+    developer's global configuration (an `init.defaultBranch`, a template directory with hooks in
+    it) shaped the repository the case judges, and a credential prompt could block the run."""
+    from tests.gitfixture import env
+
+    if argv[0] == "git":
+        subprocess.run(
+            argv,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            env=env(cwd.parent),
+            stdin=subprocess.DEVNULL,
+        )

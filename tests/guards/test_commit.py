@@ -8,6 +8,8 @@ the shape of a real line from such a repository.
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,8 +18,10 @@ from pathlib import Path
 import pytest
 
 from stayfixed import gitenv
+from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.errors import Refusal
+from stayfixed.guards.commands import GIVES_WAY
 from stayfixed.guards.commit import (
     ATTRIBUTION_LABELS,
     LOG_TIMEOUT_SECONDS,
@@ -27,6 +31,7 @@ from stayfixed.guards.commit import (
     offending_lines,
     strip_message,
 )
+from tests.floor import developer_free_environ
 from tests.gitfixture import git
 
 # Per test, not module-wide: most of this file is pure functions, and a module-level skip
@@ -634,6 +639,10 @@ agents = ["claude"]
 name = "widget"
 base_branch = "main"
 release_branch = "main"
+
+# On, since the preset leaves the check off: what these cases judge is the check itself.
+[commit_messages]
+attribution_check = true
 """
 
 
@@ -691,7 +700,7 @@ def test_every_offence_of_one_commit_travels_in_its_violation(tmp_path: Path) ->
 def test_check_range_honours_the_attribution_switch(tmp_path: Path) -> None:
     root = repo(tmp_path, "fix: dirty\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n")
     (root / CONFIG_FILE).write_text(
-        CONFIG + "\n[commit_messages]\nattribution_check = false\n", encoding="utf-8"
+        CONFIG.replace("attribution_check = true", "attribution_check = false"), encoding="utf-8"
     )
     report = check_range(root, "base..HEAD", load(root, machine=tmp_path / "absent.toml"))
     assert report.violations == ()
@@ -856,3 +865,119 @@ def test_the_log_is_bounded_scrubbed_and_terminated(monkeypatch: pytest.MonkeyPa
     # `--` last, and the range before it: without the terminator a range that names an
     # existing file is read as a pathspec and the log silently answers about something else.
     assert argv_seen[-2:] == ["a..b", "--"]
+
+
+@pytest.mark.parametrize(
+    ("document", "strips"),
+    [
+        ({"attribution": {"commit": "Co-Authored-By: Claude <noreply@anthropic.com>"}}, False),
+        ({"attribution": {"commit": ""}}, True),
+        ({"attribution": {"commit": " \n\t"}}, True),
+        ({"attribution": {"pr": ""}}, True),
+        ({}, True),
+    ],
+    ids=["commit-text", "commit-empty", "commit-whitespace", "pull-requests-only", "unset"],
+)
+def test_commit_strip_gives_way_to_the_harness_attribution_setting(
+    tmp_path: Path, document: dict[str, object], strips: bool
+) -> None:
+    # Claude Code's `attribution.commit` in the user's own settings is the person saying what
+    # their commits carry. The hook stripping the text they set undid a choice made in the
+    # harness, so with text there the message is left as it was. Set empty, it says commits carry
+    # nothing, and a trailer that arrives anyway is the one the hook exists to strip: giving way
+    # to it inverted the choice. Unset, or set only for pull requests, the trailer the harness
+    # adds by default is stripped as before. Whitespace alone is no text either: nothing a commit
+    # would carry. The suite's `HOME` is a directory of its own (`tests/conftest.py`). Mutations
+    # (oracle): `mutations/`'s "commit strip strips a trailer the harness's attribution setting
+    # asked for" -> `commit-text`; "commit strip gives way to an attribution of whitespace" ->
+    # `commit-whitespace`.
+    settings = Path.home() / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps(document), encoding="utf-8")
+    message = tmp_path / "COMMIT_EDITMSG"
+    original = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+    message.write_text(original, encoding="utf-8")
+    assert run(["commit", "strip", str(message)], parser=build_parser(discover_registrars())) == 0
+    stripped = message.read_text(encoding="utf-8")
+    assert (stripped == "fix: thing\n") is strips, stripped
+    assert (stripped == original) is not strips, stripped
+
+
+# The child's bound: a run of `commit strip` takes well under a second, start-up included; one
+# that waits on a FIFO never ends, so a bound this far above the first tells them apart under load
+# and keeps the mutated run short.
+_STRIP_SECONDS = 20
+
+
+def test_commit_strip_never_waits_on_a_fifo_where_the_settings_file_belongs(
+    tmp_path: Path,
+) -> None:
+    # The hook runs `commit strip` on every commit, and it read the owner's settings with
+    # `Path.read_text`, which opens a FIFO and waits for a writer that never comes, so the commit
+    # hung. Read as a regular file only, a FIFO is a file that sets nothing, and the strip goes
+    # on. In a child under a timeout, so a regression fails this case rather than holding a
+    # worker. Mutation (oracle): `mutations/`'s "commit strip reads the owner's settings through
+    # whatever is there" -> this times out.
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    os.mkfifo(home / ".claude" / "settings.json")
+    message = tmp_path / "COMMIT_EDITMSG"
+    original = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+    message.write_text(original, encoding="utf-8")
+    environment = {**developer_free_environ(), "HOME": str(home)}
+    try:
+        done = subprocess.run(
+            [sys.executable, "-m", "stayfixed", "commit", "strip", str(message)],
+            capture_output=True,
+            text=True,
+            timeout=_STRIP_SECONDS,
+            check=False,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"commit strip waited past {_STRIP_SECONDS} s on a FIFO")
+    assert done.returncode == 0, done.stderr
+    assert message.read_text(encoding="utf-8") == "fix: thing\n"
+
+
+def _set_commit_attribution(text: str) -> None:
+    """The person's own Claude Code settings, under the suite's `HOME` (`tests/conftest.py`)."""
+    settings = Path.home() / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps({"attribution": {"commit": text}}), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "original",
+    ["fix: thing\n", "Co-Authored-By: Claude <noreply@anthropic.com>\n"],
+    ids=["no-trailer", "only-a-trailer"],
+)
+def test_commit_strip_that_gives_way_over_nothing_it_would_strip_says_nothing_to_strip(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], original: str
+) -> None:
+    # The give-way line used to print whenever `attribution.commit` was set, before the message
+    # was read, and the hook keeps quiet only on a line starting "nothing to strip": an owner
+    # with the setting got a notice on every commit, a clean one included. Giving way is news
+    # only when a line would have been stripped; a message that is nothing but attribution is
+    # never stripped either, since emptying it would abort the commit. Mutation (oracle):
+    # `mutations/`'s "commit strip gives way before it has read the message" -> `no-trailer`.
+    _set_commit_attribution("Co-Authored-By: Claude <noreply@anthropic.com>")
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text(original, encoding="utf-8")
+    assert run(["commit", "strip", str(message)], parser=build_parser(discover_registrars())) == 0
+    assert capsys.readouterr().out == "nothing to strip\n"
+    assert message.read_text(encoding="utf-8") == original
+
+
+def test_commit_strip_that_keeps_a_trailer_says_why(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A trailer the strip would have taken is kept because the person set what their commits
+    # carry, and the one line says so, with how many lines it left, where the hook shows it.
+    _set_commit_attribution("Co-Authored-By: Claude <noreply@anthropic.com>")
+    message = tmp_path / "COMMIT_EDITMSG"
+    original = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+    message.write_text(original, encoding="utf-8")
+    assert run(["commit", "strip", str(message)], parser=build_parser(discover_registrars())) == 0
+    assert capsys.readouterr().out == GIVES_WAY.format(count=1) + "\n"
+    assert message.read_text(encoding="utf-8") == original

@@ -186,7 +186,6 @@ def _delivery(
     from stayfixed.attach import ATTACH_COMMAND, exclude
     from stayfixed.attach.render import (
         MARKETPLACE_FILE,
-        delivery_directory,
         digest,
         launcher,
         marketplace_name,
@@ -194,7 +193,7 @@ def _delivery(
         recorded_command,
     )
     from stayfixed.attach.write import named_placed, placed_paths
-    from stayfixed.binding import short
+    from stayfixed.binding import delivery_directory, short
     from stayfixed.doctor.api import OK, RED, WARN
     from stayfixed.errors import Failure, Refusal
     from stayfixed.gitenv import git_run

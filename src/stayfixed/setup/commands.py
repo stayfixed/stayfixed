@@ -20,12 +20,13 @@ them), so it runs alone.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 from typing import Any, cast
 
 from stayfixed import fsops
 from stayfixed.areas import SubParsers
-from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP
+from stayfixed.command import HOME_HELP, SETUP_MACHINE_HELP, SETUP_ROOT_HELP, grammar
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import DEFAULT_PRESET
 from stayfixed.printed import quoted
@@ -44,12 +45,12 @@ from stayfixed.runner import subprocess_runner
 
 # `--git-hooks` installs a hook into one repository and does nothing of machine setup's, so a flag
 # that asks machine setup to do something has no run to belong to beside it: `--preset` was
-# refused, and `--overlay` and `--yes` were dropped, exit 0, the hook installed, for a person who
-# asked for both. Refused alike. `--home` and `--machine` say only where machine setup
+# refused, and `--overlay` was dropped, exit 0, the hook installed, for a person who asked for
+# both. Refused alike. `--home` and `--machine` say only where machine setup
 # would write, ask nothing done, and are ignored here, as `docs/cli.md` says.
 _HOOKS_ALONE = (
     "--git-hooks installs a hook into one repository and does nothing of machine setup's, so it "
-    "takes no --preset, --overlay or --yes; run `stayfixed setup` with those separately"
+    "takes no --preset, --overlay or --plugin; run `stayfixed setup` with those separately"
 )
 # `--uninstall` removes the hook `--git-hooks` installed, and means nothing to machine setup: on
 # its own it was dropped and the machine setup ran, exit 0, for a person who asked for a hook to be
@@ -58,6 +59,21 @@ _UNINSTALL_ALONE = (
     "--uninstall removes the commit-message hook and is taken only with --git-hooks; run "
     "`stayfixed setup --git-hooks --uninstall` to remove it, and nothing was written"
 )
+# `--root` names the repository `--git-hooks` installs into, and machine setup reads no repository:
+# it took the flag, read nothing of it and configured the machine, exit 0, for a person who named a
+# repository. Refused before anything is written, naming the flag that gives it a meaning.
+_ROOT_ALONE = (
+    "--root names the repository --git-hooks installs into, and machine setup reads no "
+    "repository; run `stayfixed setup --git-hooks --root PATH` for the hook, or drop --root, "
+    "and nothing was written"
+)
+
+
+# A plugin name as `setup --plugin` takes it, joined to the preset's marketplace into one argv
+# element: led by a letter or a digit, so it cannot be read as an option, and nothing that could
+# reach past the name. The rule in words is the parser's refusal, which never quotes the value.
+PLUGIN_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
+PLUGIN_RULE = "not a plugin name: lowercase ASCII letters, digits and `-`, led by a letter or digit"
 
 
 def _root(given: str) -> Path:
@@ -75,7 +91,7 @@ def _root(given: str) -> Path:
 def run_git_hooks(args: argparse.Namespace) -> Result:
     from stayfixed.guards.api import Found, install, uninstall
 
-    root = _root(args.root)
+    root = _root(args.root or ".")
     # Each path is git's answer, from a `core.hooksPath` the repository sets or under the name a
     # submodule's `.gitmodules` chose, so each is printed through `printed.quoted`, as the
     # refusals print it; `--json` carries it as it is.
@@ -128,10 +144,10 @@ EMPTY_HOME = (
 # and `--machine` name files too, and are taken: the advice names the user settings
 # file and the trust record's directory as they would be written. `--uninstall` was taken and
 # dropped, exit 0, for a person who asked for a hook to be removed. `--root` is taken and unread:
-# it says only where `--git-hooks` and `--overlay` act, and both are refused here.
+# it says only where `--git-hooks` acts, which is refused here.
 _ADVICE_ALONE = (
     "--approval-boundary prints what to set and writes nothing, so it takes no --preset, "
-    "--overlay, --yes, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
+    "--overlay, --plugin, --git-hooks or --uninstall; run `stayfixed setup` with those separately"
 )
 # What `--approval-boundary` prints: the deny rule over the trust record's directory and the user
 # settings file it belongs in, the setting that turns the sandbox on, and the managed settings that
@@ -147,17 +163,19 @@ BOUNDARY_ADVICE = (
 
 def run_setup(args: argparse.Namespace) -> Result:
     if args.approval_boundary:
-        named = (args.preset, args.overlay)
-        switched = (args.yes, args.git_hooks, args.uninstall)
+        named = (args.preset, args.overlay, args.plugin)
+        switched = (args.git_hooks, args.uninstall)
         if any(switched) or any(value is not None for value in named):
             raise Refusal(_ADVICE_ALONE)
         return run_boundary_advice(args)
     if args.git_hooks:
-        if args.yes or args.preset is not None or args.overlay is not None:
+        if args.preset is not None or args.overlay is not None or args.plugin is not None:
             raise Refusal(_HOOKS_ALONE)
         return run_git_hooks(args)
     if args.uninstall:
         raise Refusal(_UNINSTALL_ALONE)
+    if args.root is not None:
+        raise Refusal(_ROOT_ALONE)
 
     from stayfixed.setup.run import setup
 
@@ -177,9 +195,8 @@ def run_setup(args: argparse.Namespace) -> Result:
         home=home,
         machine=machine,
         runner=subprocess_runner(),
-        yes=args.yes,
         overlay=args.overlay,
-        project_root=_root(args.root),
+        plugins=args.plugin or (),
     )
     data = {
         "machine_written": report.machine_written,
@@ -261,14 +278,6 @@ def register(groups: SubParsers) -> None:
     setup.add_argument(
         "--preset", default=None, help="the preset to install (default: recommended)"
     )
-    setup.add_argument(
-        "--yes",
-        action="store_true",
-        help=(
-            "confirm the one irreversible act: creating an overlay repository on GitHub with "
-            "--overlay create:<owner>/<name>. Nothing else asks"
-        ),
-    )
     # Both defaults are `None` and are resolved in `run_setup`. A path computed here is computed
     # when the parser is built, which is every run of every command — and printed by
     # `stayfixed setup --help`, where it was the developer's own home directory.
@@ -278,8 +287,20 @@ def register(groups: SubParsers) -> None:
         "--overlay",
         default=None,
         help=(
-            "record an existing overlay by path, or create one with "
-            "create:<owner>/<name> (asks GitHub for a private repository from the template)"
+            "record an existing overlay by path, render one at a path that names nothing, or "
+            "create one with create:<owner>/<name> (asks GitHub for a private repository from "
+            "the template)"
+        ),
+    )
+    setup.add_argument(
+        "--plugin",
+        action="append",
+        default=None,
+        type=grammar(PLUGIN_NAME, PLUGIN_RULE),
+        metavar="NAME",
+        help=(
+            "install this plugin from the marketplace the preset names for each harness; once "
+            "per plugin. Without it no plugin is installed"
         ),
     )
     setup.add_argument(
@@ -300,5 +321,6 @@ def register(groups: SubParsers) -> None:
         action="store_true",
         help="with --git-hooks, remove the hook and restore what it chained to",
     )
-    setup.add_argument("--root", default=".", help=SETUP_ROOT_HELP)
+    # `None` and not `.`, so machine setup can tell a `--root` it was handed from one it was not.
+    setup.add_argument("--root", default=None, help=SETUP_ROOT_HELP)
     setup.set_defaults(func=run_setup)

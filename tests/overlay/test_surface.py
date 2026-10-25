@@ -24,29 +24,26 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # The runner is a leaf now (`stayfixed.runner`); an area's surface does not re-export a
     # leaf, which is why the three names this list used to carry are absent from it.
     required = {
-        # creating an overlay and making it this owner's, for setup
-        "create",
+        # creating an overlay, rendering one and finishing either, for setup
+        "generate",
+        "render",
+        "finish",
         "Created",
-        "init_instance",
-        "Initialised",
         "target_root",
         "require_overlay",
         "overlay_fault",
+        # rendering the template, the repository it is published as and the name grammar, for
+        # `scripts/publish_template.py`
+        "render_template",
+        "TEMPLATE_REPOSITORY",
+        "segment",
         # the layout attach reads inside the overlay
         "COMMON_CLAUDE",
         "COMMON_CODEX",
         "COMMON_MEMORY",  # the third of the three; two thirds of a layout invites a hand-spelling
-        # the three manifests `init_instance` rewrites, the Codex one included
-        "PLUGIN_MANIFEST",
-        "MARKETPLACE_MANIFEST",
-        "CODEX_PLUGIN_MANIFEST",
         # the shipped template file list, for `scripts/check_artifacts.py` — the one consumer
         # outside `src/`, which a walk of `src/` alone does not see
         "OVERLAY_FILES",
-        # the overlay's commit-time secret scan and its hook's name, for `attach`, which installs
-        # the hook where it is missing; this area's `pre-commit` row asks about the same two
-        "PRE_COMMIT_CONFIG",
-        "PRE_COMMIT_HOOK",
         # the floor an overlay declares and whether a running stayfixed meets it, for the
         # `attach` area's session-start handler
         "requires_of",

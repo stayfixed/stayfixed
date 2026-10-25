@@ -1,28 +1,35 @@
-"""`stayfixed init --questions`' schema: six questions, each default what `init --yes` alone
+"""`stayfixed init --questions`' schema: ten questions, each default what `init --yes` alone
 writes, each source one of `detect`'s phrases, and no byte a grammar rejected."""
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from stayfixed.config.loader import load
-from stayfixed.config.schema import MEMORY_MODES
+from stayfixed.cli import build_parser, discover_registrars
+from stayfixed.config.loader import load, preset_defaults
+from stayfixed.config.schema import CI_MODES, MEMORY_MODES
 from stayfixed.errors import Refusal
+from stayfixed.presets import load_preset
+from stayfixed.project import questions as questions_module
 from stayfixed.project.init import init
 from stayfixed.project.questions import (
     BRANCH_PATTERN,
     FLAGS,
     NAME_PATTERN,
     OVERLAY_NEXT,
+    PLUGINS,
     PROPERTIES,
+    TRADE_OFFS,
     card,
     questions,
 )
 from stayfixed.scaffold import MANIFEST_PATH
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, repository
 from tests.runners import LsRemote
@@ -40,7 +47,7 @@ def _defaults(schema: dict[str, Any]) -> dict[str, tuple[object, str]]:
 
 
 @needs_git
-@pytest.mark.parametrize("key", PROPERTIES)
+@pytest.mark.parametrize("key", [key for key in PROPERTIES if key != PLUGINS])
 def test_each_default_is_what_init_yes_alone_writes(tmp_path: Path, key: str) -> None:
     # The card promises that each default is what `init --yes` would take, and the skill asks
     # the person to confirm the card, not the file. The two are computed in two places, so each
@@ -52,8 +59,9 @@ def test_each_default_is_what_init_yes_alone_writes(tmp_path: Path, key: str) ->
     (root / ".codex").mkdir()
     (root / "pyproject.toml").write_text("[project]\nname = 'widget'\n", encoding="utf-8")
     default = _schema(tmp_path, root)["properties"][key]["default"]
+    # With CI, as `init --yes` alone runs: the stub answers no released tag, so nothing pins.
     written = init(
-        root, machine=tmp_path / "absent.toml", runner=LsRemote(), yes=True, dry_run=False, ci=False
+        root, machine=tmp_path / "absent.toml", runner=LsRemote(), yes=True, dry_run=False, ci=True
     )
     assert not written.refused
     table, name = key.split(".")
@@ -68,9 +76,35 @@ def test_the_schema_keys_are_the_stayfixed_toml_keys_the_answers_write(tmp_path:
     schema = _schema(tmp_path, repository(tmp_path))
     assert schema["type"] == "object"
     assert tuple(schema["properties"]) == PROPERTIES == tuple(schema["required"])
-    assert len(PROPERTIES) == 6
+    assert len(PROPERTIES) == 10
     for key, question in schema["properties"].items():
         assert question["x-stayfixed-flag"] == FLAGS[key], key
+
+
+@needs_git
+def test_the_skill_reads_the_order_to_ask_in_from_required_in_the_json(tmp_path: Path) -> None:
+    # The skill and docs/cli.md said each property under `questions.properties` came in the order
+    # to ask it, but `--json` prints with sorted keys, so the properties arrive alphabetically and
+    # a skill walking them asked about the agents first. `required` is a list, which keeps its
+    # order through the printer, so that is where the skill reads the order: here as the skill
+    # reads it, from the printed JSON, in the order the skill and the release notes name.
+    root = repository(tmp_path)
+    code, printed, _ = cli(root, tmp_path, "init", "--questions", "--json")
+    assert code == 0, printed
+    schema = json.loads(printed)["questions"]
+    assert schema["required"] == [
+        "project.name",
+        "project.base_branch",
+        "memory.mode",
+        "stayfixed.profile",
+        "ci.mode",
+        "commit_messages.attribution_check",
+        "commit_messages.types",
+        "artifacts.local",
+        "stayfixed.agents",
+        "plugins",
+    ]
+    assert sorted(schema["properties"]) == sorted(schema["required"])
 
 
 @needs_git
@@ -171,3 +205,97 @@ def test_the_questions_are_refused_where_init_would_refuse(tmp_path: Path) -> No
     (root / MANIFEST_PATH).write_text("{}", encoding="utf-8")
     with pytest.raises(Refusal, match="stayfixed upgrade"):
         _schema(tmp_path, root)
+
+
+# The order the guided walk asks in, after the name and the base branch it confirms first:
+# memory, the profile, CI, attribution and the commit types, files kept out of git, the agents,
+# and the recommended plugins last.
+GUIDED = (
+    "memory.mode",
+    "stayfixed.profile",
+    "ci.mode",
+    "commit_messages.attribution_check",
+    "commit_messages.types",
+    "artifacts.local",
+    "stayfixed.agents",
+    "plugins",
+)
+
+
+@needs_git
+def test_every_question_carries_its_four_lines_in_the_guided_order(tmp_path: Path) -> None:
+    # The skill relays each question with what the answer gives, what it costs, what it leaves
+    # behind and how to take it back, and the texts are the command's, so a skill cannot drift
+    # from what the command does. A question without them is one the person answers blind.
+    schema = _schema(tmp_path, repository(tmp_path))
+    assert tuple(schema["properties"]) == ("project.name", "project.base_branch", *GUIDED)
+    for key, question in schema["properties"].items():
+        lines = question["x-stayfixed-tradeoff"]
+        assert tuple(lines) == ("get", "give_up", "trace", "undo"), key
+        assert all(isinstance(line, str) and line.strip() for line in lines.values()), key
+
+
+@needs_git
+def test_the_skip_takes_attribution_off_the_preset_types_and_no_plugin(tmp_path: Path) -> None:
+    # Taking every default is offered first, so each default is what a person gets without
+    # reading a question: the attribution check off, the preset's commit types, and no plugin of
+    # the ones it recommends.
+    schema = _schema(tmp_path, repository(tmp_path))["properties"]
+    assert schema["commit_messages.attribution_check"]["default"] is False
+    preset = preset_defaults("widget")
+    assert schema["commit_messages.types"]["default"] == list(preset.commit_messages.types)
+    assert schema["ci.mode"]["default"] == "reusable"
+    plugins = schema["plugins"]
+    assert plugins["default"] == [] and set(plugins["items"]["enum"]) == {
+        "superpowers",
+        "context7",
+    }
+
+
+@needs_git
+def test_the_plugins_question_names_the_plugins_the_preset_recommends_and_no_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The "what you get" line spelled out superpowers' and context7's while the options came from
+    # the preset, so a preset that recommended another plugin would be offered under a line
+    # describing two it no longer names. The line is filled from the same list as the options.
+    monkeypatch.setattr(questions_module, "_recommended", lambda: ["alpha", "beta"])
+    plugins = _schema(tmp_path, repository(tmp_path))["properties"][PLUGINS]
+    assert plugins["items"]["enum"] == ["alpha", "beta"]
+    get = plugins["x-stayfixed-tradeoff"]["get"]
+    assert "alpha, beta" in get and "superpowers" not in get and "context7" not in get, get
+
+
+@needs_git
+def test_the_ci_question_offers_each_ci_mode_but_the_one_no_flag_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The CI options were a table of their own beside `CI_MODES`, so a mode added there was never
+    # offered and nothing said so. They are read off `CI_MODES` now, `uvx` left out because
+    # `init --yes` has no flag that writes it, and a mode with no title stops the schema loudly.
+    schema = _schema(tmp_path, repository(tmp_path))
+    offered = [option["const"] for option in schema["properties"]["ci.mode"]["oneOf"]]
+    assert offered == [mode for mode in CI_MODES if mode != "uvx"] == ["reusable", "none"]
+    monkeypatch.setattr(questions_module, "CI_MODES", (*CI_MODES, "elsewhere"))
+    with pytest.raises(KeyError, match="elsewhere"):
+        _schema(tmp_path, tmp_path / "widget")
+
+
+def test_the_plugins_question_names_the_machine_setup_its_flag_runs() -> None:
+    # The flag the question names is `stayfixed setup --plugin`, a whole machine setup: it writes
+    # the machine file and merges deny rules and plugin options into the user settings, besides
+    # the install. The trace named only the install.
+    trace = TRADE_OFFS[PLUGINS][2]
+    assert "machine configuration file" in trace and "~/.claude/settings.json" in trace, trace
+
+
+def test_the_plugins_question_s_flag_is_one_setup_takes_for_each_plugin_it_offers() -> None:
+    # The plugins are answered on the machine, not by `init`: the skill runs the flag the question
+    # names with each chosen plugin, so that flag has to be one `setup`'s parser takes for every
+    # plugin the question offers.
+    parser = build_parser(discover_registrars())
+    command = FLAGS[PLUGINS].removeprefix("stayfixed ").split()
+    offered = load_preset("recommended")["plugins"]["recommended"]
+    assert offered
+    for name in offered:
+        assert parser.parse_args([*command, name]).plugin == [name]

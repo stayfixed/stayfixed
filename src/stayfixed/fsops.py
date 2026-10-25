@@ -257,6 +257,19 @@ def is_symlink(path: Path) -> bool:
     return mode is not None and stat.S_ISLNK(mode)
 
 
+def vacant(path: Path) -> bool:
+    """Whether nothing is at `path`, or an empty directory that is no link: what a clone or a
+    render may go into. A link, dangling or not, leads either wherever it points, so it is never
+    vacant. Whether this user may write there is the caller's to ask; a directory that cannot be
+    listed raises, as every predicate here does for a fault that leaves the question open."""
+    if is_symlink(path):
+        return False
+    if not is_dir(path):
+        return not exists(path)
+    with os.scandir(path) as entries:
+        return next(entries, None) is None
+
+
 def linked_directory(path: Path) -> Path | None:
     """The directory a symbolic link at `path` leads its file into, or `None` where `path` is not
     one or that cannot be told: what a failed write through the link names, since the write went

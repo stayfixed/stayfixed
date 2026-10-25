@@ -177,12 +177,17 @@ jobs:
       - name: An installed wheel renders the overlay template
         if: env.FULL == 'true'
         # The wheel is installed into a scratch environment with no checkout in reach, and
-        # `overlay create --local` — the one working source for a first overlay — has to find
-        # its template tree inside the package.
+        # `setup --overlay <path>` — the one entry for a first overlay — has to find its template
+        # tree inside the package. Under a `HOME` of its own, so the machine file and the
+        # settings it writes are the scratch's, and with the system's `PATH`, where `git` is and
+        # no harness CLI or `pre-commit` is, so its secret scan is a note; it names no plugin, so
+        # it installs none.
         run: |
           uv venv "$RUNNER_TEMP/wheel"
           uv pip install --python "$RUNNER_TEMP/wheel/bin/python" dist/*.whl
-          "$RUNNER_TEMP/wheel/bin/stayfixed" overlay create --owner ci --name rendered --local --root "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/home"
+          HOME="$RUNNER_TEMP/home" PATH=/usr/bin:/bin "$RUNNER_TEMP/wheel/bin/stayfixed" setup \
+            --overlay "$RUNNER_TEMP/rendered"
           uv run python scripts/check_artifacts.py rendered "$RUNNER_TEMP/rendered"
 
   # The mutation oracle, in a job of its own and on one configuration.

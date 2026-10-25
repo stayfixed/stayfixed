@@ -554,3 +554,38 @@ def commit_gate(root: Path, config: Config, base: str) -> list[Finding]:
         for violation in report.violations
         for offence in violation.offences
     ]
+
+
+def harness_says_what_commits_carry(home: Path | None) -> bool:
+    """Whether the machine owner's Claude Code settings set `attribution.commit`, the harness's own
+    word on what a commit it makes carries, to text.
+
+    `commit strip` gives way to it: the trailer is then the person's choice, made in the harness,
+    and the hook undid it. Set empty, or to whitespace alone, it says commits carry nothing, so a
+    trailer that arrives anyway is the one the hook strips, and giving way to it would invert that
+    choice. Only the owner's settings file under `home` is read, never one a repository commits,
+    because a clone could otherwise turn the hook off. It is read as a regular file only
+    (`fsops.read_regular_text`), since the hook runs on every commit and a FIFO there would hold
+    the commit for ever. A file that is not there, is not a regular file, cannot be read or is not
+    one JSON object sets nothing, and the strip goes on.
+
+    All or nothing: with text there, every attribution line the strip would take is kept, not
+    only the one the setting names, since the setting is the person's word on what their commits
+    carry and the strip cannot tell which other line they meant.
+    """
+    from stayfixed import fsops
+    from stayfixed.errors import Failure
+    from stayfixed.harnesses import CLAUDE, lenient_settings
+    from stayfixed.jsonobject import json_object
+
+    if home is None:
+        return False
+    (settings,) = CLAUDE.settings
+    try:
+        text = fsops.read_regular_text(home / settings)
+        document = json_object(lenient_settings(text), settings, error=Failure)
+    except (OSError, UnicodeDecodeError, Failure):
+        return False
+    attribution = document.get("attribution")
+    commit = attribution.get("commit") if isinstance(attribution, dict) else None
+    return isinstance(commit, str) and commit.strip() != ""

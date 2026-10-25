@@ -6,32 +6,35 @@ description: Configure the machine for stayfixed — the preset, the personal pa
 # Machine setup
 
 1. Run `stayfixed setup --preset recommended` and relay what it writes to the machine
-   configuration file and which plugins the preset enables. It asks nothing;
-   `--yes` exists only to confirm creating an overlay repository (step 4).
+   configuration file. It asks nothing, and installs no plugin unless `--plugin` names one.
 2. For the commit-message hook, run `stayfixed setup --git-hooks` inside the repository and
    relay what it installed and what existing hook it kept and chained to;
    `stayfixed setup --git-hooks --uninstall` restores it.
 3. A language preference the user wants followed is a personal standing rule, a note with
    `metadata.startup` in the overlay; do not guess it.
 4. Offer the private overlay — one repository holding the user's own standing rules,
-   cross-project notes and per-project bindings. `setup` is what records it, through
-   `--overlay`, and there are two ways in:
+   cross-project notes and per-project bindings. `setup` is what makes and records it, through
+   `--overlay`, and there are three ways in:
    - **They already have one**: `stayfixed setup --preset recommended --overlay /path/to/it`.
-     The path is validated against the overlay's own layout, and refused if it is inside,
-     around or equal to the directory `setup` runs in, if it is in another checkout of that
-     directory's repository, or if it is inside a checkout of any other repository.
-   - **They do not**: `stayfixed setup --preset recommended --overlay create:<owner>/stayfixed-private --yes`
-     creates it on their GitHub account and records it in one step. Creating a repository on
-     their account needs their word first, so **ask before running it** — `--yes` is that
-     consent and nothing about the overlay happens unless `--overlay` is named at all.
+     The path is validated against the overlay's identity record, `stayfixed-overlay.toml`. An
+     overlay made before the record shipped is refused with the file and its keys named: relay
+     that, since the user adds the record by hand. Where the overlay lives is the user's choice;
+     `stayfixed doctor` warns when another repository's work tree holds it.
+   - **They want one on this machine only for now**: `stayfixed setup --preset recommended
+     --overlay /path/that/does/not/exist` (or an empty directory they can write) renders the
+     shipped template there with no network call, makes it a git repository, installs the secret
+     scan and records it. Relay the note on giving it a remote, and the note that it replaced the
+     overlay the machine recorded before, when there is one.
+   - **They want one on GitHub**: `stayfixed setup --preset recommended --overlay create:<owner>/stayfixed-private`
+     creates it on their GitHub account, from their own published template or the publisher's
+     public one, and records it in one step. Creating a repository
+     on their account needs their word first, so **ask before running it**: no flag stands in
+     for it, and nothing about the overlay happens unless `--overlay` is named at all. A file at
+     `~/<name>`, or a directory there holding something that is not an overlay, is refused before
+     GitHub is asked anything; relay the refusal rather than moving what is there yourself. A
+     refusal after GitHub was asked says the repository may exist and how to record it: relay it.
 
-   The lower-level path still exists and is for two cases only — an overlay rendered without
-   recording it, or one somebody else created that needs renaming:
-   `stayfixed overlay create --owner NAME --local` renders one on this machine with no network
-   call, `stayfixed overlay create --owner NAME --name stayfixed-private --template` creates it on
-   GitHub from their own published template, or from the publisher's public one when they have
-   none, and `stayfixed overlay init --owner NAME --root PATH` makes it theirs. Relay what
-   `init` renamed and whether the secret scan installed.
+   Relay whether the secret scan installed.
 5. After a stayfixed release, `stayfixed overlay upgrade --root PATH --dry-run` says what would
    change. Relay the report, and relay the `ASK FIRST` list separately: those two files can
    grant a capability, so the user agrees to them by name before the run without `--dry-run`.
@@ -41,10 +44,12 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    the agent's shell cannot write the machine directory at all: when `setup` or `trust revoke`
    says a person must run it in their own terminal, outside the agent's sandbox,
    relay that sentence and stop — never retry it outside the sandbox yourself.
-7. **The preset's plugins install on Claude Code only.** Codex has no verified non-interactive
-   marketplace source for them, so `setup` reports the gap as a note rather than attempting an
-   unverified install. Relay that note and tell the user to add those plugins by hand on Codex;
-   do not present the run as having configured both harnesses.
+7. **A plugin is installed only when named**, and only on Claude Code: add `--plugin NAME` once
+   per plugin the user chose, never one they did not, as in
+   `stayfixed setup --preset recommended --plugin superpowers`. Codex has no verified non-interactive marketplace source for them, so
+   `setup` reports the gap as a note rather than attempting an unverified install. Relay that
+   note and tell the user to add those plugins by hand on Codex; do not present the run as
+   having configured both harnesses.
 8. `--home` and `--machine` point the `--preset` run at a scratch destination instead of the
    real home directory and `~/.config/stayfixed/config.toml`. They are **not** a dry run — the
    same files are written, just elsewhere — and `--git-hooks` ignores both. Do not offer them

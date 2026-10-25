@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 from stayfixed import fsops
 from stayfixed.assess.model import Item, item
 from stayfixed.config.paths import PathEscape, contained
-from stayfixed.config.schema import IN_REPO_MODE
+from stayfixed.config.schema import COMMIT_TYPE_WORD, IN_REPO_MODE
 from stayfixed.findings import Severity
 from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
@@ -61,7 +61,7 @@ PROFILE_NOT_SHIPPED_REMEDY = (
 )
 # Each word spelled so this line is not one of the markers it searches for.
 _MARKERS = "T[O]DO|F[I]XME|X[X]X"
-_SUBJECT = re.compile(r"^([a-z]+)(\([^)]*\))?!?: ")
+_SUBJECT = re.compile(rf"^({COMMIT_TYPE_WORD})(\([^)]*\))?!?: ")
 _ENV_KEEP = (".example", ".sample", ".template")
 _CODEOWNERS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")  # GitHub's order
 _WORKFLOWS = ".github/workflows"

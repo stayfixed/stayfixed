@@ -4,17 +4,8 @@
 
 # A line-oriented answer is split where git ended each line. `str.splitlines()` also breaks at
 # `\r`, U+2028 and five more that git prints raw inside a name: a worktree at `…/wt\rx` was
-# listed as `…/wt` — `setup` recorded it among the project's checkouts, and `attach` links into
-# every checkout it lists — and one dirty name counted as two.
-[[mutation]]
-name = "setup splits git's listing of checkouts at a carriage return inside a path"
-file = "src/stayfixed/setup/run.py"
-before = "    lines = answer_lines(out)"
-after = "    lines = out.splitlines()"
-reddens = [
-  "tests/test_git_answers.py::test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path",
-]
-
+# listed as `…/wt` — and `attach` links into every checkout it lists — and one dirty name counted
+# as two.
 [[mutation]]
 name = "the overlay's sync row counts a name holding a line separator twice"
 file = "src/stayfixed/overlay/sync.py"
@@ -46,16 +37,6 @@ after = "SYNC_TIMEOUT_SECONDS = 0.001"
 reddens = [
   "tests/test_git_run.py::test_a_named_git_bound_leaves_git_a_second_to_answer[stayfixed.overlay.sync.SYNC_TIMEOUT_SECONDS]",
 ]
-
-# Creating a repository on an account is permitted only after explicit confirmation, and in this
-# harness the caller is non-interactive: naming the source IS the confirmation. A default turns an
-# omitted flag into a private repository created on somebody's GitHub account.
-[[mutation]]
-name = "overlay create picks the GitHub source when nobody asked for it"
-file = "src/stayfixed/overlay/commands.py"
-before = "create.set_defaults(func=run_overlay_create, source=None)"
-after = 'create.set_defaults(func=run_overlay_create, source="template")'
-reddens = ["tests/overlay/test_create.py::test_the_cli_never_picks_the_github_source_for_you"]
 
 # The machine file is the owner's, by `README.md`'s own table, and every `setup` rewrites it.
 # `[personal]` and `[machine]` were spread over what the file held; `[overlay]` replaced its
@@ -99,9 +80,11 @@ reddens = [
 [[mutation]]
 name = "setup creates a new overlay under the caller's cwd instead of --home"
 file = "src/stayfixed/setup/run.py"
-before = 'created = create(owner, name, source="template", root=destination.parent, runner=runner)'
-after = 'created = create(owner, name, source="template", root=Path.cwd(), runner=runner)'
-reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
+before = "            created = generate(owner, name, root=planned.destination.parent, runner=runner)"
+after = "            created = generate(owner, name, root=Path.cwd(), runner=runner)"
+reddens = [
+  "tests/setup/test_setup.py::test_create_needs_no_yes_and_makes_an_absent_or_empty_destination[absent]",
+]
 
 # A preset's own default must never win over a personal value already recorded — by an earlier
 # `setup` run or by the owner's own hand — or a second `setup --preset recommended` resets it.
@@ -126,7 +109,17 @@ before = 'permissions["deny"] = existing_deny + [r for r in deny_rules if r not 
 after = 'permissions["allow"] = existing_deny + [r for r in deny_rules if r not in existing_deny]'
 reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_the_deny_rules"]
 
-# The creation gate, restated in code: `overlay create` runs `gh repo create ... --private` on
+# A plugin is installed only when it is named: a run naming none registered the preset's
+# marketplace on every harness that declares one and noted the rest, for a person who asked for no
+# plugin at all.
+[[mutation]]
+name = "setup reaches the plugin commands with no plugin named"
+file = "src/stayfixed/setup/run.py"
+before = "    if not selectors:\n        return (), ()"
+after = "    if False:\n        return (), ()"
+reddens = ["tests/setup/test_setup.py::test_a_run_that_names_no_plugin_asks_no_harness_anything"]
+
+# The creation gate, restated in code: `--overlay create:` runs `gh repo create ... --private` on
 # GitHub, and a default that reaches it is the one default this command may not have. Without this
 # guard, every ordinary run with no `--overlay` flag at all would still reach the overlay branch,
 # which is "taken without being asked" by definition. The `after` is the plausible shape of that bug
@@ -136,265 +129,126 @@ reddens = ["tests/setup/test_setup.py::test_setup_writes_the_machine_file_and_th
 name = "setup touches the overlay even when the caller named no answer"
 file = "src/stayfixed/setup/run.py"
 before = """    if overlay is None:
-        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
-        # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
-        # would turn an omitted flag into a repository created on somebody's account.
+        # Nothing was asked for, so nothing is touched: `--overlay` is the only way to reach the
+        # overlay at all, and a default here would turn an omitted flag into a repository created
+        # on somebody's account.
         return None"""
 after = """    if overlay is None:
         overlay = str(home)"""
 reddens = ["tests/setup/test_setup.py::test_the_overlay_offer_is_never_taken_without_being_asked"]
 
-# `--yes` on `--overlay <path>` would be theatre in a harness where the command line is written by a
-# model, so it is not gated there — but creating a repository on GitHub is the one irreversible,
-# outward-facing act `setup` performs, and that act waits for explicit confirmation. This is the one
-# place `yes` is a real control rather than a restatement.
-[[mutation]]
-name = "setup creates an overlay on GitHub without --yes"
-file = "src/stayfixed/setup/run.py"
-before = "        if not yes:"
-after = "        if False:"
-reddens = ["tests/setup/test_setup.py::test_creating_an_overlay_without_yes_is_refused"]
-
 # The overlay root is the machine's trust anchor: every later `attach` derives `permitted_roots`
-# from it. Without this guard, `--overlay /tmp/whatever` — any directory that merely exists —
-# would be recorded and trusted exactly as a real overlay is. The probe moved into
-# `overlay.identity`, which is the one module that answers "is this an overlay" for `setup` and
-# for `overlay upgrade` alike, so the entry follows it there.
+# from it. The probe lives in `overlay.identity`, the one module that answers "is this an overlay"
+# for `setup` and for `overlay upgrade` alike, and it asks for the identity record first, so the
+# refusal of a tree without one names the file to add in full, for an overlay made before the
+# record shipped. Without the question, a tree with no record is still refused, as a record that
+# does not parse (`NOT_A_RECORD`), which names nothing to add.
 [[mutation]]
-name = "the overlay probe stops looking for the manifests at all"
+name = "the overlay probe stops asking for the identity record"
 file = "src/stayfixed/overlay/identity.py"
-before = "    for row in NAMED:"
-after = "    for row in ():"
+before = "    if not fsops.is_file(root / IDENTITY_RECORD):"
+after = "    if False:"
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_missing_the_layout_is_refused",
-  "tests/overlay/test_upgrade.py::test_a_directory_that_is_not_an_overlay_is_refused_before_anything_is_written",
+  "tests/overlay/test_template.py::test_a_tree_without_the_identity_record_is_no_overlay_and_is_told_what_to_add",
 ]
 
-# The half that used to be worth nothing: the probe was the two manifests *existing*, which the
-# stayfixed checkout itself satisfies and which any Claude Code plugin repository satisfies. What
-# makes a tree an overlay is what its manifests say it is — the names `overlay init` writes and a
-# harness installs it by.
+# The half that used to be worth nothing: the probe was once two manifests *existing*, which the
+# stayfixed checkout itself satisfied. What makes a tree an overlay is what its record says: layout
+# 1, and `true`, which Python compares equal to 1, is no layout.
 [[mutation]]
-name = "the overlay probe stops reading what the manifests name"
+name = "the overlay probe takes any record for an overlay"
 file = "src/stayfixed/overlay/identity.py"
-before = "        if document is None or not claims(document.get(\"name\"), row.name):"
-after = "        if document is None:"
+before = "    if type(layout) is not int or layout != LAYOUT:"
+after = "    if record is None:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_directory_whose_manifests_name_another_plugin_is_not_an_overlay",
+  "tests/setup/test_setup.py::test_a_directory_whose_record_names_another_layout_is_not_an_overlay",
+  "tests/overlay/test_template.py::test_a_record_that_is_not_a_layout_1_record_is_no_overlay[another-layout]",
 ]
 
-# The overlay's manifests have one reader, `naming.manifest`, for the probe, the owner and the
-# version floor. It answers every way a manifest can fail to parse, because what the probe returns
-# is a refusal and what escapes it is an internal error: a manifest nested past the parser or
-# holding an integer longer than it converts is valid JSON that `json.loads` meets with no
-# `JSONDecodeError`, and either ended `stayfixed setup --overlay` in one, while the owner's reader
-# must ask the next manifest past one it cannot read. The long integer has no case here: it is a
-# `ValueError` out of `json.loads` too, which every caller of the one reader reads as a manifest it
-# cannot read, so only the nesting tells this reader from a bare parse.
+# The other half of the same line: `true` is an `int` equal to 1 in Python, and names no layout.
 [[mutation]]
-name = "an overlay manifest is read with a bare json.loads"
-file = "src/stayfixed/overlay/naming.py"
-before = "    return json_object(manifest_text(root, relative), relative, error=ValueError, shape=NotAnObject)"
-after = '    return __import__("json").loads(manifest_text(root, relative))'
+name = "the overlay probe takes true for layout 1"
+file = "src/stayfixed/overlay/identity.py"
+before = "    if type(layout) is not int or layout != LAYOUT:"
+after = "    if layout != LAYOUT:"
 reddens = [
-  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/plugin.json]",
-  "tests/setup/test_commands.py::test_an_overlay_manifest_past_the_parser_is_refused_as_unreadable_through_the_cli[nested-.claude-plugin/marketplace.json]",
-  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_the_parser_cannot_reach[nested]",
-  "tests/overlay/test_upgrade.py::test_the_owner_is_read_past_a_manifest_beyond_the_depth_bound",
+  "tests/overlay/test_template.py::test_a_record_that_is_not_a_layout_1_record_is_no_overlay[a-boolean]",
 ]
 
-# `overlay init` renames the manifests as text, read by the same reader: to the read cap, a regular
-# file only, and a refusal said in words that names the file as the overlay does.
+# Generating is idempotent by rule: a second `create:` finds the overlay the first one cloned and
+# asks GitHub nothing, where it would generate the repository again and fail on its name.
 [[mutation]]
-name = "overlay init reads a manifest with no bound"
+name = "create: generates again over the overlay an earlier run cloned"
 file = "src/stayfixed/overlay/create.py"
-before = "        return naming.manifest_text(root, relative)"
-after = '        return (root / relative).read_text(encoding="utf-8")'
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read",
-]
-
-[[mutation]]
-name = "overlay init's manifest refusal prints the path it opened"
-file = "src/stayfixed/overlay/create.py"
-before = "    with fsops.reading(relative, Failure):"
-after = "    with fsops.reading(root / relative, Failure):"
-reddens = ["tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_read_cap_as_one_it_cannot_read"]
-
-# And it reads a regular file only: two of its three callers read the plugin manifest with a bare
-# `read_text`, so a FIFO there blocked the SessionStart hook (`requires_of`) and `overlay upgrade`
-# (`owner_of`) for good.
-[[mutation]]
-name = "an overlay manifest is read without asking what it is"
-file = "src/stayfixed/overlay/naming.py"
-before = "    return read_regular_text(root / relative)"
-after = '    return (root / relative).read_text(encoding="utf-8")'
-reddens = [
-  "tests/overlay/test_requires.py::test_a_fifo_at_the_plugin_manifest_is_unreadable_to_its_readers_without_waiting",
-]
-
-# The actual control over a named overlay path: a path outside the repository that already
-# carries a real overlay layout is not something a hostile clone can create, but a path *inside*
-# it is exactly the shape of tree a clone can ship — so this is the one check that removes the
-# actual exploitable case, and losing it is the whole residual risk.
-[[mutation]]
-name = "setup stops refusing an overlay root inside the project"
-file = "src/stayfixed/setup/run.py"
-before = "    if any(_same(part, b) for part in (a, *a.parents)):"
-after = "    if any(_same(part, b) for part in (a,)):"
-reddens = ["tests/setup/test_setup.py::test_an_overlay_inside_the_project_root_is_refused"]
-
-# The arm that was missing, and the one this project's own way of working walks into: `--root` is
-# a worktree by preset rule, and `git worktree add .worktrees/x` puts it *under* the checkout — so
-# a clone shipping its two manifests at its own root was a parent of `--root`, which the first
-# draft accepted as the machine's trust anchor.
-[[mutation]]
-name = "setup stops refusing an overlay root that holds the project"
-file = "src/stayfixed/setup/run.py"
-before = "    return any(_same(part, a) for part in b.parents)"
-after = "    return False"
-reddens = ["tests/setup/test_setup.py::test_an_overlay_that_holds_the_project_root_is_refused"]
-
-# And the case no path comparison can see. `git worktree add ../side` is git's own documented
-# layout and this repository's own convention: the other checkout is neither inside `--root` nor
-# above it, and a clone ships its tree into every checkout of itself. Only `git` can say that two
-# directories are one repository — and it is asked from the project's side, for the list of its
-# checkouts: asked from inside the candidate, a committed directory holding `HEAD`, `objects/`
-# and `refs/` answered for itself, and a clone's `ov/` in a sibling worktree was recorded.
-[[mutation]]
-name = "setup stops asking git whether the overlay is a checkout of the project"
-file = "src/stayfixed/setup/run.py"
-before = "            if _overlaps(resolved_candidate, fsops.resolved(checkout)):"
-after = "            if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_the_listing_refuses_a_sibling_checkout_when_git_answers_nothing_from_the_candidate",
-]
-
-# Asked from the project's side, git's discovery can still stop at a bare-shaped directory when
-# `--root` sits inside one: `ov/` is then the repository, its only checkout is itself, and the
-# sibling worktree's `ov/` passes. `--is-inside-work-tree` in the same answer is what refuses
-# it on every git, whatever a committed `ov/config` says. `safe.bareRepository=explicit` has no entry of its own: every refusal here is
-# proven with it removed (the tests' `ignores-safe-bare` cases), and what it adds — git never
-# reading a committed `config` inside a bare-shaped directory — is nothing a test can observe.
-[[mutation]]
-name = "setup stops refusing a root git does not read as inside a checkout"
-file = "src/stayfixed/setup/run.py"
-before = '    if answer[1] != "true":'
-after = "    if False:"
-reddens = ["tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused"]
-
-# Once git has said the project is a repository, a question about its checkouts that git did not
-# answer is not "none of them holds the candidate". The old arm read exactly that: no answer for
-# the candidate was `None`, `None` differed from the project's common directory, and the
-# candidate was recorded. `git_run` decodes with `text=True`, so bytes git prints outside the
-# locale's encoding are the other way of not answering.
-[[mutation]]
-name = "setup stops refusing an overlay when git cannot list the project's checkouts"
-file = "src/stayfixed/setup/run.py"
-before = """    if not checkouts:
-        raise Refusal(unlisted)"""
-after = """    if not checkouts:
-        return _Repository(Path(answer[0]), [])"""
-reddens = [
-  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
-]
-
-# git refusing to answer with `safe.bareRepository=explicit` and answering without it is either
-# a bare-shaped directory, which the answer says, or git not answering the first time; neither
-# is a listing of the project's checkouts.
-[[mutation]]
-name = "setup takes an answer git gave only without the key"
-file = "src/stayfixed/setup/run.py"
-before = """    if retried:
-        raise Refusal(unlisted)"""
-after = """    if retried:
-        pass"""
-reddens = [
-  "tests/setup/test_setup.py::test_checkouts_git_cannot_list_refuse_the_overlay_rather_than_pass_it",
-]
-
-# `git_run`'s `-1` is git that could not be run or ran past its time limit, not git saying there
-# is no repository, and every caller of `_ask` read it as the second: a git that timed out on
-# `rev-parse` let the project's main checkout be recorded from one of its worktrees. So did every
-# other way a `git` that runs can say nothing — an exit of 1, 126 or 127 from a wrapper, a signal,
-# an exit 0 with nothing printed — and with them the clone's own `ov/` was recorded from inside it.
-# Inside a checkout, which the disk says, each of them refuses; where no `.git` is, git has no
-# checkout to name and it is "no repository".
-[[mutation]]
-name = "setup reads git giving no answer inside a checkout as no repository again"
-file = "src/stayfixed/setup/run.py"
-before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))"
-after = "    return None"
-reddens = [
-  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[every-call]",
-  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
-  "tests/setup/test_setup.py::test_git_giving_no_answer_inside_a_checkout_refuses_the_overlay[the-listing]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[exits-1-inside-the-root]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[exits-1-in-a-sibling-checkout]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[killed-by-a-signal-inside-the-root]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[killed-by-a-signal-in-a-sibling-checkout]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[answers-nothing-inside-the-root]",
-  "tests/setup/test_setup.py::test_git_that_runs_and_answers_nothing_inside_a_checkout_refuses_the_overlay[answers-nothing-in-a-sibling-checkout]",
-]
-
-[[mutation]]
-name = "setup refuses an overlay whenever git gives no answer, checkout or not"
-file = "src/stayfixed/setup/run.py"
-before = "    if not in_work_tree(start):"
-after = "    if code != -1 and not in_work_tree(start):"
-reddens = [
-  "tests/setup/test_setup.py::test_git_giving_no_answer_where_no_checkout_is_still_records_the_overlay",
-]
-
-# `git worktree list` names the main checkout of a `--separate-git-dir` repository, and of a
-# submodule, by its git directory, which does not record where the checkout is. From a linked
-# worktree that checkout was on no list, so its `ov/` passed; git asked from the candidate's side
-# finds it through the checkout's `.git`.
-[[mutation]]
-name = "setup stops asking git from the candidate's side"
-file = "src/stayfixed/setup/run.py"
-before = "    if repository is not None and _same(fsops.resolved(found), fsops.resolved(repository.common)):"
+before = "    if overlay_fault(target) is None:"
 after = "    if False:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
-  "tests/setup/test_setup.py::test_a_submodule_checkout_is_refused_from_a_worktree_of_the_submodule",
+  "tests/overlay/test_create.py::test_an_existing_overlay_at_the_destination_is_left_alone",
+  "tests/setup/test_setup.py::test_rerunning_overlay_create_over_an_existing_overlay_creates_nothing_and_names_no_template",
 ]
 
-# The candidate is where a clone puts a bare-shaped directory, and git refuses to answer from
-# inside one; asked once, the candidate side would say nothing exactly when it matters.
+# What a clone left is an overlay only when its identity record parses: taken for one, a tree cut
+# short or a template that is no overlay's was recorded as the machine's trust anchor.
 [[mutation]]
-name = "the candidate-side walk stops at the first directory git will not answer for"
-file = "src/stayfixed/setup/run.py"
-before = "        start = start.parent"
-after = "        return None"
+name = "create: records whatever a clone left"
+file = "src/stayfixed/overlay/create.py"
+before = """    if fault is not None:
+        raise Refusal(f"{fault}. {_unrecorded(slug, target)}")"""
+after = """    if False:
+        raise Refusal(f"{fault}. {_unrecorded(slug, target)}")"""
 reddens = [
-  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
+  "tests/setup/test_setup.py::test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists",
+  "tests/overlay/test_create.py::test_every_refusal_after_gh_repo_create_says_the_repository_may_exist_and_how_to_record_it[cut-short]",
 ]
 
-# On a git that ignores `safe.bareRepository`, `ov/` answers for itself, and its committed
-# `config` or `commondir` can make that answer "not bare" with a common directory anywhere. Only an
-# answer that says the directory is inside a work tree comes through a checkout's `.git`, which a
-# repository cannot commit, so the walk goes on past every other one.
+# Where the overlay lives is the owner's choice, and the one word about a work tree that holds it
+# is this warning: another repository can put files into the overlay from there.
 [[mutation]]
-name = "the candidate-side walk takes an answer from outside a work tree as the candidate's"
-file = "src/stayfixed/setup/run.py"
-before = '        if answer is not None and answer[1] == "true":'
-after = "        if answer is not None:"
+name = "doctor says nothing of the work tree that holds the overlay"
+file = "src/stayfixed/overlay/doctor.py"
+before = "    if holder is None or row.status not in (OK, SKIP):"
+after = "    if True:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_checkout_the_listing_names_by_its_git_directory_is_still_refused",
+  "tests/overlay/test_doctor.py::test_an_overlay_root_inside_another_repositorys_work_tree_is_a_warning",
 ]
 
-# `setup` asks git about `--root` from the nearest directory above it that exists, however many of
-# its components do not.
+# The record has one reader, `identity.identity_record`, for the probe and the version floor. A
+# record nested past the parser or holding an integer longer than it converts is valid TOML that
+# `tomllib` meets with no `TOMLDecodeError`, and either would end `stayfixed setup --overlay` in an
+# internal error instead of a refusal.
 [[mutation]]
-name = "setup asks git about --root from a directory that does not exist"
-file = "src/stayfixed/setup/run.py"
-before = """    while not fsops.is_dir(path) and path != path.parent:
-        path = path.parent"""
-after = """    if not fsops.is_dir(path):
-        path = path.parent"""
+name = "the identity record reader lets a document past the parser raise"
+file = "src/stayfixed/overlay/identity.py"
+before = "    except (OSError, UnicodeDecodeError, *UNPARSEABLE):"
+after = "    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):"
 reddens = [
-  "tests/setup/test_setup.py::test_a_bare_shaped_directory_in_a_sibling_checkout_is_never_the_trust_anchor",
+  "tests/setup/test_commands.py::test_an_overlay_record_past_the_parser_is_refused_as_unreadable_through_the_cli[nested]",
+  "tests/overlay/test_requires.py::test_a_record_past_the_parsers_reach_is_nothing_declared",
+]
+
+# And it reads a regular file only: a FIFO at the record would block the SessionStart hook
+# (`requires_of`) for good.
+[[mutation]]
+name = "the identity record is read without asking what it is"
+file = "src/stayfixed/overlay/identity.py"
+before = "        return tomllib.loads(fsops.read_regular_text(root / IDENTITY_RECORD))"
+after = '        return tomllib.loads((root / IDENTITY_RECORD).read_text(encoding="utf-8"))'
+reddens = [
+  "tests/overlay/test_requires.py::test_a_fifo_at_the_identity_record_is_unreadable_to_its_readers_without_waiting",
+]
+
+# The record is the one carrier of the floor, and `overlay upgrade` refreshes it only while it holds
+# the bytes the ledger recorded. `setup` wrote an owner and a name into it, and the record was then
+# skipped as hand-edited by every later upgrade, so the floor never rose again.
+[[mutation]]
+name = "setup writes into the identity record it rendered"
+file = "src/stayfixed/overlay/create.py"
+before = "def finish(root: Path, *, runner: Runner) -> str:"
+after = '''def finish(root: Path, *, runner: Runner) -> str:
+    fsops.write_within(root, IDENTITY_RECORD, fsops.read_regular_text(root / IDENTITY_RECORD) + 'owner = "me"\n')'''
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_overlay_set_up_at_a_path_takes_a_raised_floor_with_nothing_for_its_owner_to_edit",
 ]
 
 # --- setup and overlay: the structural refusal above the first write (PR 12 review) ---
@@ -446,26 +300,26 @@ reddens = ["tests/setup/test_setup.py::test_every_plugin_install_is_one_recorded
 [[mutation]]
 name = "setup asks whether --overlay is an overlay after it has already written"
 file = "src/stayfixed/setup/run.py"
-before = "        planned = _requested_overlay(overlay, home=home, yes=yes)"
-after = "        planned = None if overlay is None else _Overlay(Path(overlay).expanduser().resolve(), None)"
+before = "        planned = _requested_overlay(overlay, home=home)"
+after = "        planned = None if overlay is None else _Overlay(\"record\", Path(overlay).expanduser().resolve())"
 reddens = [
   "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
 ]
 
-# The most serious of the eleven. `home/<name>` is knowable from the arguments, and the first
-# draft computed it only inside the call that had already run `gh repo create --private --clone`
-# on somebody's account: the documented command run from `$HOME` created the repository, cloned
-# it, renamed both manifests and installed the secret scan, and then refused. The mutation drops
-# the check on the destination and leaves the floor, so the refusal still happens — after the
-# repository exists.
+# `create:` clones into `<home>/<name>`, which is knowable from the arguments, and what is there
+# was met only by the clone: a file, or a directory that is not an overlay, refused after `gh repo
+# create` had made a repository on the owner's account that nothing then recorded. The mutation
+# drops the question and leaves the floor under the clone, so the refusal still comes — after the
+# repository exists, and after the `gh` calls the tests assert never ran.
 [[mutation]]
-name = "setup computes where a created overlay lands only after creating it"
+name = "setup asks about the create: destination after GitHub"
 file = "src/stayfixed/setup/run.py"
-before = """        if planned is not None:
-            planned = replace("""
-after = """        if planned is not None and planned.create is None:
-            planned = replace("""
-reddens = ["tests/setup/test_setup.py::test_a_created_overlay_is_refused_before_the_repository_exists"]
+before = "        _judged(destination, overlay_fault, refused)"
+after = "        pass"
+reddens = [
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[a-file]",
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[not-an-overlay]",
+]
 
 # An unusable `--home` reached the frame or the second write: under a read-only parent `mkdir`
 # raised `PermissionError` as `internal error`, and a read-only home had the machine file written
@@ -537,8 +391,8 @@ reddens = ["tests/setup/test_setup.py::test_a_home_mkdir_that_fails_is_a_refusal
 
 # `setup`'s questions before its first write are one phase with one floor. `fsops`' predicates raise
 # when a path cannot be asked about, and the steps that do not word that themselves let it reach
-# the frame as `internal error`: an `--overlay` or a `--root` directory below a directory nobody
-# may search, and the walk up from a `create:` destination under such a home.
+# the frame as `internal error`: an `--overlay` directory below a directory nobody may search, and
+# a `create:` destination under such a home.
 [[mutation]]
 name = "setup lets a path it cannot ask about before its first write reach the frame"
 file = "src/stayfixed/setup/run.py"
@@ -549,97 +403,68 @@ after = """    except ValueError as exc:
         asked = (
             quoted(str(exc.filename))"""
 reddens = [
-  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[overlay]",
-  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it[root]",
+  "tests/setup/test_setup.py::test_a_path_setup_cannot_ask_about_before_its_first_write_is_a_refusal_naming_it",
+  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything",
 ]
 
-# The order is load-bearing where two steps can refuse one layout: a `create:` destination under a
-# home nobody may search is the home's fault, which the settings and `--home` questions name, and
-# asked first, where the overlay lies could only say that the destination cannot be asked about.
+# What is in a directory nobody may search cannot be told, and for either form of `--overlay` it is
+# asked before anything else: a `create:` destination nobody may search raised there, once as
+# `internal error` after the machine file and the plugin installs, and in the phase as the floor's
+# words about a file in it rather than the directory that cannot be searched.
 [[mutation]]
-name = "setup asks where the overlay lies before it asks about --home"
+name = "setup stops asking whether the place --overlay names can be searched"
 file = "src/stayfixed/setup/run.py"
-before = "        _check_home_usable(home, created=created)\n        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )"
-after = "        if planned is not None:\n            planned = replace(planned, exempt=_exemption(planned, machine=machine))\n            _outside_the_project(\n                planned.root, project_root=project_root, exempt=planned.exempt is not None\n            )\n        _check_home_usable(home, created=created)"
+before = "    if directory and not os.access(place, os.X_OK):"
+after = "    if False:"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[no-repository]",
-  "tests/setup/test_setup.py::test_a_created_overlay_under_a_home_nobody_may_search_is_refused_before_anything[repository]",
-  "tests/setup/test_setup.py::test_every_question_before_the_first_write_is_asked_in_the_documented_order",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[create-no-access]",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[path-no-access]",
 ]
 
-# Over a `<home>/<name>` that is there, `overlay.create` looks inside it before anything else, and a
-# destination nobody may search raised there, after the machine file and the plugin installs.
+# Looking inside for an overlay asks the search bit, not the read bit: a directory that can be read
+# and not searched raised there all the same.
 [[mutation]]
-name = "setup stops asking whether a created overlay's destination can be searched"
+name = "setup asks whether the place --overlay names can be read, not searched"
 file = "src/stayfixed/setup/run.py"
-before = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
-after = "    elif False:"
+before = "    if directory and not os.access(place, os.X_OK):"
+after = "    if directory and not os.access(place, os.R_OK):"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[no-access]",
-  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[create-readable-only]",
+  "tests/setup/test_setup.py::test_a_directory_this_user_cannot_search_is_refused_naming_that_before_anything[path-readable-only]",
 ]
 
-# Looking inside the destination for an overlay asks its search bit, not its read bit: a
-# destination that can be read and not searched raised there all the same.
+# An empty directory this user cannot write takes no clone: read as vacant, `create:` ran `gh repo
+# create`, whose clone failed on it, and left a repository on the owner's account nothing recorded.
 [[mutation]]
-name = "setup asks whether a created overlay's destination can be read, not searched"
+name = "an empty directory this user cannot write reads as vacant"
 file = "src/stayfixed/setup/run.py"
-before = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):"
-after = "    elif created is not None and fsops.is_dir(created) and not os.access(created, os.R_OK):"
+before = "    if directory and not os.access(place, os.R_OK | os.W_OK):"
+after = "    if directory and not os.access(place, os.R_OK):"
 reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlay_whose_destination_cannot_be_searched_is_refused_before_anything[readable-only]",
+  "tests/setup/test_setup.py::test_an_empty_directory_this_user_cannot_list_and_write_is_refused_naming_that_before_github[create-cannot-be-written]",
 ]
 
-# With `--root` in no repository, a `create:` destination is the one overlay not compared with it:
-# the run makes that directory, so nothing shipped it, and the comparison refused the owner's own
-# `setup --overlay create:<owner>/<name> --yes` run in `~`. Compared always, as before, the
-# owner's command is refused.
+# Only a tree whose identity record parses is an overlay: taken for one, a directory holding
+# something else at a `create:` destination was cloned over, after `gh repo create` had made a
+# repository nothing then records.
 [[mutation]]
-name = "setup compares a created overlay's place with --root outside any repository"
+name = "setup takes whatever is at the place --overlay names for an overlay"
 file = "src/stayfixed/setup/run.py"
-before = "    compared = repository is not None or not exempt"
-after = "    compared = True"
+before = "    if fault is None:\n        return True"
+after = "    if True:\n        return True"
 reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
+  "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[not-an-overlay]",
 ]
 
-# And no other overlay: a `--root` in no repository can still hold a tree someone else made — a
-# project downloaded as an archive, a checkout of another version control system, a `vendor/ov`
-# shipped in either — so an overlay already on disk inside, around or equal to it is refused.
+# A path naming nothing is rendered into, so the directory it is made in is asked about first: met by
+# the render, a missing or unwritable parent refused after the machine file and the settings merge.
 [[mutation]]
-name = "setup exempts an existing overlay from the comparison with a --root in no repository"
+name = "setup renders an overlay under a directory it cannot create it in"
 file = "src/stayfixed/setup/run.py"
-before = "    compared = repository is not None or not exempt"
-after = "    compared = repository is not None"
+before = '    if not fsops.is_dir(parent) or not fsops.creatable(candidate / "file"):'
+after = "    if False:"
 reddens = [
-  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[inside]",
-  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[holding]",
-  "tests/setup/test_setup.py::test_an_existing_overlay_placed_against_a_root_in_no_repository_is_refused[equal]",
-]
-
-# And the candidate's own side, asked whichever repository `--root` is in: a directory inside a
-# checkout of another repository is a place that repository can ship files into, and so is a
-# checkout of its own nested in one — a merge in the outer repository writes into it.
-[[mutation]]
-name = "setup stops refusing an overlay inside another repository's checkout"
-file = "src/stayfixed/setup/run.py"
-before = """    if outer is None:
-        return"""
-after = """    if True:
-        return"""
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
-  "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_inside_another_repository_is_refused",
-]
-
-[[mutation]]
-name = "setup asks whether an overlay lies in another repository from the overlay itself"
-file = "src/stayfixed/setup/run.py"
-before = "    outer = _candidate_repository(resolved_candidate.parent)"
-after = "    outer = _candidate_repository(resolved_candidate)"
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_that_is_a_checkout_of_its_own_is_recorded",
-  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
+  "tests/setup/test_setup.py::test_a_refused_overlay_path_is_refused_before_the_first_write",
 ]
 
 # `overlay upgrade --root` defaults to `.` and was checked nowhere: in a directory that was not an
@@ -657,35 +482,35 @@ reddens = [
 ]
 
 # `gh` is an optional binary, and a missing one is a reported finding, never a traceback — and never
-# a misattributed one. Without this arm the command launches two more subprocesses, can sleep ten
-# seconds, and blames the owner's GitHub authentication for a binary that was never on PATH.
+# a misattributed one. Without this arm a `gh` that never ran is reported as one that exited 127,
+# with no word on installing it.
 [[mutation]]
-name = "overlay create --template asks GitHub about a `gh` that could not run"
+name = "create: asks GitHub about a `gh` that could not run"
 file = "src/stayfixed/overlay/create.py"
-before = "    if created.code in (NOT_FOUND, TIMED_OUT):"
+before = "    if created.code == NOT_FOUND:"
 after = "    if False:"
 reddens = [
   "tests/overlay/test_create.py::test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_more_calls",
 ]
 
-# Whose template `overlay create --template` generates from, and `setup --overlay create:` with it.
+# Whose template `setup --overlay create:` generates from.
 # A person who has published their own gets their own; one who has not gets the publisher's, so a
 # personal account is never left with nowhere to generate from. Three ways to lose that: never
 # asking (always the publisher's), never falling back (always the owner's), and reading every
 # non-zero exit of the probe as "not found", which turns an expired token or a dropped connection
 # into a silent switch of the template of a person who has one.
 [[mutation]]
-name = "overlay create never asks whose template to use"
+name = "create: never asks whose template to use"
 file = "src/stayfixed/overlay/create.py"
 before = "            return mine if answer else theirs"
 after = "            return theirs"
 reddens = [
   "tests/overlay/test_create.py::test_the_owners_own_template_is_used_when_they_have_published_one",
-  "tests/setup/test_setup.py::test_overlay_create_generates_from_the_template_overlay_create_would_choose[the-owners-own]",
+  "tests/setup/test_setup.py::test_create_generates_from_the_owners_template_or_else_the_publishers[the-owners-own]",
 ]
 
 [[mutation]]
-name = "overlay create treats a repository that is not a template as one"
+name = "create: treats a repository that is not a template as one"
 file = "src/stayfixed/overlay/create.py"
 before = "            return mine if answer else theirs"
 after = "            return mine"
@@ -694,7 +519,7 @@ reddens = [
 ]
 
 [[mutation]]
-name = "overlay create has no template to fall back on"
+name = "create: has no template to fall back on"
 file = "src/stayfixed/overlay/create.py"
 before = """    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:
         return theirs"""
@@ -702,11 +527,11 @@ after = """    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWE
         return mine"""
 reddens = [
   "tests/overlay/test_create.py::test_the_publishers_template_is_used_when_the_owner_has_none",
-  "tests/setup/test_setup.py::test_overlay_create_generates_from_the_template_overlay_create_would_choose[the-publishers]",
+  "tests/setup/test_setup.py::test_create_generates_from_the_owners_template_or_else_the_publishers[the-publishers]",
 ]
 
 [[mutation]]
-name = "overlay create reads any failed probe as no template of the owner's"
+name = "create: reads any failed probe as no template of the owner's"
 file = "src/stayfixed/overlay/create.py"
 before = "    elif probe.code not in (NOT_FOUND, TIMED_OUT) and NOT_FOUND_ANSWER in probe.stderr:"
 after = "    elif probe.code not in (NOT_FOUND, TIMED_OUT):"
@@ -719,49 +544,13 @@ reddens = [
 # `create --local` leaves a repository, so the owner's next step (commit it, give it a private
 # remote) does not begin with a `git init` nobody mentioned.
 [[mutation]]
-name = "overlay create --local leaves no git repository"
+name = "a local render leaves no git repository"
 file = "src/stayfixed/overlay/create.py"
 before = '''    done = runner.launch(["git", "init"], target)'''
 after = '''    done = Completed(0, "", "")'''
 reddens = [
   "tests/overlay/test_create.py::test_a_local_overlay_is_a_git_repository_on_main_with_no_remote",
   "tests/overlay/test_create.py::test_a_local_overlay_carries_a_real_repository_on_main",
-]
-
-# The overlay's marketplace and manifests validate: `claude plugin validate` refuses a marketplace
-# with no `owner`, and `init` is what puts the account in.
-[[mutation]]
-name = "overlay init leaves the template's owner and author placeholders"
-file = "src/stayfixed/overlay/naming.py"
-before = "    if _named_for(document, _ROW[relative].account_key, suffix):"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_create.py::test_init_names_the_owner_and_the_author_the_harness_asks_for",
-  "tests/overlay/test_create.py::test_init_completes_an_overlay_whose_template_predates_the_owner_and_author",
-]
-
-# `init_instance`'s own rationale — a harness installs a plugin by the name in its manifest, so
-# two owners' overlays under one configuration directory are one plugin fighting itself — applies
-# to Codex exactly as it does to Claude Code, and the project ships a Codex half of everything
-# else.
-[[mutation]]
-name = "overlay init leaves the Codex manifest unsuffixed"
-file = "src/stayfixed/overlay/naming.py"
-before = '    Named(CODEX_PLUGIN_MANIFEST, OVERLAY_PLUGIN, "author", probed=False),'
-after = ""
-reddens = ["tests/overlay/test_create.py::test_init_names_the_codex_manifest_after_the_owner_too"]
-
-# A write behind the scaffold ledger makes the file read as hand-edited for ever after. The file
-# in question carries `stayfixed.requires`, the version-compatibility declaration the README
-# advertises, so a release that changes it would never reach an initialised overlay — and the
-# report would attribute to the owner an edit stayfixed itself made.
-[[mutation]]
-name = "overlay init writes the manifests behind the scaffold ledger"
-file = "src/stayfixed/overlay/create.py"
-before = "            ledger = ledger.with_record(replace(record, sha256=digest(body)))"
-after = "            ledger = ledger.with_record(record)"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
 ]
 
 # `README.md` lists the machine file under "Written by: **you**, or `stayfixed setup`", so a table
@@ -779,15 +568,14 @@ reddens = [
   "tests/config/test_owner.py::test_write_machine_keeps_the_owners_guards_and_budgets",
 ]
 
-# `pluginConfigs` is where Claude Code reads this plugin's own options, and the mirror was
-# written from this run's *new* keys — empty on every run after the first. An owner who edited
-# a personal value in the machine file, the documented way, kept the preset's there for ever.
+# `pluginConfigs` is where Claude Code keeps the answers a person gives in its plugin-config
+# screen, and `setup` wrote the machine file's personal values over them on every run.
 [[mutation]]
-name = "setup mirrors only the values this run itself added"
+name = "setup overwrites a plugin option the user set"
 file = "src/stayfixed/setup/run.py"
-before = "    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), retired=retired)"
-after = "    deny_written = _write_user_settings(home, deny_rules, personal, retired=retired)"
-reddens = ["tests/setup/test_setup.py::test_the_plugin_config_mirror_follows_the_machine_file"]
+before = "        options.setdefault(key, value)"
+after = "        options[key] = value"
+reddens = ["tests/setup/test_setup.py::test_a_plugin_config_value_the_user_set_survives_setup"]
 
 # --- install path: the setup and overlay guards ------------------------------------------
 #
@@ -804,48 +592,6 @@ reddens = [
   "tests/test_install_path.py::test_doctor_launches_the_number_of_subprocesses_it_says_it_does",
 ]
 
-# `overlay init --root` defaults to `.` and asked nothing of it: inside the stayfixed checkout it
-# renamed all three plugin manifests and installed a commit hook. `upgrade` had the guard.
-[[mutation]]
-name = "overlay init writes into a directory that is not an overlay"
-file = "src/stayfixed/overlay/create.py"
-before = "    require_overlay(root, because=NOT_AN_OVERLAY)"
-after = "    pass"
-reddens = [
-  "tests/overlay/test_create.py::test_init_refuses_a_directory_that_is_not_an_overlay_before_touching_it",
-]
-
-# The overlay's ledger is committed, so a retired file's recorded target is repository-chosen, and
-# `overlay init` names one it leaves on a line a terminal and a CI runner read.
-[[mutation]]
-name = "overlay init prints a recorded path it leaves unescaped"
-file = "src/stayfixed/overlay/create.py"
-before = '            notes.append(f"left {quoted(action.target)} ({action.reason})")'
-after = '            notes.append(f"left {action.target} ({action.reason})")'
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_prints_a_retired_file_s_recorded_path_escaped",
-]
-
-# A record whose target only case-folds to a retired file's place is removed, or left, at the
-# target it names, which may hold letters outside the path grammar.
-[[mutation]]
-name = "overlay init prints a recorded path it removes unescaped"
-file = "src/stayfixed/overlay/create.py"
-before = '        notes.append(f"removed {quoted(action.target)}, which this release no longer ships")'
-after = '        notes.append(f"removed {action.target}, which this release no longer ships")'
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped[removed]",
-]
-
-[[mutation]]
-name = "overlay init prints a recorded path it cannot remove unescaped"
-file = "src/stayfixed/overlay/create.py"
-before = '            notes.append(f"left {quoted(action.target)}: cannot be removed ({fsops.said(exc)})")'
-after = '            notes.append(f"left {action.target}: cannot be removed ({fsops.said(exc)})")'
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_prints_a_recorded_case_variant_it_removes_or_leaves_escaped[cannot-remove]",
-]
-
 # The overlay's capability files are spelled once, and each is a file the overlay template ships.
 [[mutation]]
 name = "a capability file is named that the template does not ship"
@@ -857,8 +603,8 @@ reddens = [
 ]
 
 # The walkthrough runs the launcher, so what it asserts about `pre-commit` is what a real `PATH`
-# lookup ran and not what a stub recorded. `overlay init` installs the overlay's commit-time secret
-# scan, and a verb that is not `install` installs nothing while every exit code stays 0 -- the quiet
+# lookup ran and not what a stub recorded. `setup --overlay` installs the overlay's commit-time
+# secret scan, and a verb that is not `install` installs nothing while every exit code stays 0 -- the quiet
 # half of the failure, which is why the assertion is on the logged command rather than on the
 # command's success.
 [[mutation]]
@@ -870,123 +616,24 @@ reddens = [
   "tests/test_install_path.py::test_setup_then_overlay_then_attach_then_a_session_sees_memory",
 ]
 
-# The `--yes` gate, and the whole reason the command has one. Remove it and the documented dry run
-# creates a public repository on the owner's account and pushes a tree to it.
+# The hook lives in a clone's own `.git`, so an overlay a second machine records from a clone had
+# no commit-time scan, and only `doctor` warned.
 [[mutation]]
-name = "publish-template pushes without --yes"
-file = "src/stayfixed/overlay/publish.py"
-before = "        if not yes:"
-after = "        if False:"
+name = "setup records an existing overlay without its secret scan"
+file = "src/stayfixed/setup/run.py"
+before = '        return planned.root, f"{recorded}; {finish(planned.root, runner=runner)}"'
+after = "        return planned.root, recorded"
 reddens = [
-  "tests/overlay/test_publish.py::test_without_yes_nothing_is_pushed_and_the_push_is_named",
-  "tests/overlay/test_publish.py::test_without_yes_no_repository_is_created_or_marked",
+  "tests/setup/test_setup.py::test_recording_an_existing_overlay_arms_its_commit_time_secret_scan",
 ]
-
-# The template is the PUBLIC half: a private template is one no other account can generate from, and
-# `overlay create --template` fails against it for everyone but the owner.
-[[mutation]]
-name = "publish-template creates the template repository private"
-file = "src/stayfixed/overlay/publish.py"
-before = '            runner, ["repo", "create", slug, "--public", "--description", DESCRIPTION], cwd'
-after = '            runner, ["repo", "create", slug, "--private", "--description", DESCRIPTION], cwd'
-reddens = ["tests/overlay/test_publish.py::test_a_missing_repository_is_created_public_and_marked_as_a_template"]
 
 # Guards that shipped without an entry, and one a review found asserting nothing.
-
-# An existing repository under the given name that is not public is refused, not flipped. A template
-# is generated from by other accounts only when it is public, and a repository somebody made private
-# is not this command's to change a flag on.
-[[mutation]]
-name = "publish-template marks a private repository as a template instead of refusing"
-file = "src/stayfixed/overlay/publish.py"
-# A TOML *literal* string (single quotes) keeps `\n` as two characters, so the first spelling of
-# this entry matched nothing and the oracle reported it as drift rather than as a survivor —
-# which is the behaviour that guard exists for. Basic strings from here.
-before = "        if existing.visibility.upper() != \"PUBLIC\":\n            raise Refusal(_not_public(slug, existing.visibility))"
-after = "        if False:\n            raise Refusal(_not_public(slug, existing.visibility))"
-reddens = [
-  "tests/overlay/test_publish.py::test_an_existing_repository_that_is_not_public_is_refused_not_marked",
-]
-
-# The scaffold ledger, stripped from the render before the clone. Held over the RENDER and not
-# over the pushed tree: `_replace_tree` writes only the files the render left, so an assertion over what
-# was pushed is satisfied by that whitelist alone and survives this mutation — measured, with
-# every case in `tests/overlay` still green.
-#
-# **Both strip lines, and this is the second time this entry was wrong.** Removing only the
-# `remove_within` left `rmdir_within` pointed at a `.stayfixed/` that still held the manifest,
-# which raises `OSError: Directory not empty` — so all twelve cases in the module failed and
-# the oracle said `caught` for a reason with nothing to do with the ledger. It would have gone
-# on saying `caught` with the assertion this entry exists to prove deleted. Measured with both
-# lines replaced: exactly one case fails, and it fails on `.stayfixed/manifest.json` being in
-# the render.
-[[mutation]]
-name = "publish-template publishes the scaffold ledger"
-file = "src/stayfixed/overlay/publish.py"
-before = "        fsops.remove_within(rendered, str(MANIFEST_PATH))\n        fsops.rmdir_within(rendered, str(MANIFEST_PATH.parent))"
-after = "        pass"
-reddens = [
-  "tests/overlay/test_publish.py::test_the_render_the_publisher_clones_beside_carries_no_scaffold_ledger",
-]
 
 # ---------------------------------------------------------------------------------------------
 # Guards from a whole-branch review, each one an assertion that review added or changed, and
 # each entry's `after` chosen so the test reddens on the sentence or the value only the correct
 # behaviour produces — never on a `NameError` from a deleted name or on a status a surviving arm
 # also produces.
-
-# The case is named for the repository and matched on `refused by a ruleset`, which is the
-# STUB's own stderr — quoted back whatever this message says about where the push went. The
-# slug is the half only this line produces.
-[[mutation]]
-name = "the declined push stops naming the repository"
-file = "src/stayfixed/overlay/publish.py"
-before = '            raise Failure(f"`git push` to {slug} exited {pushed.code} ({answered(pushed)})")'
-after = '            raise Failure(f"`git push` exited {pushed.code} ({answered(pushed)})")'
-reddens = [
-  "tests/overlay/test_publish.py::test_a_push_that_is_declined_is_a_failure_naming_the_repository",
-]
-
-# `overlay publish-template --yes` returned "nothing to push", exit 0, whenever `git` was absent,
-# hung or blocked: the `git` half of the module had no `_gh`-style guard, and an empty `git status`
-# stdout read as "already current".
-[[mutation]]
-name = "the git half of publish-template stops guarding the two sentinels"
-file = "src/stayfixed/overlay/publish.py"
-before = """
-    if done.code in (NOT_FOUND, TIMED_OUT):
-        raise Failure(
-            f"`git """
-after = """
-    if False:
-        raise Failure(
-            f"`git """
-reddens = [
-  "tests/overlay/test_publish.py::test_a_git_that_cannot_run_is_a_failure_and_not_a_report_that_nothing_changed",
-]
-
-# And the other half of the same reading: `git` runs, answers non-zero, and its empty stdout
-# is byte-identical to "nothing changed".
-[[mutation]]
-name = "publish-template reads an empty git status without reading its exit code"
-file = "src/stayfixed/overlay/publish.py"
-before = "        if status.code != 0:"
-after = "        if False:"
-reddens = [
-  "tests/overlay/test_publish.py::test_a_git_status_that_fails_is_never_read_as_an_unchanged_template",
-]
-
-# Every non-zero `gh repo view` read as "the repository does not exist", so an unauthenticated `gh`
-# made the dry run offer to create a repository that exists and is private — the case `_not_public`
-# exists to refuse.
-[[mutation]]
-name = "any gh failure is read as a repository that is not there"
-file = "src/stayfixed/overlay/publish.py"
-before = "        if not _NOT_FOUND_REMOTELY.search(answered(view)):"
-after = "        if False:"
-reddens = [
-  "tests/overlay/test_publish.py::test_a_gh_that_cannot_answer_is_never_read_as_a_repository_that_is_absent",
-]
 
 # Why the overlay's declared floor has a row of its own rather than a place in `versions`: a
 # `local-only` project on a machine that records an overlay must not go red for a requirement it has
@@ -1085,50 +732,6 @@ reddens = [
   "tests/setup/test_setup.py::test_a_mistyped_preset_names_the_flag_and_never_quotes_it",
 ]
 
-# git's exit 128 inside a checkout is a repository it will not describe — another user's under
-# `safe.directory`, or one whose `.git` it cannot read — and read as "no repository" it let the
-# overlay guard's path arm stand alone, as git's silence (`-1`) did: from a linked worktree the
-# main checkout's `ov/` was recorded as the machine's trust anchor.
-[[mutation]]
-name = "setup reads git refusing the repository inside a checkout as no repository"
-file = "src/stayfixed/setup/run.py"
-before = "        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=quoted(str(start))))"
-after = "        return None"
-reddens = [
-  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[every-call]",
-  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
-]
-
-[[mutation]]
-name = "the candidate-side walk steps past a repository git refuses under the bare key"
-file = "src/stayfixed/setup/run.py"
-before = "            _shaped(start, _ask(start, *_COMMON_AND_CHECKOUT))"
-after = "            pass"
-reddens = [
-  "tests/setup/test_setup.py::test_git_refusing_the_repository_inside_a_checkout_refuses_the_overlay[the-candidate-side]",
-]
-
-[[mutation]]
-name = "setup refuses an overlay whenever git exits 128, checkout or not"
-file = "src/stayfixed/setup/run.py"
-before = "    if not in_work_tree(start):"
-after = "    if code != _GIT_REFUSED and not in_work_tree(start):"
-reddens = [
-  "tests/setup/test_setup.py::test_git_refusing_every_repository_where_no_checkout_is_still_records_the_overlay",
-]
-
-# Asked with `safe.bareRepository=explicit`, git's 128 can be it declining a bare-shaped
-# directory, which the caller tells apart by asking again without the key: refused at once, a
-# root inside a bare-shaped directory is refused for the wrong reason.
-[[mutation]]
-name = "a keyed question's 128 refuses before it is asked again without the key"
-file = "src/stayfixed/setup/run.py"
-before = "    if code == _GIT_REFUSED and keyed:"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_root_inside_a_bare_shaped_directory_is_refused[current-none]",
-]
-
 # `gh` resolves an unqualified `OWNER/REPO` on `GH_HOST`, which the runner keeps, so on a GitHub
 # Enterprise host the fallback named whoever owns `stayfixed` there and the owner's private overlay
 # was generated from it. Named with its host, it is looked up on github.com.
@@ -1141,134 +744,6 @@ reddens = [
   "tests/overlay/test_create.py::test_the_publishers_template_is_used_when_the_owner_has_none",
 ]
 
-# `git init` over an existing repository changes neither its branch nor its remotes, and the note
-# said "made it a git repository on main with no remote" about one on another branch with an
-# `origin`.
-[[mutation]]
-name = "overlay create --local reads an existing repository as one it made"
-file = "src/stayfixed/overlay/create.py"
-before = "    if fsops.exists(git_dir) or fsops.is_symlink(git_dir):"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_create.py::test_a_local_render_over_an_existing_repository_says_what_it_found",
-]
-
-# An overlay generated from a template published at an earlier release arrives with the old
-# `common/memory/README.md` and no ledger, and nobody is told to run `overlay upgrade` on an
-# overlay just made, so `memory index --check` failed right after the first attach.
-[[mutation]]
-name = "overlay init leaves the memory README a release shipped"
-file = "src/stayfixed/overlay/create.py"
-before = "    ledger, retirement, retired_paths, changed = _retire(root, ledger, ledgered=ledgered)"
-after = "    retirement, retired_paths, changed = [], [], False"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[recorded]",
-  "tests/overlay/test_upgrade.py::test_init_removes_the_memory_readme_a_release_shipped[no-ledger]",
-  "tests/overlay/test_upgrade.py::test_init_keeps_an_edited_memory_readme_and_says_what_to_do",
-  "tests/test_install_path.py::test_an_overlay_from_a_template_an_earlier_release_published_passes_the_index_check",
-]
-
-# `init` re-stamped every manifest it rewrote, whatever the file held before, so an owner's own
-# edit made before `init` was recorded as stayfixed's bytes and the next `overlay upgrade`
-# refreshed it away: description, suffix and account.
-[[mutation]]
-name = "overlay init vouches for a manifest the owner edited"
-file = "src/stayfixed/overlay/create.py"
-before = "        if record is not None and digest(before) == record.sha256:"
-after = "        if record is not None:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_does_not_vouch_for_a_manifest_the_owner_edited",
-]
-
-# A manifest that cannot be read stopped `init` after the ones before it were rewritten and before
-# their records were re-stamped, so those files read as hand-edited to every later `upgrade`.
-[[mutation]]
-name = "overlay init rewrites a manifest before reading the next"
-file = "src/stayfixed/overlay/create.py"
-before = "            rewrites.append((relative, before, body))"
-after = """            fsops.write_within(root, relative, body)
-            rewrites.append((relative, before, body))"""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_reads_every_manifest_before_it_rewrites_any",
-]
-
-# A manifest `init` could not write stopped it on a bare `PermissionError`, with the manifests
-# before it renamed and their new records only in memory, so every later `upgrade` read them as
-# hand-edited.
-[[mutation]]
-name = "overlay init stops at a manifest it cannot write"
-file = "src/stayfixed/overlay/create.py"
-before = """                "`stayfixed overlay init` names it once it can be"
-            )
-            continue"""
-after = """                "`stayfixed overlay init` names it once it can be"
-            )
-            raise"""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_manifest_init_cannot_write_is_named_and_the_others_stay_recorded",
-]
-
-# `init` re-stamps the manifests it renames, so a refresh from the template as it ships read them as
-# untouched and put `stayfixed-overlay` back: the collision the owner suffix prevents.
-[[mutation]]
-name = "overlay upgrade refreshes a manifest init named back to the template's name"
-file = "src/stayfixed/overlay/upgrade.py"
-before = "    shipped = [*named_after(templates(), owner_of(root)), *retired()]"
-after = "    shipped = [*templates(), *retired()]"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_manifest_init_renamed_is_still_refreshed_by_a_later_release",
-  "tests/overlay/test_upgrade.py::test_upgrade_writes_a_manifest_the_overlay_lacks_under_the_owner_s_name",
-  "tests/overlay/test_upgrade.py::test_upgrade_leaves_the_named_manifests_of_an_overlay_with_no_ledger_unlisted",
-]
-
-# An install whose template tree cannot be read stopped `init` after the old README was removed,
-# and its record stayed in the ledger for good.
-[[mutation]]
-name = "overlay init stops at a template tree it cannot read"
-file = "src/stayfixed/overlay/create.py"
-before = "    except Failure:"
-after = "    except ZeroDivisionError:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_record_dropped",
-]
-
-# Pruning ran over the directory of a successor `init` could not write, so `common/memory/` went
-# with its only file.
-[[mutation]]
-name = "overlay init prunes the directory of a successor it could not write"
-file = "src/stayfixed/overlay/create.py"
-before = "        if SUCCESSORS.get(target) not in unwritten:"
-after = "        if True:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on",
-  "tests/overlay/test_upgrade.py::test_a_template_tree_init_cannot_read_after_a_removal_is_named_and_the_record_dropped",
-]
-
-# A relocation whose file was already gone printed `removed <path>` over a missing file, and
-# `cannot be removed` over a missing directory.
-[[mutation]]
-name = "overlay init says it removed a file that was already gone"
-file = "src/stayfixed/overlay/create.py"
-before = "        present = os.path.lexists(root / action.target)"
-after = "        present = True"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_does_not_say_it_removed_a_relocated_file_that_was_already_gone[directory-there]",
-  "tests/overlay/test_upgrade.py::test_init_does_not_say_it_removed_a_relocated_file_that_was_already_gone[directory-gone]",
-]
-
-# A retired file `overlay init` could not remove stopped the run: the files already removed were
-# gone, their lines unprinted and their records left in a ledger nothing wrote, so a later run
-# read each absent file as unchanged and kept its record for good.
-[[mutation]]
-name = "overlay init stops at a retired file it cannot remove"
-file = "src/stayfixed/overlay/create.py"
-before = """                notes.append(f"left {quoted(action.target)}: cannot be removed ({fsops.said(exc)})")
-                continue"""
-after = """                raise Refusal(f"{quoted(action.target)} cannot be removed ({fsops.said(exc)})") from exc"""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_retired_file_init_cannot_remove_is_named_and_the_rest_goes_on",
-]
-
 # Retiring the template's `attach` skill and the rules README left `skills/attach/`, `skills/` and
 # `common/rules/` behind, empty.
 [[mutation]]
@@ -1277,16 +752,7 @@ file = "src/stayfixed/overlay/upgrade.py"
 before = "                    fsops.rmdir_parents_within(root, target)"
 after = "                    pass"
 reddens = [
-  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty[upgrade]",
-]
-
-[[mutation]]
-name = "overlay init leaves the directories a retirement empties"
-file = "src/stayfixed/overlay/create.py"
-before = "        fsops.rmdir_parents_within(root, target)"
-after = "        pass"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty[init]",
+  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty",
 ]
 
 # A removal whose file was already gone unlinks nothing, and the directories above it held no file
@@ -1297,49 +763,7 @@ file = "src/stayfixed/overlay/upgrade.py"
 before = "        present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]"
 after = "        present = [a.target for a in planned.actions if unlinks(a)]"
 reddens = [
-  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left[upgrade]",
-]
-
-[[mutation]]
-name = "overlay init prunes above a file that was not there"
-file = "src/stayfixed/overlay/create.py"
-before = "        if present:"
-after = "        if True:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left[init]",
-]
-
-# The same stop one step later, at the `_README.md` written where the old memory README was.
-[[mutation]]
-name = "overlay init stops at a successor it cannot write"
-file = "src/stayfixed/overlay/create.py"
-before = """            unwritten.add(action.target)
-            continue"""
-after = """            raise Refusal(f"{action.target} cannot be written: {fsops.said(exc)}") from exc"""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_a_successor_init_cannot_write_is_named_and_the_rest_goes_on",
-]
-
-# Removing the old README from a 0.1.x template's overlay left `common/memory/` empty; git keeps no
-# empty directory, so a clone elsewhere had none and the `developer` link dangled.
-[[mutation]]
-name = "overlay init leaves the memory directory empty"
-file = "src/stayfixed/overlay/create.py"
-before = "    successors = {SUCCESSORS[target] for target in (*removed, *gone) if target in SUCCESSORS}"
-after = "    successors: set[str] = set()"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[recorded]",
-  "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[no-ledger]",
-]
-
-# A tree that arrived without a ledger (one generated from a template) is not given one.
-[[mutation]]
-name = "overlay init gives a ledgerless overlay a ledger for the memory README"
-file = "src/stayfixed/overlay/create.py"
-before = "        if ledgered and action.record is not None:"
-after = "        if action.record is not None:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_leaves_the_memory_directory_its_readme_under_the_new_name[no-ledger]",
+  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left",
 ]
 
 # An overlay a template generated carries no ledger, so the bytes a release shipped are the only
@@ -1352,8 +776,7 @@ file = "src/stayfixed/overlay/template.py"
 before = '"62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",'
 after = ""
 reddens = [
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-rules-readme-v0.2.0-no-ledger]",
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-rules-readme-v0.2.0-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[rules-readme-v0.2.0-no-ledger]",
 ]
 
 [[mutation]]
@@ -1362,8 +785,7 @@ file = "src/stayfixed/overlay/template.py"
 before = '"926060a042a6ab26f407fbe7fe84bf30771d8c279fdbce49848f051d710443d9",'
 after = ""
 reddens = [
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-rules-readme-v0.1-no-ledger]",
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-rules-readme-v0.1-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[rules-readme-v0.1-no-ledger]",
 ]
 
 # With no digest held for it, an unrecorded copy of the template's `attach` skill is no file of
@@ -1374,9 +796,20 @@ file = "src/stayfixed/overlay/template.py"
 before = '        frozenset({"845e67006aa4303a2c69d1601c987f58ca28acf806f2e89f272b63ae8bb572c9"}),'
 after = "        frozenset(),"
 reddens = [
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[upgrade-attach-skill-no-ledger]",
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[init-attach-skill-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[attach-skill-no-ledger]",
   "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-no-ledger]",
+]
+
+# The hooks file the overlay fired while it was a plugin, which nothing reads now: with no digest
+# held for it, a generated overlay's unedited copy stayed for good, and an edited one went unnamed.
+[[mutation]]
+name = "the plugin hooks file a release shipped is kept where no ledger records it"
+file = "src/stayfixed/overlay/template.py"
+before = '        frozenset({"78922a784ee78e9e50587e93628cd3b9d4dfbe49087adc4514e6781cea38cbb9"}),'
+after = "        frozenset(),"
+reddens = [
+  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[plugin-hooks-no-ledger]",
+  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[plugin-hooks-no-ledger]",
 ]
 
 # A kept copy of the template's `attach` skill is named with the skill that replaces it, so the
@@ -1391,32 +824,10 @@ reddens = [
   "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-no-ledger]",
 ]
 
-# Re-running `setup --overlay create:` runs `overlay init` on the overlay it finds, and `init` may
-# rename its manifests or remove the old memory README; the report said the overlay was left alone
-# all the same.
-[[mutation]]
-name = "setup says it left alone an overlay init changed"
-file = "src/stayfixed/setup/run.py"
-before = "        changed = initialised.changed"
-after = "        changed = ()"
-reddens = [
-  "tests/setup/test_setup.py::test_rerunning_overlay_create_says_what_init_changed_in_the_overlay_it_found",
-]
-
-# `overlay init` fills in the template's placeholder author and keeps an author the owner wrote.
-[[mutation]]
-name = "overlay init replaces an author the owner wrote"
-file = "src/stayfixed/overlay/naming.py"
-before = '        and current.get("name", PLACEHOLDER_ACCOUNT) == PLACEHOLDER_ACCOUNT'
-after = "        and True"
-reddens = [
-  "tests/overlay/test_create.py::test_init_keeps_an_author_the_owner_wrote_themselves",
-]
-
 # `git init -b` arrived in git 2.28; an older `git` refused it and the `--local` overlay was left
 # without a repository.
 [[mutation]]
-name = "overlay create --local asks git init for its branch"
+name = "a local render asks git init for its branch"
 file = "src/stayfixed/overlay/create.py"
 before = '    done = runner.launch(["git", "init"], target)'
 after = '    done = runner.launch(["git", "init", "-b", "main"], target)'
@@ -1452,13 +863,13 @@ reddens = [
 name = "setup loads the overlay area with no --overlay again"
 file = "src/stayfixed/setup/run.py"
 before = """    if overlay is None:
-        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
-        # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
-        # would turn an omitted flag into a repository created on somebody's account.
+        # Nothing was asked for, so nothing is touched: `--overlay` is the only way to reach the
+        # overlay at all, and a default here would turn an omitted flag into a repository created
+        # on somebody's account.
         return None
-    from stayfixed.overlay.api import require_overlay, target_root
+    from stayfixed.overlay.api import overlay_fault, target_root
 """
-after = """    from stayfixed.overlay.api import require_overlay, target_root
+after = """    from stayfixed.overlay.api import overlay_fault, target_root
 
     if overlay is None:
         return None
@@ -1472,38 +883,15 @@ reddens = [
 [[mutation]]
 name = "setup imports one more name from the overlay area in a statement of its own"
 file = "src/stayfixed/setup/run.py"
-before = "    from stayfixed.overlay.api import require_overlay, target_root\n"
-after = "    from stayfixed.overlay.api import require_overlay, target_root\n    from stayfixed.overlay.api import overlay_fault\n"
+before = "    from stayfixed.overlay.api import overlay_fault, target_root\n"
+after = "    from stayfixed.overlay.api import overlay_fault, target_root\n    from stayfixed.overlay.api import finish\n"
 reddens = [
   "tests/boundaries/test_delivery.py::test_core_never_imports_delivery",
 ]
 
-# A memory README already gone leaves the same hole as one `init` removed, and `_README.md` was
-# never written in its place.
-[[mutation]]
-name = "overlay init writes no successor for a file already gone"
-file = "src/stayfixed/overlay/create.py"
-before = "    successors = {SUCCESSORS[target] for target in (*removed, *gone) if target in SUCCESSORS}"
-after = "    successors = {SUCCESSORS[target] for target in removed if target in SUCCESSORS}"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[init-directory-there]",
-  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[init-directory-gone]",
-]
-
-# The overlay's manifests are the owner's files, read by `overlay init` and `overlay upgrade`, and
-# `gh`'s answers are read by `overlay create` and `publish-template`. Each reader caught the
+# `gh`'s answers are read by `setup --overlay create:` and `scripts/publish_template.py`. Each reader caught the
 # decoder's `JSONDecodeError` alone, so valid JSON past the parser — nesting it cannot follow, or
 # an integer longer than the interpreter converts — ended the command as an internal error.
-[[mutation]]
-name = "overlay init renames a manifest past the parser as an internal error"
-file = "src/stayfixed/overlay/naming.py"
-before = "    document = json_object(text, relative, error=Failure)"
-after = "    document = json.loads(text)"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[nested]",
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_past_the_parser_as_one_it_cannot_read[long-number]",
-]
-
 [[mutation]]
 name = "the template probe parses with a bare json.loads"
 file = "src/stayfixed/overlay/create.py"
@@ -1515,27 +903,9 @@ reddens = [
   "tests/overlay/test_create.py::test_a_template_probe_past_the_depth_bound_is_no_answer",
 ]
 
-[[mutation]]
-name = "publish-template parses the repository view with a bare json.loads"
-file = "src/stayfixed/overlay/publish.py"
-before = """
-    document = json_object(
-        view.stdout or "{}",
-"""
-after = """
-    document = json.loads(view.stdout or "{}") or json_object(
-        view.stdout or "{}",
-"""
-reddens = [
-  "tests/overlay/test_publish.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[nested]",
-  "tests/overlay/test_publish.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[long]",
-  "tests/overlay/test_publish.py::test_a_repository_view_past_the_depth_bound_is_a_failure",
-]
-
 # In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
-# recursion escape": `setup` writes the owner's settings back, and `overlay init` a renamed
-# manifest, through `json_text`, so a document read and then too deep for the encoder is the
-# reader's failure.
+# recursion escape": `setup` writes the owner's settings back through `json_text`, so a document
+# read and then too deep for the encoder is the reader's failure.
 [[mutation]]
 name = "setup encodes the owner's merged settings with a bare json.dumps"
 file = "src/stayfixed/setup/run.py"
@@ -1543,15 +913,6 @@ before = '    new_text = mark + json_text(document, str(path), error=Failure, in
 after = '    new_text = mark + __import__("json").dumps(document, indent=2, sort_keys=True) + "\n"'
 reddens = [
   "tests/setup/test_setup.py::test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_it",
-]
-
-[[mutation]]
-name = "overlay init encodes a renamed manifest with a bare json.dumps"
-file = "src/stayfixed/overlay/naming.py"
-before = '    return json_text(document, relative, error=Failure, indent=2) + "\n"'
-after = '    return json.dumps(document, indent=2) + "\n"'
-reddens = [
-  "tests/overlay/test_upgrade.py::test_init_meets_a_manifest_the_encoder_cannot_write_back_as_one_it_cannot_read",
 ]
 
 # With no home there is no default machine file, and `setup` writes none.
@@ -1598,51 +959,6 @@ before = "    if home is None or machine is None:"
 after = "    if machine is None:"
 reddens = ["tests/setup/test_commands.py::test_an_empty_home_is_no_default_for_home"]
 
-# A git directory is git's answer, and a submodule's lies at `.git/modules/<name>`, the name the
-# repository's `.gitmodules` chose: printed raw, an escape sequence in it reached the terminal
-# that read the refusal. Both containment refusals that name one print it through
-# `printed.quoted`.
-[[mutation]]
-name = "setup prints the project's git directory raw in a containment refusal"
-file = "src/stayfixed/setup/run.py"
-before = '            f"in the repository whose git directory is {quoted(str(repository.common))}"'
-after = '            f"in the repository whose git directory is {repository.common}"'
-reddens = [
-  "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[the-projects]",
-]
-
-[[mutation]]
-name = "setup prints another repository's git directory raw in a containment refusal"
-file = "src/stayfixed/setup/run.py"
-before = '        f"{shown} is inside {whose}, whose git directory is {quoted(str(outer))}. The "'
-after = '        f"{shown} is inside {whose}, whose git directory is {outer}. The "'
-reddens = [
-  "tests/setup/test_setup.py::test_a_git_directory_git_names_reaches_a_containment_refusal_quoted[another-repositorys]",
-]
-
-# A linked worktree of the overlay's own repository nested in another checkout of it is refused as
-# any nested checkout is, and the refusal says whose: "another repository" sent the owner looking
-# for a repository that is not there.
-[[mutation]]
-name = "setup calls the overlay's own repository another one"
-file = "src/stayfixed/setup/run.py"
-before = """    own = os.path.lexists(resolved_candidate / ".git") and _same(
-        fsops.resolved(outer), fsops.resolved(found)
-    )"""
-after = "    own = False"
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_that_is_a_worktree_nested_in_its_own_checkout_is_refused_as_its_own",
-]
-
-[[mutation]]
-name = "setup calls a plain directory in another repository's checkout its own"
-file = "src/stayfixed/setup/run.py"
-before = "    own = os.path.lexists(resolved_candidate / \".git\") and _same("
-after = "    own = _same("
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_inside_another_repository_is_refused_from_a_directory_in_no_repository",
-]
-
 # In the block led by `mutations/`'s "fsops.resolved answers a loop with a path where the
 # interpreter does": every resolve in `setup` goes through `fsops.resolved`, so a loop at a path
 # the command line names is the floor's refusal on every interpreter.
@@ -1652,23 +968,14 @@ file = "src/stayfixed/setup/commands.py"
 before = "        return fsops.resolved(Path(given))"
 after = "        return Path(given).resolve()"
 reddens = [
-  "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[root]",
-]
-
-[[mutation]]
-name = "setup resolves the project root past fsops"
-file = "src/stayfixed/setup/run.py"
-before = "    resolved_project = fsops.resolved(project_root)"
-after = "    resolved_project = project_root.resolve()"
-reddens = [
-  "tests/setup/test_setup.py::test_a_project_root_through_a_symlink_loop_handed_to_setup_is_refused",
+  "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it",
 ]
 
 [[mutation]]
 name = "setup resolves --overlay past fsops"
 file = "src/stayfixed/setup/run.py"
-before = "    candidate = fsops.resolved(Path(overlay).expanduser())"
-after = "    candidate = Path(overlay).expanduser().resolve()"
+before = "    candidate = fsops.resolved(named)"
+after = "    candidate = named.resolve()"
 reddens = [
   "tests/setup/test_setup.py::test_a_symlink_loop_at_any_path_setup_is_given_is_a_refusal_naming_it[overlay]",
 ]
@@ -1687,118 +994,16 @@ reddens = [
   "tests/setup/test_setup.py::test_a_directory_the_settings_write_opens_to_read_and_cannot_is_refused_before_any_write",
 ]
 
-# A `create:` destination is exempt from the comparison with a `--root` in no repository only when
-# this run makes it or the machine file already records it: `create` leaves a populated
-# destination alone and records it, so a tree an archive or a clone put at `<home>/<name>` was
-# recorded uncompared, and `overlay init` ran in it.
-[[mutation]]
-name = "setup exempts a created overlay's destination that is already there"
-file = "src/stayfixed/setup/run.py"
-before = """    if not os.path.lexists(planned.destination):
-        return ABSENT"""
-after = """    if True:
-        return ABSENT"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[plain]",
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[own-checkout]",
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_already_there_and_not_recorded_is_compared_with_the_root[root-inside-it]",
-]
-
-[[mutation]]
-name = "setup stops exempting the overlay root the machine file records"
-file = "src/stayfixed/setup/run.py"
-before = "    if recorded is not None and _same(recorded, planned.root):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_an_overlay_created_from_a_directory_in_no_repository_passes_containment",
-]
-
-[[mutation]]
-name = "setup exempts a destination create left alone"
-file = "src/stayfixed/setup/run.py"
-before = """    exempt = judged and (
-        planned.exempt == RECORDED
-        or (
-            planned.exempt == ABSENT
-            and created.template is not None
-            and not os.path.islink(created.root)
-        )
-    )"""
-after = """    exempt = planned.exempt is not None"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
-]
-
-[[mutation]]
-name = "setup initialises a created overlay before asking where it lies"
-file = "src/stayfixed/setup/run.py"
-before = """    _outside_the_project(root, project_root=project_root, exempt=exempt)
-    initialised = init_instance(root, owner, runner=runner)"""
-after = """    initialised = init_instance(root, owner, runner=runner)
-    _outside_the_project(root, project_root=project_root, exempt=exempt)"""
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_appears_after_the_phase_is_compared_before_init",
-]
-
-# The walk up from the overlay took only an answer of `<path>`, `true` and stepped past any other
-# exit-0 answer, inside a work tree too: git 2.30 and older echo the `--path-format=absolute` they
-# do not know as a line of their own, and a wrapper can print a banner, so with `--root` in no
-# repository, where the walk is the only arm, an overlay inside another repository's work tree was
-# recorded. Inside a work tree an answer of another shape refuses.
-[[mutation]]
-name = "the candidate walk steps past an answer of the wrong shape inside a work tree"
-file = "src/stayfixed/setup/run.py"
-before = """    if in_work_tree(start):
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))
-    return None"""
-after = """    return None"""
-reddens = [
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-path]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-create]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-path]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-create]",
-]
-
-[[mutation]]
-name = "setup reads --root's repository from an answer of the wrong shape"
-file = "src/stayfixed/setup/run.py"
-before = """    if not _well_shaped(answer):
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))"""
-after = """    if False:
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))"""
-reddens = [
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[an-extra-line-root]",
-  "tests/setup/test_setup.py::test_git_answering_in_another_shape_inside_a_checkout_refuses_the_overlay[a-banner-root]",
-]
-
 # A path resolved through a link a repository commits is spelled in bytes the repository chose, and
-# every containment refusal, and the floor under the phase, printed one raw: an escape sequence in
-# a name reached the terminal that read the refusal. Each prints it through `printed.quoted`.
-[[mutation]]
-name = "setup prints the overlay root raw in a containment refusal"
-file = "src/stayfixed/setup/run.py"
-before = "    shown, project = quoted(str(candidate)), quoted(str(project_root))"
-after = "    shown, project = str(candidate), str(project_root)"
-reddens = [
-  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[the-overlay]",
-]
-
-[[mutation]]
-name = "setup prints the directory git was asked from raw"
-file = "src/stayfixed/setup/run.py"
-before = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))"
-after = "    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=start, no_answer=_silence(code)))"
-reddens = [
-  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[where-git-was-asked]",
-]
-
+# the floor under the phase printed one raw: an escape sequence in a name reached the terminal that
+# read the refusal. It prints it through `printed.quoted`.
 [[mutation]]
 name = "the floor prints the path it could not ask about raw"
 file = "src/stayfixed/setup/run.py"
 before = "            quoted(str(exc.filename)) if exc.filename is not None else \"a path this run was given\""
 after = "            str(exc.filename) if exc.filename is not None else \"a path this run was given\""
 reddens = [
-  "tests/setup/test_setup.py::test_a_path_a_repository_spells_reaches_every_containment_refusal_quoted[the-floor]",
+  "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[the-floor]",
 ]
 
 # The hooks directory is git's answer, from a `core.hooksPath` the repository sets, and the
@@ -1826,8 +1031,8 @@ reddens = [
 [[mutation]]
 name = "setup --git-hooks resolves --root past fsops"
 file = "src/stayfixed/setup/commands.py"
-before = "    root = _root(args.root)"
-after = "    root = Path(args.root).resolve()"
+before = '    root = _root(args.root or ".")'
+after = '    root = Path(args.root or ".").resolve()'
 reddens = [
   "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it[install]",
   "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it[uninstall]",
@@ -1835,7 +1040,8 @@ reddens = [
 
 # A link at `<home>/<name>` is the repository's to retarget, and its target is not: `create:`
 # records what `--overlay <path>` records, the destination resolved, and a link there, dangling or
-# not, is a destination that is there, not one this run makes.
+# not, is a destination that is there, not one this run makes (the entries for that half are in
+# the group of `fsops`, which answers it).
 [[mutation]]
 name = "setup records a created overlay at its link and not where it leads"
 file = "src/stayfixed/setup/run.py"
@@ -1843,15 +1049,6 @@ before = "    root = fsops.resolved(created.root)"
 after = "    root = created.root"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_leads",
-]
-
-[[mutation]]
-name = "setup takes a dangling link at a created overlay's destination for no destination"
-file = "src/stayfixed/setup/run.py"
-before = "    if not os.path.lexists(planned.destination):"
-after = "    if not fsops.exists(planned.destination):"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[inside-the-root]",
 ]
 
 # `--overlay`'s path, resolved through a link a repository commits, is spelled in the repository's
@@ -1866,11 +1063,23 @@ reddens = [
   "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[not-an-overlay]",
 ]
 
+# `create:` named its destination raw in three messages beside `UNRECORDED`, which quoted it.
+[[mutation]]
+name = "create: prints its destination raw"
+file = "src/stayfixed/overlay/create.py"
+before = "    shown = quoted(str(target))"
+after = "    shown = str(target)"
+reddens = [
+  "tests/overlay/test_create.py::test_every_message_naming_the_destination_prints_it_quoted[left-alone]",
+  "tests/overlay/test_create.py::test_every_message_naming_the_destination_prints_it_quoted[declined]",
+  "tests/overlay/test_create.py::test_every_message_naming_the_destination_prints_it_quoted[nothing-arrived]",
+]
+
 [[mutation]]
 name = "setup notes a recorded overlay's path raw"
 file = "src/stayfixed/setup/run.py"
-before = '        return planned.root, f"recorded the existing overlay at {quoted(str(planned.root))}"'
-after = '        return planned.root, f"recorded the existing overlay at {planned.root}"'
+before = '        recorded = f"recorded the existing overlay at {quoted(str(planned.root))}"'
+after = '        recorded = f"recorded the existing overlay at {planned.root}"'
 reddens = [
   "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[the-note]",
 ]
@@ -1915,40 +1124,6 @@ before = "        if linked is not None:"
 after = "        if False:"
 reddens = [
   "tests/setup/test_setup.py::test_a_machine_file_linked_into_a_directory_that_cannot_be_written_names_that_directory",
-]
-
-# A link at a `create:` destination whose target is not there passed the phase, and
-# `gh repo create` made a repository on the owner's account before the clone failed on the link.
-[[mutation]]
-name = "setup plans a created overlay through a link that leads nowhere"
-file = "src/stayfixed/setup/run.py"
-before = "    if not fsops.exists(planned.destination):"
-after = "    if False:"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[inside-the-root]",
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything[outside-the-root]",
-]
-
-# An exemption is the phase's verdict on one directory: a link at the destination re-pointed
-# between the phase and `create`, or one put where the phase found nothing, is compared. Outside
-# the threat model the gate defends (whoever writes `<home>/<name>` mid-run can write the machine
-# file too); defence in depth.
-[[mutation]]
-name = "setup honours an exemption for a directory the phase did not judge"
-file = "src/stayfixed/setup/run.py"
-before = "    judged = _same(root, planned.root)"
-after = "    judged = True"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_swapped_after_the_phase_is_compared[recorded-link-repointed]",
-]
-
-[[mutation]]
-name = "setup honours an absent destination's exemption for a link create cloned through"
-file = "src/stayfixed/setup/run.py"
-before = "            and not os.path.islink(created.root)"
-after = "            and True"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_swapped_after_the_phase_is_compared[absent-then-a-link]",
 ]
 
 # With no project configuration the project does not consult the overlay, so an unmet floor warns.
@@ -2039,23 +1214,23 @@ after = "        if any(switched):"
 reddens = [
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[preset]",
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[overlay]",
+  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[plugin]",
 ]
 
 [[mutation]]
-name = "setup --approval-boundary takes --yes or --git-hooks"
+name = "setup --approval-boundary takes --git-hooks"
 file = "src/stayfixed/setup/commands.py"
-before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
+before = "        switched = (args.git_hooks, args.uninstall)"
 after = "        switched = (args.uninstall,)"
 reddens = [
-  "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[yes]",
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[git-hooks]",
 ]
 
 [[mutation]]
 name = "setup --approval-boundary takes --uninstall"
 file = "src/stayfixed/setup/commands.py"
-before = "        switched = (args.yes, args.git_hooks, args.uninstall)"
-after = "        switched = (args.yes, args.git_hooks)"
+before = "        switched = (args.git_hooks, args.uninstall)"
+after = "        switched = (args.git_hooks,)"
 reddens = [
   "tests/setup/test_approval_boundary.py::test_the_advice_beside_a_flag_that_writes_is_refused[uninstall]",
 ]
@@ -2071,28 +1246,49 @@ reddens = [
   "tests/setup/test_commands.py::test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup",
 ]
 
+# `--root` names the repository `--git-hooks` installs into: machine setup took it, read nothing of
+# it and configured the machine, exit 0.
+[[mutation]]
+name = "setup drops --root and runs the machine setup"
+file = "src/stayfixed/setup/commands.py"
+before = "    if args.root is not None:\n        raise Refusal(_ROOT_ALONE)"
+after = "    if False:\n        raise Refusal(_ROOT_ALONE)"
+reddens = ["tests/setup/test_commands.py::test_machine_setup_refuses_root_and_writes_nothing"]
+
 # `--git-hooks` takes no flag that asks machine setup to act: each refuses beside it, where all but
 # `--preset` were dropped and the hook installed.
 [[mutation]]
 name = "setup --git-hooks drops --preset"
 file = "src/stayfixed/setup/commands.py"
-before = "        if args.yes or args.preset is not None or args.overlay is not None:"
-after = "        if args.yes or args.overlay is not None:"
+before = "        if args.preset is not None or args.overlay is not None or args.plugin is not None:"
+after = "        if args.overlay is not None or args.plugin is not None:"
 reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[preset]"]
 
 [[mutation]]
 name = "setup --git-hooks drops --overlay"
 file = "src/stayfixed/setup/commands.py"
-before = "        if args.yes or args.preset is not None or args.overlay is not None:"
-after = "        if args.yes or args.preset is not None:"
+before = "        if args.preset is not None or args.overlay is not None or args.plugin is not None:"
+after = "        if args.preset is not None or args.plugin is not None:"
 reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[overlay]"]
 
 [[mutation]]
-name = "setup --git-hooks drops --yes"
+name = "setup --git-hooks drops --plugin"
 file = "src/stayfixed/setup/commands.py"
-before = "        if args.yes or args.preset is not None or args.overlay is not None:"
+before = "        if args.preset is not None or args.overlay is not None or args.plugin is not None:"
 after = "        if args.preset is not None or args.overlay is not None:"
-reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[yes]"]
+reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[plugin]"]
+
+# A plugin name is joined to the preset's marketplace into one argv element: one shaped like an
+# option, naming a marketplace of its own or carrying an escape reached `claude plugin install`.
+[[mutation]]
+name = "setup --plugin takes any name"
+file = "src/stayfixed/setup/commands.py"
+before = 'PLUGIN_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")'
+after = 'PLUGIN_NAME = re.compile(r"\A.+\Z")'
+reddens = [
+  "tests/setup/test_commands.py::test_the_parser_refuses_a_plugin_name_outside_its_grammar_and_writes_nothing[option-shaped]",
+  "tests/setup/test_commands.py::test_the_parser_refuses_a_plugin_name_outside_its_grammar_and_writes_nothing[marketplace]",
+]
 
 [[mutation]]
 name = "setup --approval-boundary names a relative settings file as given"
@@ -2120,3 +1316,37 @@ file = "src/stayfixed/setup/run.py"
 before = "    existing_deny = [r for r in existing_deny if r not in retired]"
 after = "    existing_deny = list(existing_deny)"
 reddens = ["tests/setup/test_setup.py::test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules"]
+
+# A tree is an overlay exactly when its identity record parses, so a render writes the record last
+# and a render cut short before it leaves no tree a later `setup --overlay` records. The mutation
+# puts the record first again, where a full disk part-way left it behind with half a tree.
+[[mutation]]
+name = "a render writes the identity record first"
+file = "src/stayfixed/overlay/layout.py"
+before = """OVERLAY_FILES = (
+    f"{COMMON_MEMORY}/_README.md",
+    *CAPABILITY_NAMES,
+    f"{COMMON_CODEX}/common.rules",
+    f"{PROJECTS}/README.md",
+    PRE_COMMIT_CONFIG,
+    ".github/workflows/scan.yml",
+    ".github/dependabot.yml",
+    ".gitignore",
+    "README.md",
+    IDENTITY_RECORD,
+)"""
+after = """OVERLAY_FILES = (
+    IDENTITY_RECORD,
+    f"{COMMON_MEMORY}/_README.md",
+    *CAPABILITY_NAMES,
+    f"{COMMON_CODEX}/common.rules",
+    f"{PROJECTS}/README.md",
+    PRE_COMMIT_CONFIG,
+    ".github/workflows/scan.yml",
+    ".github/dependabot.yml",
+    ".gitignore",
+    "README.md",
+)"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_render_cut_short_is_not_an_overlay_the_next_run_records",
+]

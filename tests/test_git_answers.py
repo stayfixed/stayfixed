@@ -30,7 +30,6 @@ from stayfixed.guards.hygiene import dirty_count
 from stayfixed.ledger.scan import TOP_LEVEL, _committed_files
 from stayfixed.overlay.sync import overlay_sync
 from stayfixed.project.detect import NOT_DERIVABLE, detect
-from stayfixed.setup.run import _repository
 from tests.attach.test_write import RULE, _attachable
 from tests.cli import cli
 from tests.gitfixture import git, needs_git, plant_path, stand_in_git
@@ -185,19 +184,15 @@ def test_a_worktree_whose_path_holds_a_carriage_return_is_listed_by_its_own_path
     tmp_path: Path,
 ) -> None:
     # `worktree list --porcelain` ends each line with `\n` and prints a path's `\r` raw, and
-    # `str.splitlines()` breaks at both: measured, `setup` recorded `…/wt` among the project's
-    # checkouts for the worktree at `…/wt\rx`, and `attach` named a main checkout at `…/ma` for
+    # `str.splitlines()` breaks at both: measured, `attach` named a main checkout at `…/ma` for
     # one at `…/ma\rin`, a directory it then writes into. Lines are split where git ends them.
     # Mutation (declared): split with `splitlines()` again -> this reddens.
     main, linked = _worktree_with_a_carriage_return(tmp_path)
-    expected = linked.resolve()
     odd = tmp_path / "ma\rin"
     odd.mkdir()
     git(odd, "init", "-q", "-b", "main")
     assert main_checkout_of(odd) == odd.resolve()
-    listed = _repository(main)
-    assert listed is not None
-    assert expected in [tree.resolve() for tree in listed.checkouts]
+    assert main_checkout_of(linked) == main.resolve()
 
 
 @needs_git

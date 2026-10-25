@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.errors import Refusal
+from stayfixed.guards.commands import GIVES_WAY
 from stayfixed.guards.commit import offending_lines
 from stayfixed.guards.githooks import (
     HOOK_MARKER,
@@ -212,6 +213,26 @@ def test_the_hook_says_nothing_when_there_was_nothing_to_strip(tmp_path: Path) -
     assert completed.returncode == 0
     assert completed.stderr == ""
     assert git(tmp_path, root, "log", "-1", "--format=%B").strip() == CLEAN
+
+
+def test_the_hook_stays_quiet_on_a_clean_commit_where_the_harness_says_what_commits_carry(
+    tmp_path: Path,
+) -> None:
+    # With Claude Code's `attribution.commit` set in the person's own settings, `commit strip`
+    # printed its give-way line on every commit, a clean one included, and the hook filters only
+    # "nothing to strip". A trailer kept that way is still worth its line.
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text('{"attribution": {"commit": "Co-Authored-By: me"}}', encoding="utf-8")
+    root = repo(tmp_path)
+    install(root)
+    completed = committing(tmp_path, root, CLEAN)
+    assert completed.returncode == 0
+    assert completed.stderr == ""
+    completed = committing(tmp_path, root, TRAILER)
+    assert completed.returncode == 0
+    assert completed.stderr == GIVES_WAY.format(count=1) + "\n"
+    assert git(tmp_path, root, "log", "-1", "--format=%B").strip() == TRAILER
 
 
 def test_the_hook_reports_a_failed_strip_and_still_lets_the_commit_through(

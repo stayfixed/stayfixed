@@ -24,8 +24,9 @@ from stayfixed import binding
 from stayfixed.attach import doctor as attach_doctor
 from stayfixed.attach.api import LOCAL_SETTINGS
 from stayfixed.attach.check import check as attach_check
-from stayfixed.attach.render import MARKETPLACE_FILE, delivery_directory, read_parts
+from stayfixed.attach.render import MARKETPLACE_FILE, read_parts
 from stayfixed.attach.render import write as render_write
+from stayfixed.binding import delivery_directory
 from stayfixed.config.layout import ATTACH_LEDGER as LEDGER
 from stayfixed.config.loader import CONFIG_FILE, load
 from stayfixed.doctor import checks as doctor_checks

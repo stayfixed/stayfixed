@@ -149,6 +149,9 @@ def test_the_plan_gate_finds_a_plan_the_change_touches(tmp_path: Path) -> None:
 @needs_git
 def test_the_commit_gate_finds_an_attribution_trailer_after_the_base(tmp_path: Path) -> None:
     root, config = smoke(tmp_path)
+    # On, since the preset leaves the check off; the gate follows the key either way.
+    checked = replace(config.commit_messages, attribution_check=True)
+    config = replace(config, commit_messages=checked)
     message = "fix: a change\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
     git(root, "commit", "-q", "--allow-empty", "-m", message)
     sha = git(root, "rev-parse", "HEAD").strip()

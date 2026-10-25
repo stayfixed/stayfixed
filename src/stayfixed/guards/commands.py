@@ -30,6 +30,19 @@ _STRIP_REMEDY = (
     "hook that strips it before the commit exists."
 )
 
+# Fixed text and a count: what `commit strip` says when it keeps attribution lines it would have
+# stripped, because the person set what the harness's commits carry
+# (`harness_says_what_commits_carry`). Never begins "nothing to strip", the one line the hook keeps
+# quiet: a kept trailer is worth a line on the terminal, and a message with nothing to strip says
+# that instead, whatever the setting.
+GIVES_WAY = (
+    "kept {count} attribution line(s): Claude Code's attribution.commit setting in your own "
+    "settings says what a commit carries, so the message is left as it is"
+)
+# The one line the hook filters out (`githooks.HOOK_TEXT`'s `quiet`), and every earlier
+# release's hook with it.
+NOTHING_TO_STRIP = "nothing to strip"
+
 # git's own default for `core.commentChar` (the `prepare-commit-msg` comment block). Not read from
 # the repository's config: a value this module would feed straight into a line-prefix comparison is
 # exactly the kind of repository-authored value principle 5 calls untrusted, and there is no
@@ -120,7 +133,12 @@ def run_commit_check(args: argparse.Namespace) -> Result:
 
 
 def run_commit_strip(args: argparse.Namespace) -> Result:
-    from stayfixed.guards.commit import offending_lines, strip_message
+    from stayfixed.config.machine import owner_home
+    from stayfixed.guards.commit import (
+        harness_says_what_commits_carry,
+        offending_lines,
+        strip_message,
+    )
 
     raw = str(args.file)
     if raw.startswith("-"):
@@ -148,8 +166,12 @@ def run_commit_strip(args: argparse.Namespace) -> Result:
     # A message that is *only* attribution would be emptied, which aborts the commit with a
     # confusing "empty message" error. Leave it alone and let CI explain.
     if not stripped_message.strip() or stripped_message == message:
-        return Result("nothing to strip", {"stripped": 0})
+        return Result(NOTHING_TO_STRIP, {"stripped": 0})
     count = len(offending_lines(message))
+    # Asked only once a line would go, so a message with nothing to strip says so whatever the
+    # setting, and the hook stays quiet on it.
+    if harness_says_what_commits_carry(owner_home()):
+        return Result(GIVES_WAY.format(count=count), {"stripped": 0})
     fsops.write_atomically(path, stripped_message + comment_block)
     return Result(f"stripped {count} attribution line(s) from {path}", {"stripped": count})
 

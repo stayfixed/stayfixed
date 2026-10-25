@@ -38,10 +38,11 @@ from stayfixed.errors import Failure
 from stayfixed.gitenv import GitUnavailable, answer_lines, git_answer, git_run, without_userinfo
 from stayfixed.printed import quoted
 
-# Where the id lives under the git common directory, and where each record lives under the
-# machine's data directory.
+# Where the id lives under the git common directory, and where each record and each render lives
+# under the machine's data directory.
 ID_FILE = "stayfixed/binding"
 BINDINGS = "bindings"
+DELIVERY = "delivery"
 # Exactly what `secrets.token_hex(16)` draws; anything else at `ID_FILE` is no id.
 _ID = re.compile(r"[0-9a-f]{32}")
 # How many characters of the id are ever printed.
@@ -145,6 +146,12 @@ def short(id: str) -> str:
 
 def _record_path(id: str) -> Path:
     return data_directory() / BINDINGS / f"{id}.toml"
+
+
+def delivery_directory(id: str) -> Path:
+    """`<data>/delivery/<id>/`, derived from the id and nothing else: the render `attach` writes on
+    every run and `detach` removes, which the id and its record both outlive."""
+    return data_directory() / DELIVERY / id
 
 
 def bound_project(root: Path) -> Bound | None:

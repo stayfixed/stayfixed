@@ -33,9 +33,10 @@ from stayfixed.config.overlay import overlay_root
 from stayfixed.config.reading import ConfigError, MachineConfigError
 from stayfixed.errors import Failure
 from stayfixed.memory import index, store
-from stayfixed.overlay import create, identity
+from stayfixed.overlay import identity
 from stayfixed.overlay.api import COMMON_CODEX
-from stayfixed.overlay.layout import PLUGIN_MANIFEST
+from stayfixed.overlay.layout import IDENTITY_RECORD
+from stayfixed.printed import quoted
 from stayfixed.project.init import _existing
 from stayfixed.setup.machine import read_machine
 from stayfixed.setup.run import _read_document
@@ -126,11 +127,6 @@ RAISING: list[tuple[str, Callable[[Path], Callable[[], object]], type[Exception]
         Failure,
     ),
     (
-        "an overlay manifest init renames",
-        lambda t: (_plant(t / "plugin.json"), lambda: create._read_manifest(t, "plugin.json"))[1],
-        Failure,
-    ),
-    (
         "a harness settings file setup merges into",
         lambda t: lambda: _read_document(_plant(t / "settings.json")),
         Failure,
@@ -195,10 +191,11 @@ def test_an_undecodable_file_a_reader_treats_as_absent_is_absent(
     assert planted(tmp_path)() == answer
 
 
-def test_an_undecodable_overlay_manifest_is_named_as_unreadable(tmp_path: Path) -> None:
-    _plant(tmp_path / PLUGIN_MANIFEST)
-    fault = identity.overlay_fault(tmp_path)
-    assert fault is not None and "cannot be read as JSON" in fault
+def test_an_undecodable_overlay_identity_record_is_no_record(tmp_path: Path) -> None:
+    _plant(tmp_path / IDENTITY_RECORD)
+    assert identity.overlay_fault(tmp_path) == identity.NOT_A_RECORD.format(
+        root=quoted(str(tmp_path))
+    )
 
 
 @needs_git

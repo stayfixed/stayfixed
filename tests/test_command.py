@@ -12,7 +12,6 @@ from stayfixed.command import (
     CHECK_HELP,
     DRY_RUN_HELP,
     HOME_HELP,
-    INSTANCE_DIR_HELP,
     MACHINE_HELP,
     OVERLAY_ROOT_HELP,
     ROOT_HELP,
@@ -39,11 +38,9 @@ SHARED = {
 # The commands that mean something else by a shared name, each with the sentence it uses. A new
 # entry here is a decision, not a convenience: it says the flag means something else.
 # The exceptional sentences are constants in `command.py` too (`OVERLAY_ROOT_HELP`,
-# `INSTANCE_DIR_HELP`, `SETUP_ROOT_HELP`, `SETUP_MACHINE_HELP`, `ATTACH_CHECK_HELP`), so each
+# `SETUP_ROOT_HELP`, `SETUP_MACHINE_HELP`, `ATTACH_CHECK_HELP`), so each
 # is spelled once in its parser and named here — never spelled a second time by hand in a test.
 EXCEPTIONS = {
-    ("overlay", "create", "--root"): INSTANCE_DIR_HELP,
-    ("overlay", "init", "--root"): OVERLAY_ROOT_HELP,
     ("overlay", "upgrade", "--root"): OVERLAY_ROOT_HELP,
     ("setup", None, "--root"): SETUP_ROOT_HELP,
     ("setup", None, "--machine"): SETUP_MACHINE_HELP,

@@ -3,17 +3,22 @@
 Five things, each reported and each independently skippable, in this order: write the machine
 file (the personal defaults the preset names, for whichever of them nothing has recorded yet);
 merge the preset's deny rules and the personal values into the machine-scope settings file;
-register each preset plugin's marketplace and install from it, per configured harness; report
-whether `stayfixed` itself resolves on `PATH`; and, only when the caller named an answer, create
-or record the private overlay.
+only for the plugins the caller named, register the marketplace the preset declares and install
+from it, per configured harness; report whether `stayfixed` itself resolves on `PATH`; and, only
+when the caller named an answer, create, render or record the private overlay.
 
 **A preset default never overwrites a value already recorded.** The first draft of this module
 rebuilt `[personal]` from the preset's own defaults on every run, which meant a second
 `setup --preset recommended` reset a personal value back to the preset's after the owner set it by
 hand — exactly the value `setup.machine`'s own docstring promises survives a rewrite that "only
 set one of them". `_new_personal_values` computes only the keys the machine file does not already
-carry, and that is what both `write_machine` and the settings file's `pluginConfigs` receive — an
-empty dict on every run after the first, once every key has a recorded value.
+carry, and that is what `write_machine` receives — an empty dict on every run after the first,
+once every key has a recorded value. The settings file's `pluginConfigs` follows the same rule
+from its own side: a value it already holds is kept, whoever wrote it.
+
+**A plugin is installed only when it is named.** A third-party plugin runs in every session of its
+harness, its hooks included, and the preset pins none, so the preset only recommends them
+(`[plugins] recommended`, which `init --questions` offers) and `setup --plugin NAME` installs one.
 
 **Marketplaces are registered before anything is installed from them, and per-plugin sources are
 never guessed.** The first draft attempted `claude plugin install superpowers@obra` on a fresh
@@ -45,48 +50,24 @@ would round-trip through nothing Claude Code itself reads. `PLUGIN_ID` matches t
 own shipped manifest and marketplace names (`tests/test_manifests.py`), which is the pair this
 plugin is actually installed under everywhere the preset's own `setup` runs.
 
-**The overlay root is validated before anything is written, and the create branch is gated on
-`--yes`.** `--yes` on `--overlay <path>` would be theatre in a harness where the command line
-is written by a model, so it is not added there. What bounds the exposure instead is
-`_requested_overlay` and `_outside_the_project`, asked in `_before_the_first_write` — above the
-machine file, the settings merge and the plugin installs, and for `create:` above
-`gh repo create` itself. Two controls:
+**The overlay is validated before anything is written**, in `_requested_overlay`, asked in
+`_before_the_first_write` — above the machine file, the settings merge and the plugin installs,
+and for `create:` above `gh repo create` itself:
 
-* **it must be an overlay**, which is `overlay.api.require_overlay` and not a pair of `is_file`
-  calls. The old probe was the two manifests *existing*, which the stayfixed checkout satisfies
-  and any Claude Code plugin repository satisfies; the probe now reads them and requires them to
-  name the tree `stayfixed-overlay[-<owner>]` and `stayfixed-overlay-marketplace[-<owner>]`, the
-  names `overlay init` writes and a harness installs an overlay by. `identity`'s own docstring
-  is honest that a repository can still *claim* those names: it stops the accidents, and it
-  stops this half from standing for nothing.
-* **it must lie outside the repository the agent works in**, which now means outside *every*
-  checkout of it. The old check refused `candidate == project` or `project in candidate.parents`
-  and nothing else, so a parent directory and a sibling worktree both passed — and working
-  in a worktree, which is ordinary, makes `--root` one, which is exactly the shape that passed.
-  It now also refuses a candidate that *holds* the project root, and a candidate inside, holding
-  or equal to any checkout of the project root's repository that `git` can name: what a
-  repository ships reaches its own checkouts and nowhere else, so refusing every checkout of it
-  removes the tree a clone can stage. Nor may it lie inside a checkout of any other repository,
-  its own nested checkout included. With no `.git` at or above `--root` there are no other
-  checkouts to list, and the only candidates not compared with `--root` itself are a `create:`
-  destination that is not there yet, which this run makes, and one that is the overlay root the
-  machine file already records (`_exemption`); any other overlay already on disk inside, around
-  or equal to a `--root` in no repository is refused, because an archive or another version
-  control system's checkout can hold one (`_outside_the_project` names what is left uncompared).
-  `_outside_the_project` says how `git` is asked and from which side, and why. It is not a claim
-  that the same bytes cannot be somewhere else on the machine — a separate clone of the same
-  remote passes — only that the owner put them there. Where a `.git` is, a `git` that gives no
-  answer, exits non-zero, is ended by a signal or cannot list the checkouts is a refusal and not
-  a pass (`_ask`).
+* **a path holding something must be an overlay**, a tree whose identity record names layout 1
+  (`overlay.api.overlay_fault`). A path holding nothing (`fsops.vacant`: not there, or an empty
+  directory that is no link) is rendered into, so a mistyped path is a new overlay and not a
+  refusal, and the run that records a root other than the one the machine file held says so
+  (`REPLACED_ROOT`).
+* **a `create:` destination must be one `gh` can clone into**: vacant, or the overlay an
+  earlier run made. Its place is `home/<name>`, knowable from the arguments
+  (`overlay.api.target_root`), so a file there, or a directory holding anything but an overlay, is
+  refused before `gh repo create` makes a repository on the owner's account that nothing would
+  then record. Naming `create:` is the request, and no flag stands in front of it: a flag a
+  model-written command line types as easily as the command consents to nothing.
 
-For `create:`, the destination is `home/<name>` and is knowable from the arguments
-(`overlay.api.target_root`), so it is checked before the call rather than after it: the first
-draft ran `gh repo create`, cloned, renamed both manifests and installed the secret scan, and
-*then* refused — leaving a private repository on somebody's GitHub account that nothing in the
-report mentioned. `--yes` gets the one control it can really carry: `setup` refuses
-`--overlay create:<owner>/<name>` without it, because `gh repo create` runs only after explicit
-confirmation, and creating a repository on GitHub is the one irreversible, outward-facing act
-this command performs.
+Where the overlay lives is the owner's choice, and `setup` refuses no place for it: `doctor`'s
+`overlay-requires` row warns when another repository's work tree holds it.
 
 **The settings file is written through the home's own symlinks**, so a home managed by stow,
 chezmoi or a synced directory gets the file its links lead to: nothing a repository writes is on
@@ -99,16 +80,16 @@ import datetime
 import os
 import shutil
 import stat
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
-from stayfixed.config.overlay import overlay_root
+from stayfixed.config.machine import in_owner_home
+from stayfixed.config.overlay import overlay_root as recorded_root
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import utf_8_name
-from stayfixed.gitenv import NO_ANSWER, answer_lines, git_run, in_work_tree
 from stayfixed.harnesses import BYTE_ORDER_MARK, lenient_settings
 from stayfixed.jsonobject import json_object, json_text
 from stayfixed.presets import defaults_of, load_preset
@@ -142,13 +123,45 @@ _PLUGIN_INSTALL = {
 # overlay probe raises. One sentence each, so the two commands that ask "is this an overlay"
 # differ in what they were doing and not in what the answer means.
 _RECORDING = (
-    "--overlay must name a real overlay's root — the tree `stayfixed overlay create` renders "
-    "and `stayfixed overlay init` names after you — because this path becomes the machine's "
-    "trust anchor: every `stayfixed attach` on this machine reads rules and notes out of it"
+    "--overlay must name a real overlay's root, or a path that names nothing, where one is "
+    "rendered, because this path becomes the machine's trust anchor: every `stayfixed attach` on "
+    "this machine reads rules and notes out of it"
 )
-_CREATED = (
-    "the repository was created and cloned, and nothing was recorded in the machine "
-    "configuration; look at what arrived, then record it with `stayfixed setup --overlay <path>`"
+# What `create:` says of a destination it cannot clone into, `{destination}` through
+# `printed.quoted`: asked before `gh` is, so nothing exists on GitHub when either is said.
+DESTINATION_NOT_A_DIRECTORY = (
+    "{destination} is there and is not a directory, so `create:` has nowhere to clone the overlay "
+    "and nothing was created on GitHub; move it, or name another repository"
+)
+DESTINATION_NOT_AN_OVERLAY = (
+    "{destination} is a directory that is not an overlay, so `create:` would clone the new "
+    "repository over what is there, and nothing was created on GitHub; move it, or name another "
+    "repository"
+)
+# What either form says of a directory there that this user cannot search, so what it holds cannot
+# be told, or that is no overlay and that this user cannot both list and write: nothing can be
+# rendered or cloned into either. `{destination}` through `printed.quoted`.
+UNUSABLE_DIRECTORY = (
+    "{destination} is a directory this user cannot list, write and search, so no overlay can be "
+    "rendered or cloned into it, and nothing was created on GitHub; give this user read, write "
+    "and search on it, or name another place"
+)
+# What `setup` notes when it records an overlay root other than the one the machine file held,
+# `{previous}` through `printed.quoted`: a mistyped `--overlay` path is rendered, not refused.
+REPLACED_ROOT = (
+    "the machine configuration recorded the overlay at {previous}, and records this one now; "
+    "`stayfixed setup --overlay {previous}` records that one again"
+)
+# What `--overlay ~/…` says where `HOME` names no home, `{overlay}` through `printed.quoted`.
+NO_HOME_FOR_OVERLAY = (
+    "--overlay {overlay} begins with `~`, and HOME names no home directory to read it against; "
+    "name the overlay by its whole path"
+)
+# What `--overlay <path>` says of a path that is not there and cannot be rendered, `{path}` and
+# `{parent}` through `printed.quoted`.
+NO_PLACE_TO_RENDER = (
+    "{path} is not there, so --overlay would render an overlay at it, and {parent} is not a "
+    "directory this user can create it in; create that directory, or name an existing overlay"
 )
 
 
@@ -200,19 +213,27 @@ def _marketplace(preset: dict[str, Any], agent: str) -> tuple[str, str] | None:
 
 
 def _install_plugins(
-    preset: dict[str, Any], agents: Sequence[str], *, home: Path, runner: Runner
+    preset: dict[str, Any],
+    agents: Sequence[str],
+    selectors: Sequence[str],
+    *,
+    home: Path,
+    runner: Runner,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    selectors = [s for s in preset.get("plugins", {}).get("install", []) if isinstance(s, str)]
+    """Install each plugin in `selectors`, the ones the caller named, per harness in `agents`.
+
+    Nothing named is nothing run: no marketplace is registered and no note is written."""
+    if not selectors:
+        return (), ()
     installed: list[str] = []
     notes: list[str] = []
     for agent in agents:
         market = _marketplace(preset, agent)
         if market is None:
-            if selectors:
-                notes.append(
-                    f"{agent}: no verified marketplace for {', '.join(selectors)}; "
-                    f"install manually if this harness supports it (see README)"
-                )
+            notes.append(
+                f"{agent}: no verified marketplace for {', '.join(selectors)}; "
+                f"install manually if this harness supports it (see README)"
+            )
             continue
         source, marketplace = market
         add_argv_of, install_argv_of = _MARKETPLACE_ADD.get(agent), _PLUGIN_INSTALL.get(agent)
@@ -269,8 +290,9 @@ def _write_user_settings(
 
     Merge, never replace: the owner's own file predates stayfixed on most machines, and nothing
     this run did not add may be recorded as if it had. Deny only — this never reads or writes
-    `permissions.allow` — and `pluginConfigs` gets the same treatment, key by key inside its own
-    `options`, so a value this run did not set survives a second one same as `write_machine`'s.
+    `permissions.allow` — and `pluginConfigs` is filled key by key inside its own `options`, only
+    where it holds no value: Claude Code writes there the answers a person gives in its
+    plugin-config screen, so a value there is the user's and survives every run.
 
     `retired` is the one removal: rules an earlier preset wrote under the same table and this one
     took back (the preset's `[deny] retired`), each removed where it stands verbatim. A rule the
@@ -297,7 +319,8 @@ def _write_user_settings(
     entry = dict(entry) if isinstance(entry, dict) else {}
     options = entry.get("options")
     options = dict(options) if isinstance(options, dict) else {}
-    options.update(personal)
+    for key, value in personal.items():
+        options.setdefault(key, value)
     entry["options"] = options
     plugin_configs[PLUGIN_ID] = entry
     document["pluginConfigs"] = plugin_configs
@@ -352,10 +375,7 @@ def _check_home_usable(home: Path, *, created: Path | None = None) -> None:
       — which is also where the `mkdir` starts.
     - `created`, the `<home>/<name>` a `create:` overlay is cloned into, while it is not there yet.
       Asked here because the clone is what would find out otherwise, after `gh repo create` has
-      made a repository on somebody's account. While it is there, whether it can be searched:
-      `overlay.create` looks inside it for an overlay before anything else, and a destination
-      nobody may search raised `PermissionError` there as `internal error`, after the machine
-      file and the plugin installs.
+      made a repository on somebody's account. What is there already is `_requested_overlay`'s.
 
     The refusal names the directory `creatable` stopped at. `os.access` answers for the real uid
     and says yes to root whatever the mode, so the `mkdir` in `setup` keeps a refusal of its own
@@ -366,8 +386,6 @@ def _check_home_usable(home: Path, *, created: Path | None = None) -> None:
     landing = [fsops.resolved(home / USER_SETTINGS)]
     if created is not None and not fsops.exists(created):
         landing.append(created)
-    elif created is not None and fsops.is_dir(created) and not os.access(created, os.X_OK):
-        raise Refusal(f"--home {home} cannot be used: {created} cannot be searched")
     for path in landing:
         directory = fsops.creation_directory(path)
         # A regular file where a directory has to be (`home` itself, or one above it) is the
@@ -388,425 +406,19 @@ def _check_home_usable(home: Path, *, created: Path | None = None) -> None:
         )
 
 
-# `git` reads any directory holding `HEAD`, `objects/` and `refs/` as a bare repository of its
-# own when its discovery reaches one (`safe.bareRepository` unset means "all"), and those are
-# three paths any repository can commit — see `_repository` for what that did to this check.
-# With `explicit`, git refuses to answer from inside one and so never reads the committed
-# `config` there. git 2.38 is the first to know the key and an older one ignores it silently,
-# so no refusal below rests on it alone. `--is-inside-work-tree`, in the same answer, is what
-# does: git answers `true` only for a directory it reached through a checkout's `.git`, and
-# `false` for one it read as a git directory by its shape, whatever that directory's committed
-# `config` or `commondir` says (`core.bare`, `core.worktree` and a `commondir` pointing elsewhere
-# were each tried). `--path-format` already needs 2.31.
-_EXPLICIT_BARE: tuple[str, ...] = ("-c", "safe.bareRepository=explicit")
-_COMMON_AND_CHECKOUT = (
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-common-dir",
-    "--is-inside-work-tree",
-)
-
-_UNLISTED = (
-    "`git` could not list the checkouts of the repository {root} is in, so no overlay root can be "
-    "shown to lie outside all of them. The overlay root is the machine's trust anchor, and a "
-    "question git did not answer is not taken as a yes; check that `git` runs here and is 2.31 "
-    "or later, the first to answer `rev-parse --path-format`"
-)
-
-
-@dataclass(frozen=True)
-class _Repository:
-    """The repository `--root` is in: its common directory, and every checkout git lists."""
-
-    common: Path
-    checkouts: tuple[Path, ...]
-
-
-def _nearest_directory(path: Path) -> Path:
-    """`path`, or its nearest ancestor that is a directory: `--root` and a `create:`
-    destination may name one that does not exist."""
-    while not fsops.is_dir(path) and path != path.parent:
-        path = path.parent
-    return path
-
-
-_SILENT_IN_A_CHECKOUT = (
-    "`git` gave no answer asked from {start}, which is inside a checkout — {no_answer} — so no "
-    "overlay root can be shown to lie outside every checkout of the project. The overlay root is "
-    "the machine's trust anchor, and a question git did not answer is not taken as a yes; check "
-    "that `git` runs here and answers `git status` within a few seconds, then run this again"
-)
-_REFUSED_IN_A_CHECKOUT = (
-    "`git` refused to describe the repository {start} is in, which is inside a checkout — one "
-    "another user owns that `safe.directory` does not admit, or a `.git` it cannot read — so no "
-    "overlay root can be shown to lie outside every checkout of the project. The overlay root is "
-    "the machine's trust anchor, and a question git did not answer is not taken as a yes; check "
-    "that `git status` runs there, then run this again"
-)
-# git's exit when it will not describe the repository it found: a checkout of dubious ownership,
-# an unreadable `.git`, a worktree whose git directory is gone, and, asked with `_EXPLICIT_BARE`,
-# a bare-shaped directory. Only the last is an answer, which is why a keyed question is asked
-# again without the key before its 128 counts.
-_GIT_REFUSED = 128
-
-
-def _silence(code: int) -> str:
-    """How a `git` that gave no answer gave none, from `git_run`'s exit code: in words for
-    `_SILENT_IN_A_CHECKOUT`, which a person reads to know where to look."""
-    if code == -1:
-        return NO_ANSWER
-    if code < 0:
-        # `subprocess` reports a process a signal ended as the signal's negative.
-        return f"git was ended by signal {-code}"
-    if code == 0:
-        return "git exited 0 and printed nothing"
-    return f"git exited {code}"
-
-
-def _ask(start: Path, *args: str, keyed: bool = False) -> list[str] | None:
-    """git's answer to `args` asked from `start`, one line per entry; `None` where no `.git` is
-    at or above `start`, which is "no repository"; or a refusal. `gitenv.git_run` decodes
-    losslessly, so a path in bytes that are not UTF-8 is part of the answer and compares equal
-    to itself.
-
-    **Three answers, and the third fails closed.** Whether `start` could be inside a checkout is
-    read off the disk (`gitenv.in_work_tree`), because the question cannot go to the git that
-    just failed to answer it.
-
-    - Lines, when git exits 0 and prints some.
-    - `None`, for anything else where no `.git` is at or above `start`: git finds a work tree
-      only through a `.git`, and `gitenv` scrubs `GIT_DIR`, so there is no checkout for git to
-      have named, whatever it said — its own "not a git repository", or nothing at all.
-    - A refusal, for anything else where a `.git` is: any exit but 0, a signal, `git_run`'s
-      `-1` (git could not be run or ran past its time limit), and an exit 0 with nothing
-      printed. Each of them used to read as `None`, and every caller reads `None` as a directory
-      git does not count as a checkout: a git that timed out on `rev-parse` let the main checkout
-      of the project be recorded from one of its worktrees, and a git wrapper that exits 1 — asdf
-      or mise with no version chosen — or a git the kernel killed let a clone's own `ov/` be
-      recorded from inside it.
-
-    Exit 128 inside a checkout is git saying there is a repository it will not describe —
-    another user's, under `safe.directory`, or one whose `.git` it cannot read — and it refuses
-    in words of its own, except for a `keyed` question, asked with `_EXPLICIT_BARE`, whose 128
-    can be git declining a bare-shaped directory: that is `None`, and its caller asks again
-    without the key.
-    """
-    code, out = git_run(start, *args)
-    # Split where git ended each line: `splitlines()` also broke a path at a `\r` it holds, and
-    # recorded `…/wt` among the checkouts for a worktree at `…/wt\rx` (`gitenv.answer_lines`).
-    lines = answer_lines(out)
-    if code == 0 and lines:
-        return lines
-    if not in_work_tree(start):
-        return None
-    if code == _GIT_REFUSED and keyed:
-        return None
-    if code == _GIT_REFUSED:
-        raise Refusal(_REFUSED_IN_A_CHECKOUT.format(start=quoted(str(start))))
-    raise Refusal(_SILENT_IN_A_CHECKOUT.format(start=quoted(str(start)), no_answer=_silence(code)))
-
-
-_MISSHAPEN = (
-    "`git` answered a question asked from {start} in a shape it does not give — not a path and "
-    "`true` or `false` — so no overlay root can be shown to lie outside every checkout of the "
-    "project. The overlay root is the machine's trust anchor, and an answer that cannot be read "
-    "is not taken as a yes; check that the `git` on `PATH` is git itself, printing nothing of its "
-    "own, and is 2.31 or later, the first to answer `rev-parse --path-format`"
-)
-
-
-def _well_shaped(lines: list[str]) -> bool:
-    """Whether `lines` is the answer `_COMMON_AND_CHECKOUT` asks for: an absolute path, then
-    `true` or `false`. git 2.30 and older echo the `--path-format=absolute` they do not know as a
-    line of its own, and a wrapper can print a banner on standard output before git's answer."""
-    return len(lines) == 2 and Path(lines[0]).is_absolute() and lines[1] in ("true", "false")
-
-
-def _shaped(start: Path, lines: list[str] | None) -> list[str] | None:
-    """`lines`, git's answer to `_COMMON_AND_CHECKOUT`, when it has the shape git gives; a
-    refusal for any other shape where a `.git` is at or above `start`, as for an answer git did
-    not give; and `None` for one where none is, which names no checkout. Read as "step on", an
-    answer of another shape inside a work tree let the candidate walk pass every directory of a
-    repository holding the overlay."""
-    if lines is None or _well_shaped(lines):
-        return lines
-    if in_work_tree(start):
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))
-    return None
-
-
-def _repository(project_root: Path) -> _Repository | None:
-    """The repository `project_root` is in; `None`, which is "no repository"; or a refusal.
-
-    **Its checkouts are asked from the project's side.** The first version asked
-    `rev-parse --git-common-dir` from inside the *candidate* and compared the answers, which let
-    the candidate's own bytes choose the answer: a committed bare-shaped `ov/` reported itself as
-    its own common directory, so a clone's `ov/` in a sibling worktree was "another repository"
-    and was recorded. `git worktree list` is the repository's own record of its checkouts, which
-    a clone cannot commit into.
-
-    **`None` only where no `.git` is at or above `--root`**, which is the one place `_ask`
-    answers `None` to an unkeyed question: there is no checkout for git to name, whatever git
-    said. `_outside_the_project` says what is still compared then. Every other way of not
-    answering refuses: a git inside a checkout that says nothing, exits non-zero, is ended by a
-    signal or refuses the repository it found (`safe.directory`, an unreadable `.git`), all in
-    `_ask`; an answer that says `--root` is not inside a work tree (a root inside a bare-shaped
-    directory has no checkout of its own to compare against); an answer git gives only without
-    the key; and a listing that fails or is empty.
-    """
-    start = _nearest_directory(project_root)
-    unlisted = _UNLISTED.format(root=quoted(str(project_root)))
-    answer = _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True)
-    retried = False
-    if answer is None:
-        # git 2.38 and later refuse an implicit bare repository outright. Asked again without
-        # the key only to tell that apart from "no repository at all".
-        retried = True
-        answer = _ask(start, *_COMMON_AND_CHECKOUT)
-        if answer is None:
-            return None
-    # The same shape `_shaped` asks of the walk, asked wherever `--root` is: an answer for `--root`
-    # is never stepped past.
-    if not _well_shaped(answer):
-        raise Refusal(_MISSHAPEN.format(start=quoted(str(start))))
-    if answer[1] != "true":
-        raise Refusal(
-            f"git does not read {quoted(str(project_root))} as inside a checkout: it is inside a "
-            f"bare repository, a git directory, or a directory holding `HEAD`, `objects/` and "
-            f"`refs/`, which any repository can commit — so it has no checkout of its own for an "
-            f"overlay root to be compared against. Run this command from the checkout itself"
-        )
-    if retried:
-        raise Refusal(unlisted)
-    listing = _ask(start, *_EXPLICIT_BARE, "worktree", "list", "--porcelain", keyed=True)
-    # Prunable entries included: a checkout whose directory is gone costs nothing to refuse.
-    checkouts = tuple(
-        Path(line[len("worktree ") :]) for line in listing or () if line.startswith("worktree ")
-    )
-    # git always lists at least the main worktree, so an empty listing is not an answer either.
-    if not checkouts:
-        raise Refusal(unlisted)
-    return _Repository(Path(answer[0]), checkouts)
-
-
-def _candidate_repository(candidate: Path) -> Path | None:
-    """The common directory of the nearest checkout at or above `candidate` that git answers
-    for, or `None`.
-
-    **This arm can only add a refusal.** `git worktree list` does not name every checkout: with
-    `--separate-git-dir`, and for a submodule, the main checkout is listed by its git directory,
-    which does not record where the checkout is — so from a linked worktree the main checkout
-    was on no list. Asked from the candidate's side, git finds it through the checkout's `.git`.
-    The candidate's bytes can try to make this answer wrong, and whatever they make it say they
-    cannot remove a refusal the listing makes. Nor can a git that says nothing, exits non-zero
-    or is ended by a signal: on the walk, as everywhere `_ask` is used, that is a refusal inside
-    a checkout and not a step past it.
-
-    **Only an answer from inside a work tree is the candidate's.** On a git that ignores
-    `safe.bareRepository`, a bare-shaped `ov/` answers for itself, and its committed `config` or
-    `commondir` can make that answer say "not bare" with a common directory anywhere. It cannot
-    make git say `ov/` is inside a work tree: that answer comes only through a checkout's `.git`,
-    which a repository cannot commit. So the walk goes on past every other answer of the shape git
-    gives (`_shaped`); an answer of any other shape inside a work tree refuses.
-
-    Walked up rather than asked once, because git refuses to answer from inside a bare-shaped
-    directory — which is exactly where a clone puts the candidate — and a git directory's answer
-    is not the candidate's. Asked from the nearest directory that exists, because a
-    `create:` destination does not yet.
-    """
-    start = _nearest_directory(candidate)
-    while True:
-        answer = _shaped(start, _ask(start, *_EXPLICIT_BARE, *_COMMON_AND_CHECKOUT, keyed=True))
-        if answer is None and in_work_tree(start):
-            # A bare-shaped directory, which git declines under the key and describes without
-            # it, or a repository git refuses either way, which `_ask` refuses.
-            _shaped(start, _ask(start, *_COMMON_AND_CHECKOUT))
-        if answer is not None and answer[1] == "true":
-            return Path(answer[0])
-        if start == start.parent:
-            return None
-        start = start.parent
-
-
-def _same(a: Path, b: Path) -> bool:
-    """Whether `a` and `b` are one directory, asked of the filesystem where both exist.
-
-    `Path.resolve()` keeps the case it was given, so on a volume that folds case — macOS's
-    default — `PROJ.WT/a` and `proj.wt/a` are one directory and two strings. Exact comparison
-    stands only where one of them does not exist.
-    """
-    try:
-        return os.path.samefile(a, b)
-    except OSError:
-        return a == b
-
-
-def _overlaps(a: Path, b: Path) -> bool:
-    """Whether `a` is `b`, lies inside it, or holds it. Both are resolved."""
-    if any(_same(part, b) for part in (a, *a.parents)):
-        return True
-    return any(_same(part, a) for part in b.parents)
-
-
-def _outside_the_project(candidate: Path, *, project_root: Path, exempt: bool) -> None:
-    """Refuse an overlay root that sits where the repository an agent works in could reach it.
-
-    A path arm and three `git` arms. The path arm is equality or nesting either way round — a
-    candidate *under* the project, and a candidate that *holds* it, which is the shape
-    `git worktree add .worktrees/x` produces and which the first draft accepted. The `git` arms
-    are the sibling case the paths cannot see: `stayfixed.worktrees/feature` is not under
-    `stayfixed/`, so a clone committing its own manifests at its own root passed the path arm
-    whenever `--root` was one of its worktrees — and working in a worktree makes `--root` one.
-    The first applies the path arm to every checkout `_repository` lists; the second,
-    `_candidate_repository`, catches the checkouts that list names by their git directory. See
-    each for why it is asked from the side it is. The third asks the same walk from above the
-    candidate, and refuses any checkout that holds it, of whichever repository: a directory in a
-    work tree is a place that repository can ship files into, a nested checkout's included.
-
-    **With `--root` in no repository, only an `exempt` `create:` destination skips the path
-    arm** (`_exemption`): one that is not there when the phase asks, which this run makes —
-    `gh repo create` clones into it — and the overlay root the machine file already records,
-    which is the owner's own run again. Comparing those with `--root` refused the owner's own
-    `setup --overlay create:<owner>/<name> --yes` run in `~`, where `--root` defaults to the home
-    directory the overlay is created in. A destination that is there and not recorded is not
-    the run's making, since `create` leaves a populated destination alone, and any other
-    overlay already on disk is compared with `--root` whether or not git finds a repository
-    there: a directory in no repository can still hold a tree someone else made — a project
-    downloaded as an archive, a work tree of another version control system, a `vendor/ov`
-    shipped inside either. What the comparison needs a repository for is the listing of the
-    other checkouts, and "no repository" is `_repository`'s `None`, which `_ask` answers only
-    where no `.git` is at or above `--root`: a git that is there and says nothing refuses. The
-    candidate's own side is asked either way. The anchor is `--root`, which the command line
-    chooses: run from a directory git finds no repository for, no other checkout of the project
-    an agent works in is compared. Nor is what git cannot find there: a work tree of another
-    version control system, and one whose git directory is elsewhere and named only by
-    `--git-dir` and `--work-tree` or `GIT_DIR` — a bare-repository dotfiles home is one — has no
-    other checkouts compared, since `gitenv` scrubs `GIT_DIR` from every `git` it runs and no
-    `.git` leads to them.
-
-    **What it does not cover, stated rather than implied.** A common directory whose path is not
-    UTF-8 is an answer like any other: `git_run` decodes it losslessly, so two checkouts of one
-    repository still compare equal. And what the whole check bounds is a repository *shipping* a
-    tree: committed contents reach that repository's own checkouts and nowhere else, so refusing
-    all of them removes the case a clone can stage. It is not a claim that no other directory on
-    the machine can hold the same bytes — a separate `git clone` of the same remote has its own
-    common directory and passes — only that the owner, and not the clone, put it there.
-    """
-    resolved_candidate = fsops.resolved(candidate)
-    resolved_project = fsops.resolved(project_root)
-    # Both are printed through `printed.quoted`: a path resolved through a link a repository
-    # commits is spelled in bytes the repository chose.
-    shown, project = quoted(str(candidate)), quoted(str(project_root))
-    repository = _repository(resolved_project)
-    same_repository = (
-        f"{shown} is inside a checkout of the same repository as {project}, the "
-        f"project this command was run from, holds one, or is one. The overlay root is the "
-        f"machine's trust anchor and must live outside every checkout of a repository an agent "
-        f"works in — a worktree is not a different repository, and a clone ships its own tree "
-        f"into all of them"
-    )
-    compared = repository is not None or not exempt
-    if compared and _overlaps(resolved_candidate, resolved_project):
-        where = (
-            # git names the directory, and a submodule's carries the name `.gitmodules` chose.
-            f"in the repository whose git directory is {quoted(str(repository.common))}"
-            if repository is not None
-            # Said, because "no repository" reads like "nothing could have shipped it", and an
-            # archive or another version control system's checkout can.
-            else "which is in no git repository, and a tree there can still have come from "
-            "someone else: an archive, or a checkout of another version control system"
-        )
-        raise Refusal(
-            f"{shown} is inside {project}, holds it, or is it — and {project} "
-            f"is the project this command was run from, {where}. The overlay root is the "
-            f"machine's trust anchor and must live outside the project an agent works in: it "
-            f"could otherwise ship its own tree and have this command record it"
-        )
-    if repository is not None:
-        for checkout in repository.checkouts:
-            if _overlaps(resolved_candidate, fsops.resolved(checkout)):
-                raise Refusal(same_repository)
-    found = _candidate_repository(resolved_candidate)
-    if found is None:
-        return
-    if repository is not None and _same(fsops.resolved(found), fsops.resolved(repository.common)):
-        raise Refusal(same_repository)
-    # Asked from above the candidate, so an overlay that is the top of a checkout of its own is
-    # not its own answer: what git finds there is a work tree that holds the candidate, and that
-    # repository can put files in it — a merge writes a tracked path into a nested checkout's
-    # directory as into any other.
-    outer = _candidate_repository(resolved_candidate.parent)
-    if outer is None:
-        return
-    # A linked worktree of the overlay's own repository, nested in another checkout of it, is
-    # refused for the same reason — the outer checkout can write into it — and said as what it
-    # is: "another repository" sent the owner looking for one that is not there. Its own only
-    # when the candidate is a checkout's top, its `.git` there: a plain directory's nearest
-    # checkout is the outer one, and that is another repository.
-    own = os.path.lexists(resolved_candidate / ".git") and _same(
-        fsops.resolved(outer), fsops.resolved(found)
-    )
-    whose = "another checkout of its own repository" if own else "a checkout of another repository"
-    raise Refusal(
-        f"{shown} is inside {whose}, whose git directory is {quoted(str(outer))}. The "
-        f"overlay root is the machine's trust anchor and must not lie where a repository can "
-        f"ship files: put it in a directory no repository's checkout holds"
-    )
-
-
 @dataclass(frozen=True)
 class _Overlay:
     """What `--overlay` asked for, once everything knowable before the first write is known.
 
-    `create` is `(owner, name)` when this run has to create the repository, and `None` when the
-    root already exists and is only being recorded. `root` is where the overlay is or will be:
-    for the create branch it is `overlay.api.target_root`'s answer, computed from the arguments
-    alone so the destination can be refused before `gh repo create` runs.
+    `kind` is which of the three; `root` is where the overlay is or will be, resolved, and what is
+    recorded. A `create` alone names the `(owner, name)` GitHub generates, and `destination`,
+    `<home>/<name>` as `overlay.api.target_root` names it, which is judged and cloned into.
     """
 
+    kind: Literal["record", "render", "create"]
     root: Path
-    create: tuple[str, str] | None
-    # Why a `create:` destination is not compared with a `--root` in no repository, or `None`
-    # when it is: `ABSENT` when nothing was there when the phase asked, so this run makes it, and
-    # `RECORDED` when it is the overlay root the machine file already records, which is the
-    # owner's own run again. `_exemption` decides it; nothing else exempts a destination.
-    exempt: str | None = None
-    # For `create:`, the destination as `overlay.api.target_root` names it, `<home>/<name>`,
-    # which is where `create` clones; `root` is that path resolved, which is what is judged,
-    # compared with the recorded root and recorded, as `--overlay <path>` records its path
-    # resolved. A link there is the repository's to retarget, its target is not.
-    destination: Path | None = None
-
-
-# `_Overlay.exempt`'s two values.
-ABSENT = "absent"
-RECORDED = "recorded"
-
-
-def _exemption(planned: _Overlay, *, machine: Path) -> str | None:
-    """Whether a `create:` destination is exempt from the comparison with a `--root` in no
-    repository, and why; `None` for `--overlay <path>` and for any destination this run neither
-    makes nor already records. `create` leaves a populated destination alone and records it, so
-    a tree an archive or a clone put at `<home>/<name>` would otherwise be recorded uncompared.
-    The machine file is read only for a destination that is there."""
-    if planned.create is None or planned.destination is None:
-        return None
-    # The destination itself, not where it leads: a link there, dangling or not, is not a
-    # directory this run makes.
-    if not os.path.lexists(planned.destination):
-        return ABSENT
-    # There and leading nowhere: a link whose target is not there. `gh repo create` would make a
-    # repository on the owner's account and then clone through the link, or fail on it.
-    if not fsops.exists(planned.destination):
-        raise Refusal(
-            f"{quoted(str(planned.destination))} is a link to {quoted(str(planned.root))}, which "
-            f"is not there, so `create:` would clone through it to wherever it leads; remove the "
-            f"link, or point it at the overlay and record that with --overlay <path>"
-        )
-    recorded = overlay_root(machine)
-    if recorded is not None and _same(recorded, planned.root):
-        return RECORDED
-    return None
+    create: tuple[str, str] = ("", "")
+    destination: Path = Path()
 
 
 def _recordable(root: Path) -> None:
@@ -822,11 +434,11 @@ def _recordable(root: Path) -> None:
         )
 
 
-def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overlay | None:
+def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
     """What `--overlay` names, and every refusal its arguments and its tree's identity can raise.
 
-    The first step of `_before_the_first_write`; where the overlay lies is asked there too, last
-    (`_outside_the_project`). The first draft called the equivalent of this from the bottom
+    The first step of `_before_the_first_write`. The first draft called the equivalent of this from
+    the bottom
     of `setup`, so `--overlay /typo` had already written the machine file, merged the settings
     file and installed two plugins before it refused, and `--overlay create:` had already
     created a private repository on GitHub.
@@ -841,20 +453,13 @@ def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overla
     `--overlay` asks for it (CONTRIBUTING.md, "Areas").
     """
     if overlay is None:
-        # Nothing was asked for, so nothing is touched. The creation gate is that `--overlay` is
-        # the only way to reach the overlay at all, and `--yes` does not imply one: a default here
-        # would turn an omitted flag into a repository created on somebody's account.
+        # Nothing was asked for, so nothing is touched: `--overlay` is the only way to reach the
+        # overlay at all, and a default here would turn an omitted flag into a repository created
+        # on somebody's account.
         return None
-    from stayfixed.overlay.api import require_overlay, target_root
+    from stayfixed.overlay.api import overlay_fault, target_root
 
     if overlay.startswith("create:"):
-        if not yes:
-            raise Refusal(
-                "creating a private overlay runs `gh repo create ... --private --template ...` "
-                "on GitHub, which is irreversible and outward-facing, so it needs explicit "
-                "confirmation; pass --yes to confirm it, or use --overlay <path> to record one "
-                "that already exists"
-            )
         spec = overlay[len("create:") :]
         owner, sep, name = spec.partition("/")
         if not sep or not owner or not name:
@@ -865,16 +470,57 @@ def _requested_overlay(overlay: str | None, *, home: Path, yes: bool) -> _Overla
         # Refuses a name that is not one path segment, and answers where the tree would land —
         # both without creating anything, which is the whole point of asking here.
         destination, account = target_root(home, owner, name)
+        # Judged before any `gh` call, which the clone would otherwise follow with a repository
+        # nothing records.
+        refused = (DESTINATION_NOT_A_DIRECTORY, DESTINATION_NOT_AN_OVERLAY)
+        _judged(destination, overlay_fault, refused)
         root = fsops.resolved(destination)
         _recordable(root)
-        return _Overlay(root=root, create=(account, name), destination=destination)
-    candidate = fsops.resolved(Path(overlay).expanduser())
+        return _Overlay("create", root, (account, name), destination)
+    # `~` as the machine file's `[overlay] root` reads it: never `/` or the working directory.
+    named = in_owner_home(overlay)
+    if named is None:
+        raise Refusal(NO_HOME_FOR_OVERLAY.format(overlay=quoted(overlay)))
+    candidate = fsops.resolved(named)
     _recordable(candidate)
-    require_overlay(candidate, because=_RECORDING)
-    return _Overlay(root=candidate, create=None)
+    not_recorded = f"{{fault}}; {_RECORDING}"
+    if _judged(candidate, overlay_fault, (not_recorded, not_recorded)):
+        return _Overlay("record", candidate)
+    # Nothing there: the directory the template's files are made in has to be one this user can
+    # write, asked of a file in it here rather than met by the render after the first write.
+    parent = candidate.parent
+    if not fsops.is_dir(parent) or not fsops.creatable(candidate / "file"):
+        raise Refusal(
+            NO_PLACE_TO_RENDER.format(path=quoted(str(candidate)), parent=quoted(str(parent)))
+        )
+    return _Overlay("render", candidate)
 
 
-def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> tuple[Path, str]:
+def _judged(place: Path, fault_of: Callable[[Path], str | None], refused: tuple[str, str]) -> bool:
+    """Whether `place` holds an overlay (`False`: nothing is there), refusing anything else: one
+    rule for both forms of `--overlay`. Nothing there, or an empty directory that is no link
+    (`fsops.vacant`), takes a render or a clone. A directory this user cannot search, or one holding
+    no overlay that it cannot both list and write, is `UNUSABLE_DIRECTORY`; the rest is refused in
+    the caller's words for what is not a directory and for a directory holding something else
+    (`refused`, given `{destination}` and `{fault}`). `os.access` says yes to root, so the render
+    and the clone keep refusals of their own. `fault_of` is `overlay.api.overlay_fault`, handed in
+    by the one function here that imports it."""
+    shown = quoted(str(place))
+    directory = fsops.is_dir(place)
+    if directory and not os.access(place, os.X_OK):
+        raise Refusal(UNUSABLE_DIRECTORY.format(destination=shown))
+    fault = fault_of(place)
+    if fault is None:
+        return True
+    if directory and not os.access(place, os.R_OK | os.W_OK):
+        raise Refusal(UNUSABLE_DIRECTORY.format(destination=shown))
+    if fsops.vacant(place):
+        return False
+    said = refused[1] if directory else refused[0]
+    raise Refusal(said.format(destination=shown, fault=fault))
+
+
+def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
     """Create the overlay if this run has to, record what there is, and say what happened.
 
     Everything here that can refuse is a **floor** under `_before_the_first_write` rather than a
@@ -885,111 +531,79 @@ def _apply_overlay(planned: _Overlay, *, project_root: Path, runner: Runner) -> 
     derives `permitted_roots` from that record, so the last thing to touch the tree before it
     becomes the trust anchor asks again.
 
-    The created branch's refusal says the repository exists. It has to: the owner now has a
-    private repository on GitHub that this run made, and the report is discarded on a refusal,
-    so nothing else would ever tell them.
+    The created branch's refusals are `generate`'s, after `gh repo create`, and each says the
+    repository may exist and how to record it: the report is discarded on a refusal, so nothing
+    else would ever tell the owner.
     """
-    from stayfixed.overlay.api import create, init_instance, overlay_fault, require_overlay
+    from stayfixed.overlay.api import finish, generate, render, require_overlay
 
-    if planned.create is None:
-        require_overlay(planned.root, because=_RECORDING)
-        _outside_the_project(planned.root, project_root=project_root, exempt=False)
-        return planned.root, f"recorded the existing overlay at {quoted(str(planned.root))}"
-    owner, name = planned.create
-    destination = planned.destination if planned.destination is not None else planned.root
-    created = create(owner, name, source="template", root=destination.parent, runner=runner)
-    # The one value judged, initialised and recorded, as the phase planned it: what the clone's
-    # path resolves to now, so a link that arrived there since is followed and not recorded.
-    root = fsops.resolved(created.root)
-    # Before `init_instance`, which now asks the same question and refuses with an answer that
-    # does not say the repository exists; this one has to, and so it goes first.
-    fault = overlay_fault(root)
-    if fault is not None:
-        raise Refusal(
-            f"{fault}. {owner}/{name} was created and cloned to {quoted(str(root))}, but {_CREATED}"
-        )
-    # Asked before `init_instance`, which writes in the tree and runs `pre-commit` there. An
-    # exemption is the phase's verdict on one directory, so it holds only for that directory; and
-    # a destination the phase found absent is exempt only if `create` made a directory there: one
-    # it left alone, or a link it cloned through, arrived after the phase, from somewhere else.
-    judged = _same(root, planned.root)
-    exempt = judged and (
-        planned.exempt == RECORDED
-        or (
-            planned.exempt == ABSENT
-            and created.template is not None
-            and not os.path.islink(created.root)
-        )
-    )
-    _outside_the_project(root, project_root=project_root, exempt=exempt)
-    initialised = init_instance(root, owner, runner=runner)
-    if created.template is None:
-        # `create` found a populated destination and generated nothing (no `gh` call at all),
-        # which is what re-running `setup --overlay create:` does after the first run, so there is
-        # no template to name. `init` still ran on it, and an overlay named by an earlier release
-        # has its manifests completed or its old memory README removed, so the note says what
-        # `init` changed rather than that the overlay was left alone.
-        changed = initialised.changed
-        return root, (
-            f"found the overlay already at {quoted(str(root))}, so nothing was generated; "
-            + (
-                f"`overlay init` changed {', '.join(changed)}"
-                if changed
-                # Not "nothing": `init` also runs `pre-commit install`, which may write the
-                # overlay's untracked git hook on this run.
-                else "`overlay init` changed none of the overlay's tracked files"
+    match planned.kind:
+        case "record":
+            require_overlay(planned.root, because=_RECORDING)
+            # Armed here too: the hook lives in the clone's own `.git`, so an overlay a second
+            # machine records from a clone has no commit-time scan until something installs it.
+            recorded = f"recorded the existing overlay at {quoted(str(planned.root))}"
+            return planned.root, f"{recorded}; {finish(planned.root, runner=runner)}"
+        case "render":
+            try:
+                rendered = render(planned.root, runner=runner)
+            except OSError as exc:
+                # The floor under `_requested_overlay`'s question: a directory that changed in
+                # between, or root, for whom `os.access` says yes whatever the mode.
+                raise Refusal(
+                    f"{quoted(str(planned.root))} could not be rendered ({fsops.said(exc)}), and "
+                    "nothing was recorded in the machine configuration"
+                ) from exc
+            root = fsops.resolved(rendered.root)
+            notes = (*rendered.notes, finish(root, runner=runner))
+            return root, f"rendered the overlay at {quoted(str(root))}: {'; '.join(notes)}"
+        case "create":
+            owner, name = planned.create
+            created = generate(owner, name, root=planned.destination.parent, runner=runner)
+            # The one value finished and recorded, as the phase planned it: what the clone's path
+            # resolves to now, so a link that arrived there since is followed and not recorded.
+            root = fsops.resolved(created.root)
+            shown = quoted(str(root))
+            # No template: `generate` found the overlay a first run made and asked `gh` nothing.
+            said = (
+                f"found the overlay already at {shown}, so nothing was generated"
+                if created.template is None
+                else f"created the overlay at {shown}, generated from {created.template}"
             )
-        )
-    return root, f"created the overlay at {quoted(str(root))}, generated from {created.template}"
+            return root, f"{said}; {finish(root, runner=runner)}"
 
 
 def _before_the_first_write(
-    preset: str,
-    *,
-    home: Path,
-    machine: Path,
-    project_root: Path,
-    overlay: str | None,
-    yes: bool,
+    preset: str, *, home: Path, overlay: str | None
 ) -> tuple[dict[str, Any], _Overlay | None]:
     """Every question `setup` asks before its first write, in one order, under one floor.
 
     Nothing is written, and no program is run, until every step has answered; each refuses with
     its own words, and the first refusal ends the run. The steps, in order:
 
-    1. **What `--overlay` names** (`_requested_overlay`): `create:` without `--yes`, a spec
-       without both halves, a name that is not one path segment, a root the machine file cannot
-       hold; and for `--overlay <path>`, a tree that is not an overlay.
+    1. **What `--overlay` names** (`_requested_overlay`): a spec without both halves, a name that
+       is not one path segment, a root the machine file cannot hold; for a path holding something,
+       a tree that is not an overlay; for one holding nothing, a directory this user cannot render
+       it in; and for `create:`, a destination `gh` could not clone into.
     2. **The preset** (`load_preset`): a mistyped `--preset`. It used to come one line after the
        home tree had been created for it.
     3. **Where a write under `--home` lands** (`_check_home_usable`): the settings file's
-       directory, the `mkdir` of a home not there yet, and a `create:` destination.
-    4. **Where the overlay lies** (`_outside_the_project`): `git`, asked from the project's side
-       and from the overlay's.
-
-    Where the overlay lies comes last: a `create:` destination under a home nobody may search is
-    that home's fault, which step 3 names, where `git`'s walk up from the destination can only
-    meet the same unsearchable directory. Last also because it is the step that runs programs.
+       directory, the `mkdir` of a home not there yet, and a `create:` destination not there yet.
 
     **The floor.** `fsops`' predicates raise rather than guess when a path cannot be asked
     about, and a step that does not word that itself let the `OSError` reach `cli.run` as
-    `stayfixed: internal error`: the walk up from a `create:` destination under a home nobody
-    may search, an `--overlay` or a `--root` directory below one. Whatever a step
-    raises that way is a refusal here, naming the path that was being asked about — the
-    `OSError`'s own file name, the path the predicate was handed — and the fault in
-    `fsops.said`'s words. A step whose own words name the cause better keeps them.
+    `stayfixed: internal error`: a `create:` destination under a home nobody may search, or an
+    `--overlay` directory below one. Whatever a step raises that way is a refusal here, naming
+    the path that was being asked about — the `OSError`'s own file name, the path the predicate
+    was handed — and the fault in `fsops.said`'s words. A step whose own words name the cause
+    better keeps them.
     """
     try:
-        planned = _requested_overlay(overlay, home=home, yes=yes)
+        planned = _requested_overlay(overlay, home=home)
         # Where this run clones a `create:` overlay, or `None` when it creates none.
-        created = planned.root if planned is not None and planned.create is not None else None
+        created = planned.root if planned is not None and planned.kind == "create" else None
         data = load_preset(preset, key="--preset")
         _check_home_usable(home, created=created)
-        if planned is not None:
-            planned = replace(planned, exempt=_exemption(planned, machine=machine))
-            _outside_the_project(
-                planned.root, project_root=project_root, exempt=planned.exempt is not None
-            )
     except OSError as exc:
         asked = (
             quoted(str(exc.filename)) if exc.filename is not None else "a path this run was given"
@@ -1006,32 +620,19 @@ def setup(
     home: Path,
     machine: Path,
     runner: Runner,
-    yes: bool,
     overlay: str | None,
-    project_root: Path,
+    plugins: Sequence[str] = (),
 ) -> SetupReport:
-    """Configure this machine from `preset`.
-
-    `project_root` is the repository this invocation was run from (the CLI's `--root`, default
-    `.`), and it exists for exactly one reason: `_outside_the_project` refuses an `--overlay`
-    that any checkout of it could reach. `yes` confirms creating an overlay on GitHub and
-    nothing else: there is no other prompt here for it to answer (see the module docstring).
+    """Configure this machine from `preset`, installing the `plugins` named and no other.
 
     **Everything structural is asked before the first write**, in `_before_the_first_write`:
-    `--overlay` is parsed and probed, the preset is loaded, the places a write under `--home`
-    lands are asked, and the overlay is contained, while nothing is on disk and no repository
-    exists on anyone's GitHub account. What is left after that is the
+    `--overlay` is parsed and probed, the preset is loaded and the places a write under `--home`
+    lands are asked, while nothing is on disk and no repository exists on anyone's GitHub
+    account. What is left after that is the
     work, and the one refusal that follows a write is the post-condition on a tree this run
     created.
     """
-    data, planned_overlay = _before_the_first_write(
-        preset,
-        home=home,
-        machine=machine,
-        project_root=project_root,
-        overlay=overlay,
-        yes=yes,
-    )
+    data, planned_overlay = _before_the_first_write(preset, home=home, overlay=overlay)
 
     # `home` is the root every write in this function lands under, the settings file and a
     # created overlay included. `home` is not a root this process was handed already
@@ -1051,20 +652,17 @@ def setup(
 
     deny_rules = [r for r in data.get("deny", {}).get("global", []) if isinstance(r, str)]
     retired = [r for r in data.get("deny", {}).get("retired", []) if isinstance(r, str)]
-    # **The `pluginConfigs` mirror is recomputed from the machine file, not from this run's own
-    # new keys.** `personal` above is empty on every run after the first, so the mirror was
-    # write-once: an owner who edited a personal value in the machine file — the documented way,
-    # `README.md`'s own "Written by: you, or `stayfixed setup`" — kept the preset's in
-    # `~/.claude/settings.json` for ever. The other answer the review offered was to stop
-    # writing the mirror at all; it is rejected because `pluginConfigs` is where Claude Code
-    # itself reads a plugin's `userConfig` answers, and this plugin's own manifest declares
-    # them, so dropping it would leave the harness reading nothing. The cost of this direction
-    # is stated where a reader will meet it: a value set in Claude Code's plugin-config UI is
-    # overwritten by the machine file on the next `setup`, because one file has to win and the
-    # machine file is the one every stayfixed reader reads.
+    # **`pluginConfigs` is filled from the machine file where it holds no value, and never
+    # overwritten.** It is where Claude Code reads a plugin's `userConfig` answers, and where its
+    # plugin-config screen writes the ones a person gives, so a value already there is the
+    # user's. The cost is stated where a reader will meet it: a personal value changed in the
+    # machine file after the first run does not reach `pluginConfigs`; changing it there, or
+    # removing it so the next `setup` fills it again, does.
     deny_written = _write_user_settings(home, deny_rules, read_personal(machine), retired=retired)
 
-    installed, install_notes = _install_plugins(data, _agents(data), home=home, runner=runner)
+    installed, install_notes = _install_plugins(
+        data, _agents(data), tuple(dict.fromkeys(plugins)), home=home, runner=runner
+    )
     notes = list(install_notes)
 
     cli_on_path = shutil.which("stayfixed") is not None
@@ -1076,10 +674,11 @@ def setup(
 
     overlay_root: Path | None = None
     if planned_overlay is not None:
-        overlay_root, note = _apply_overlay(
-            planned_overlay, project_root=project_root, runner=runner
-        )
+        previous = recorded_root(machine)
+        overlay_root, note = _apply_overlay(planned_overlay, runner=runner)
         notes.append(note)
+        if previous is not None and previous != overlay_root:
+            notes.append(REPLACED_ROOT.format(previous=quoted(str(previous))))
         write_machine(machine, personal={}, overlay_root=overlay_root, machine={})
 
     return SetupReport(

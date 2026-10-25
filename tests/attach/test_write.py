@@ -77,31 +77,9 @@ RULE = "Bash(uv run pytest:*)"
 ENTRY = {"type": "command", "command": "echo hello"}
 
 
-def _overlay_repository(overlay: Path, *, hooks_path: Path | None = None) -> Path:
-    """The overlay as what it actually is — a git repository — and where its hooks live.
-
-    `attach` asks `guards.hooks_dir` rather than assuming `.git/hooks`, so the fixture has to
-    be a repository for the question to have an answer. `hooks_path` sets `core.hooksPath`,
-    which is an ordinary global dotfiles setting and the arrangement the hardcoded path got
-    wrong: the scan reads as missing on every attach and `pre-commit install` is shelled out to
-    every time.
-    """
+def _overlay_repository(overlay: Path) -> None:
+    """The overlay as what it actually is — a git repository."""
     _git(overlay, "init", "-q", "-b", "main")
-    if hooks_path is None:
-        # Pinned LOCALLY, and this is not belt-and-braces. `hooks_dir` runs `git` under
-        # `gitenv.scrubbed_env()`, which keeps `HOME` deliberately — honouring the machine
-        # owner's global `core.hooksPath` is exactly what `attach` asks for — so a
-        # developer whose own `~/.gitconfig` sets one would have this fixture answer *their*
-        # directory and the case fail for a reason that is nothing to do with the code. `_git`
-        # pins only `GIT_CONFIG_GLOBAL`, which the separate `hooks_dir` subprocess never sees.
-        # Local config outranks global, so the fixture says what it means and production is
-        # untouched.
-        own = overlay / ".git" / "hooks"
-        _git(overlay, "config", "core.hooksPath", str(own))
-        return own
-    hooks_path.mkdir(parents=True, exist_ok=True)
-    _git(overlay, "config", "core.hooksPath", str(hooks_path))
-    return hooks_path
 
 
 def _overlay_grants(
@@ -1207,13 +1185,10 @@ def test_a_rule_the_overlay_never_granted_is_left_alone(tmp_path: Path) -> None:
     assert ledger(root).allow == (RULE,)
 
 
-def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init(
-    tmp_path: Path,
-) -> None:
-    # `attach` runs `pre-commit install` in the overlay if it is missing, and `overlay init` only
-    # covers the first machine: a second one clones an overlay initialised elsewhere and never runs
-    # `overlay init` again. Doing it twice is free; not doing it at all leaves the commit-time
-    # secret scan unarmed on exactly the machine that thinks it is set up.
+def test_attach_runs_no_program_in_the_overlay(tmp_path: Path) -> None:
+    # `pre-commit install` is `setup --overlay`'s, which makes the overlay: `attach` binds a
+    # repository to it and launches nothing in it, even where its secret scan is not installed.
+    # `doctor`'s `pre-commit` row is what tells the second machine.
     root, store, machine = _attachable(tmp_path)
     _overlay_repository(store.parents[2])
     (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
@@ -1224,8 +1199,8 @@ def test_the_secret_scan_is_installed_on_the_machine_that_never_ran_overlay_init
         machine=machine,
         runner=runner,
     )
-    assert ["pre-commit", "install"] in runner.calls
-    assert any("pre-commit" in note for note in attached.notes)
+    assert [argv for argv in runner.calls if argv[0] == "pre-commit"] == []
+    assert not any("pre-commit" in note for note in attached.notes)
 
 
 def test_a_record_with_no_remote_is_given_one_and_keeps_its_first_attach_date(
@@ -1412,83 +1387,6 @@ def test_a_settings_file_holding_a_number_past_the_parsers_reach_is_refused(tmp_
             machine=machine,
             runner=Recorder(),
         )
-
-
-def test_a_pre_commit_that_is_already_installed_is_not_run_again(tmp_path: Path) -> None:
-    root, store, machine = _attachable(tmp_path)
-    overlay = store.parents[2]
-    hooks = _overlay_repository(overlay)
-    (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
-    runner = Recorder()
-    attached = attach(
-        root,
-        store=store,
-        machine=machine,
-        runner=runner,
-    )
-    assert [argv for argv in runner.calls if argv[0] != "claude"] == []
-    # Nothing about the secret scan is said.
-    assert attached.notes == ()
-
-
-def test_a_hook_outside_dot_git_still_counts_as_installed(tmp_path: Path) -> None:
-    # The hook's directory is `git rev-parse --git-path hooks`, never `.git/hooks` and
-    # never `core.hooksPath` read by hand — the rule `docs/cli.md` states for `setup
-    # --git-hooks` and `guards.githooks.hooks_dir` implements. With `core.hooksPath` set, a
-    # hardcoded path finds the scan missing on EVERY attach and shells out to `pre-commit
-    # install` each time, on a machine where it is already armed.
-    root, store, machine = _attachable(tmp_path)
-    overlay = store.parents[2]
-    hooks = _overlay_repository(overlay, hooks_path=tmp_path / "dotfiles" / "hooks")
-    (overlay / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    (hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
-    runner = Recorder()
-    attached = attach(
-        root,
-        store=store,
-        machine=machine,
-        runner=runner,
-    )
-    assert [argv for argv in runner.calls if argv[0] != "claude"] == []
-    # Nothing about the secret scan is said.
-    assert attached.notes == ()
-
-
-def test_an_overlay_git_cannot_answer_about_is_a_note_and_never_a_traceback(
-    tmp_path: Path,
-) -> None:
-    # `hooks_dir` refuses when `git` cannot name the directory — an overlay that is not a
-    # repository at all is the cheapest such state. Every external binary is optional, so this
-    # is a note; and `pre-commit install` is NOT fired blind at a directory nobody could place
-    # a hook in.
-    root, store, machine = _attachable(tmp_path)
-    (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = Recorder()
-    attached = attach(
-        root,
-        store=store,
-        machine=machine,
-        runner=runner,
-    )
-    assert [argv for argv in runner.calls if argv[0] != "claude"] == []
-    assert any("hooks directory" in note for note in attached.notes)
-
-
-def test_a_pre_commit_that_cannot_run_is_a_note_and_never_a_traceback(tmp_path: Path) -> None:
-    # Every external binary is optional: a missing `pre-commit` is a reported finding, and the
-    # push-time scan the template ships still runs.
-    root, store, machine = _attachable(tmp_path)
-    _overlay_repository(store.parents[2])
-    (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = Recorder(answers={"pre-commit": Completed(127, "", "pre-commit could not be run")})
-    attached = attach(
-        root,
-        store=store,
-        machine=machine,
-        runner=runner,
-    )
-    assert any("did not run" in note for note in attached.notes)
 
 
 def _committed_ledger(root: Path, store: Path, **fields: object) -> None:
@@ -2219,25 +2117,6 @@ def test_the_exclude_block_hides_what_git_hid_and_gives_every_file_back(tmp_path
         if with_block != before | {"linked"} or after != held:
             wrong.append((held, sorted(before), sorted(with_block), after))
     assert wrong == []
-
-
-def test_what_pre_commit_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
-    # `pre-commit install`'s answer was quoted raw in the note.
-    #
-    # Mutation: `mutations/`'s "a subprocess's answer is quoted raw".
-    root, store, machine = _attachable(tmp_path)
-    _overlay_repository(store.parents[2])
-    (store.parents[2] / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    runner = Recorder(answers={"pre-commit": Completed(1, "", "boom\n::error::forged\x1b[2J")})
-    attached = attach(
-        root,
-        store=store,
-        machine=machine,
-        runner=runner,
-    )
-    said = " ".join(attached.notes)
-    assert "forged" in said
-    assert "\n::error::" not in said and "\x1b" not in said
 
 
 # Names a clone can commit that no directory under the overlay's `projects/` can carry: one a file

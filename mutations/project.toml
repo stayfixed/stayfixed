@@ -15,20 +15,6 @@ reddens = [
   "tests/overlay/test_template.py::test_the_template_ships_permissions_that_are_neither_granted_nor_pretended",
 ]
 
-# In the block led by `mutations/`'s "overlay init leaves the template's owner and author
-# placeholders": the overlay's marketplace validates only with an owner in it.
-[[mutation]]
-name = "the overlay template ships a marketplace with no owner"
-file = "src/stayfixed/templates/overlay/.claude-plugin/marketplace.json"
-before = """  "owner": {
-    "name": "your-account"
-  },
-"""
-after = ""
-reddens = [
-  "tests/overlay/test_template.py::test_the_overlay_ships_a_marketplace_and_manifests_the_harness_validates",
-]
-
 # --- the shipped data files: guards the external review proved shipped green (PR 12) ---
 #
 # Each mutates a file no type checker reads and no import reaches: a YAML workflow, a
@@ -270,22 +256,10 @@ reddens = [
 [[mutation]]
 name = "the overlay README stops counting the manifest"
 file = "src/stayfixed/templates/overlay/README.md"
-before = "`stayfixed overlay create` renders fifteen files here:"
-after = "`stayfixed overlay create` renders sixteen files here:"
+before = "`stayfixed setup --overlay <path>` renders twelve files here:"
+after = "`stayfixed setup --overlay <path>` renders thirteen files here:"
 reddens = [
   "tests/overlay/test_template.py::test_the_overlay_readme_counts_the_files_a_create_actually_leaves",
-]
-
-# The other half of that document: the right count over the wrong files. `hooks/hooks.json`
-# is the row that matters most, because it is indistinguishable from `common/claude/hooks.json`
-# by content — both are `{"hooks": {}}` — and the README is the only thing that tells them apart.
-[[mutation]]
-name = "the overlay README stops naming the hooks file"
-file = "src/stayfixed/templates/overlay/README.md"
-before = "| `hooks/hooks.json` | **this repository's own** hook entries as a plugin"
-after = "| `hooks/hooksfile.json` | **this repository's own** hook entries as a plugin"
-reddens = [
-  "tests/overlay/test_template.py::test_the_overlay_readme_accounts_for_every_file_a_create_leaves",
 ]
 
 # The template's pins are full-length shas and a sha rots in silence; the Dependabot file is the
@@ -866,16 +840,16 @@ before = "            raise Refusal(FORCE_OUTSIDE)"
 after = "            continue"
 reddens = ["tests/project/test_footprint_commands.py::test_a_force_path_outside_the_root_is_refused_by_rule"]
 
-# `uninstall`'s `ATTACHED` refusal. The attach ledger lives under `.stayfixed/local/`, so the count
-# of files kept out of git would still stop the real run; what this guard adds is the refusal's
-# remedy, and a dry run that refuses rather than reporting an attached repository as one it could
-# uninstall. The test asserts the exact sentence and an unchanged tree for both runs.
+# `uninstall` detaches an attached repository before it takes the scaffold back: the attach ledger,
+# the one record of the overlay's plugin and the allow rules attach placed, lives under
+# `.stayfixed/local/`, and without the detach it is counted as a file kept out of git and the run
+# refuses instead of finishing.
 [[mutation]]
-name = "an attached repository is counted as files kept out of git instead of being told to detach"
+name = "uninstall takes an attached repository for an unattached one"
 file = "src/stayfixed/project/uninstall.py"
-before = "    if _attached(root):"
-after = "    if False:"
-reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_refused_and_told_to_detach"]
+before = "    attached = _attached(root)"
+after = "    attached = False"
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_is_detached_and_then_uninstalled"]
 
 # `attach` keeps its ledger in the main checkout from every worktree, so a linked worktree's
 # uninstall asks the main checkout's.
@@ -884,7 +858,77 @@ name = "uninstall asks only this checkout for attach's ledger"
 file = "src/stayfixed/project/uninstall.py"
 before = "for checkout in (root, main))"
 after = "for checkout in (root,))"
-reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attached_repository_is_refused_too"]
+reddens = ["tests/project/test_uninstall.py::test_a_linked_worktree_of_an_attached_repository_detaches_the_main_checkout"]
+
+# Attached is the render's to say, which `attach` writes outside the work tree and `detach`
+# removes; the ledger alone is a file a clone can commit, and read as an attachment it had
+# `uninstall` run `detach` over the owner's untracked rule file and settings, in a fresh clone
+# and in one detached since, whose binding id outlives the `detach`.
+[[mutation]]
+name = "uninstall takes a committed ledger for an attachment"
+file = "src/stayfixed/project/uninstall.py"
+before = "        return binding_id is not None and fsops.is_dir(delivery_directory(binding_id))"
+after = "        return True"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_ledger_a_clone_committed_detaches_nothing",
+  "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
+]
+
+# The render's half alone: `detach` keeps the binding id, so a checkout attached once and detached
+# since still has one, and with the ledger a pull request commits after the `detach`, an id alone
+# read as an attachment had `uninstall` run `detach` over the owner's untracked rule file and
+# settings again.
+[[mutation]]
+name = "uninstall takes a binding id with no render for an attachment"
+file = "src/stayfixed/project/uninstall.py"
+before = "        return binding_id is not None and fsops.is_dir(delivery_directory(binding_id))"
+after = "        return binding_id is not None"
+reddens = ["tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing"]
+
+# `attach`'s ledger is left out of the count of what `.stayfixed/local/` keeps only where the
+# repository is attached and `detach` takes it first; left out everywhere, a ledger a clone
+# committed is counted nowhere, the run goes on past its one refusal before any write, removes the
+# scaffold, and stops part-way with the committed ledger still there.
+[[mutation]]
+name = "uninstall never counts attach's ledger among what it keeps"
+file = "src/stayfixed/project/uninstall.py"
+before = "    detaching = {ATTACH_LEDGER} if attached else set()"
+after = "    detaching = {ATTACH_LEDGER}"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_ledger_a_clone_committed_detaches_nothing",
+  "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
+]
+
+# Without `stayfixed.toml` only the scaffold's ledger goes, and `.stayfixed/` with it once it is
+# empty; on an attached repository that would take `attach`'s ledger, the one record of the
+# overlay's plugin and rules it placed, with the delivery still in place, so the run detaches
+# first, and its dry run writes nothing, the attachment included.
+[[mutation]]
+name = "uninstall without stayfixed.toml leaves the repository attached"
+file = "src/stayfixed/project/uninstall.py"
+before = "            if attached:\n                _detach(root, runner)\n"
+after = ""
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_without_its_stayfixed_toml_is_detached_before_its_ledger_goes[real]"]
+
+[[mutation]]
+name = "an uninstall dry run without stayfixed.toml detaches"
+file = "src/stayfixed/project/uninstall.py"
+before = "        if not dry_run:\n            if attached:"
+after = "        if True:\n            if attached:"
+reddens = ["tests/project/test_uninstall.py::test_an_attached_repository_without_its_stayfixed_toml_is_detached_before_its_ledger_goes[dry-run]"]
+
+# A plan that refuses stops the run before `detach`, so a refused report that still said the
+# repository was detached told the person `stayfixed detach` had run while the overlay's plugin and
+# rules were all in place; a refused dry run said it would, and the real run would not.
+[[mutation]]
+name = "a refused uninstall reports the repository detached"
+file = "src/stayfixed/project/uninstall.py"
+before = "        report = replace(report, detached=False)"
+after = "        pass"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching[real]",
+  "tests/project/test_uninstall.py::test_a_refused_uninstall_of_an_attached_repository_says_nothing_of_detaching[dry-run]",
+]
 
 # `uninstall` replans the write-once pass over the body the footprint pass leaves, so an untouched
 # footprint leaves only what was there before.
@@ -1130,13 +1174,40 @@ after = "        if not any(action.target in each for each in places.values()):"
 reddens = ["tests/project/test_ignored.py::test_a_paths_value_naming_another_artifact_s_preset_place_is_still_that_value_s_choice"]
 
 # Whether a failed `check-ignore` ran inside a repository is read off the disk, never asked of
-# the same `git`: a `rev-parse` that timed out beside it read as "no repository" and passed.
+# the same `git`: a `rev-parse` that timed out beside it read as "no repository" and passed with
+# nothing said.
 [[mutation]]
 name = "a guard whose git timed out reads as no repository"
 file = "src/stayfixed/project/ignored.py"
-before = "    if in_work_tree(root):\n        raise Refusal(UNANSWERED)"
-after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(UNANSWERED)"
-reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses[timed-out]"]
+before = "    if in_work_tree(root):\n        raise Refusal(DECLINED)"
+after = "    if git_run(root, \"rev-parse\", \"--is-inside-work-tree\")[0] == 0:\n        raise Refusal(DECLINED)"
+reddens = ["tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[timed-out-upgrade]"]
+
+# A `check-ignore` that gives no answer refuses like one that declines: a repository can choose
+# a timeout, since git reads every `.gitignore` along each path it is asked about, and a no-answer
+# that was only a note let a pulled commit append to, or delete, a git-ignored `.env`.
+[[mutation]]
+name = "a check-ignore that gives no answer lets the run write"
+file = "src/stayfixed/project/ignored.py"
+before = "    if in_work_tree(root):"
+after = "    if code != -1 and in_work_tree(root):"
+reddens = [
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[timed-out-upgrade]",
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[timed-out-uninstall]",
+]
+
+# Any other failure refuses too, because a repository can choose it: git answers a whole batch
+# holding a path inside a submodule with exit 128, and let through, that let a pulled commit write
+# past the guard to a git-ignored `.env` beside it.
+[[mutation]]
+name = "a check-ignore that declines lets the run write"
+file = "src/stayfixed/project/ignored.py"
+before = "        raise Refusal(DECLINED)"
+after = "        return"
+reddens = [
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[declined-upgrade]",
+  "tests/project/test_ignored.py::test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write[declined-uninstall]",
+]
 
 # Paths are compared for identity case-folded (`fsops.path_key`): on the default macOS and Windows
 # filesystems `claude.md` is `CLAUDE.md`. This entry and the three named for a case variant each put
@@ -3094,3 +3165,15 @@ reddens = [
   "tests/prove/test_javascript.py::test_a_debugger_wait_s_detail_says_it_waits_for_a_debugger",
 ]
 
+
+# `init`'s `picked:` list prints the adopted `stayfixed.toml`'s commit types, which no
+# grammar holds, so an escape sequence or `::error::` in one would reach the terminal and the CI
+# runner as written.
+[[mutation]]
+name = "init prints an adopted commit type as written"
+file = "src/stayfixed/project/commands.py"
+before = "        value = [printable(item, PICKED_WITHHELD) for item in value]"
+after = "        value = list(value)"
+reddens = [
+  "tests/project/test_init.py::test_a_commit_type_an_adopted_document_wrote_prints_only_inside_the_grammar",
+]

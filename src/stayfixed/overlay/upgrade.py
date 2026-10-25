@@ -49,7 +49,6 @@ from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
 from stayfixed.overlay.identity import require_overlay
 from stayfixed.overlay.layout import CAPABILITY_FILES, OVERLAY_FILES
-from stayfixed.overlay.naming import named_after, owner_of
 from stayfixed.overlay.template import retired, templates
 from stayfixed.scaffold import Plan, apply, plan, unlinks
 
@@ -60,8 +59,9 @@ from stayfixed.scaffold import Plan, apply, plan, unlinks
 # hand-written "fifteen" outlived the fifteenth file by exactly one release.
 NOT_AN_OVERLAY = (
     f"`stayfixed overlay upgrade --root` must name an overlay. It refreshes an overlay's own "
-    f"{len(OVERLAY_FILES)} files — both plugin manifests, the hooks file and a GitHub Actions "
-    f"workflow among them — so pointed at anything else it creates them there instead"
+    f"{len(OVERLAY_FILES)} files — its identity record, its secret scan's configuration and a "
+    f"GitHub Actions workflow among them — so pointed at anything else it creates them there "
+    f"instead"
 )
 
 
@@ -94,9 +94,6 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     removed file is one an action unlinks that was there before `apply` and is not after it; a
     removal whose file was already gone empties nothing, and the directories above it stay.
 
-    The three manifests are planned as `overlay init` names them (`naming.named_after`, whose
-    docstring says why).
-
     `decisions` is computed after `apply()` and names the two capability files unconditionally;
     it is a notice, not a gate. The module docstring says why that is safe here and what would
     make it unsafe.
@@ -106,7 +103,7 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     because a `Config` has to be complete, not because an overlay is a project.
     """
     require_overlay(root, because=NOT_AN_OVERLAY)
-    shipped = [*named_after(templates(), owner_of(root)), *retired()]
+    shipped = [*templates(), *retired()]
     planned = plan(root, preset_defaults(root.name), shipped)
     if not dry_run:
         present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]

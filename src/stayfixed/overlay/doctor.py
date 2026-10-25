@@ -37,6 +37,18 @@ if TYPE_CHECKING:
 # acting on: the overlay is where the notes live, and a recorded root that is not there breaks
 # the store as well as these two rows.
 NO_OVERLAY_RECORDED = "no overlay root is recorded on this machine"
+# The overlay root inside another repository's work tree, `{holder}` the directory holding that
+# `.git`, through `printed.quoted`. A warning: where the overlay lives is the owner's choice, and
+# `setup` records it anywhere, but a work tree that holds it is one another repository's merge can
+# write files into.
+NESTED = (
+    "the overlay root is inside the work tree of the repository at {holder}, which can put files "
+    "into it"
+)
+NESTED_REMEDY = (
+    "move the overlay to a directory no repository's checkout holds, and record it there with "
+    "`stayfixed setup --overlay <path>`"
+)
 # A third state: the machine file that would record the root could not be read
 # (`Context.overlay_root`'s `MachineUnread`). Saying "no overlay root is recorded" of it was false,
 # and the `preferences` row, red, names the file and its remedy, so this skip carries none.
@@ -85,9 +97,9 @@ def _overlay_absent(overlay: Path | MachineUnread | None) -> Row:
 def _pre_commit(context: Context) -> Row:
     """Whether the overlay's own secret scan is armed on **this** machine.
 
-    `overlay init` runs `pre-commit install` on the machine that created the overlay; a second
-    machine clones that overlay and never runs `init` again, so the machine that thinks it is
-    set up is exactly the one whose commit-time scan is not.
+    The hook lives in a clone's own `.git`, so each machine arms its own: `setup --overlay` runs
+    `pre-commit install` in every overlay it makes or records, and says so when it cannot. A
+    clone no `setup` recorded, or one recorded where `pre-commit` was missing, is what this finds.
     """
     from pathlib import Path
 
@@ -130,8 +142,12 @@ def _pre_commit(context: Context) -> Row:
 
 
 def _overlay_requires(context: Context) -> Row:
-    """Whether the stayfixed running satisfies the floor the overlay declares: the overlay's
-    requirement as the verdict it can be, since an overlay runs nothing and so cannot refuse to.
+    """Whether the stayfixed running satisfies the floor the overlay declares, and whether the
+    overlay lies where another repository can write into it.
+
+    The floor's verdict comes first, and one that finds something stands; otherwise an overlay
+    root inside another repository's work tree is a warning (`NESTED`). That is read off the disk,
+    a `.git` in a directory above the root, as `gitenv.in_work_tree` reads it, and runs no `git`.
 
     A row of its own, gated on a recorded overlay exactly as `pre-commit` is: the subject is
     this machine's overlay, not this project, so a `local-only` project on a machine that
@@ -139,18 +155,33 @@ def _overlay_requires(context: Context) -> Row:
     splits. The spec string is the owner's own and is printed as `requires_of`
     normalised it.
     """
+    import os
     from pathlib import Path
 
-    import stayfixed
-    from stayfixed import REPOSITORY_URL, fsops
-    from stayfixed.config.schema import OVERLAY_MODE
-    from stayfixed.doctor.api import OK, RED, SKIP, WARN, Row
-    from stayfixed.overlay.layout import PLUGIN_MANIFEST
-    from stayfixed.overlay.requires import requires_of, satisfies
+    from stayfixed import fsops
+    from stayfixed.doctor.api import OK, SKIP, WARN, Row
+    from stayfixed.printed import quoted
 
     overlay = context.overlay_root
     if not isinstance(overlay, Path) or not fsops.is_dir(overlay):
         return _overlay_absent(overlay)
+    row = _floor(overlay, context)
+    holder = next((above for above in overlay.parents if os.path.lexists(above / ".git")), None)
+    if holder is None or row.status not in (OK, SKIP):
+        return row
+    return Row(WARN, NESTED.format(holder=quoted(str(holder))), NESTED_REMEDY)
+
+
+def _floor(overlay: Path, context: Context) -> Row:
+    """The floor the overlay declares, against the stayfixed running: the overlay's requirement
+    as the verdict it can be, since an overlay runs nothing and so cannot refuse to."""
+    import stayfixed
+    from stayfixed import REPOSITORY_URL
+    from stayfixed.config.schema import OVERLAY_MODE
+    from stayfixed.doctor.api import OK, RED, SKIP, WARN, Row
+    from stayfixed.overlay.layout import IDENTITY_RECORD
+    from stayfixed.overlay.requires import requires_of, satisfies
+
     spec = requires_of(overlay)
     if spec is None:
         return Row(SKIP, "the overlay declares no stayfixed requirement", "")
@@ -159,8 +190,8 @@ def _overlay_requires(context: Context) -> Row:
     if verdict is None:
         return Row(
             WARN,
-            "the overlay's stayfixed.requires is not a >=X.Y.Z form this stayfixed reads",
-            f"write stayfixed.requires in the overlay's {PLUGIN_MANIFEST} as >=X.Y.Z",
+            "the overlay's `requires` is not a >=X.Y.Z form this stayfixed reads",
+            f"write `requires` in the overlay's {IDENTITY_RECORD} as >=X.Y.Z",
         )
     if not verdict:
         # **Red only when this project consults the overlay**, which is the reason this

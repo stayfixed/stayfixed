@@ -69,7 +69,7 @@ def test_a_current_footprint_says_so_and_exits_zero(tmp_path: Path) -> None:
         "dry_run",
         "moved",
         "held",
-        "footprint",
+        "scaffold",
         "writes",
         "skipped",
         "orphans",
@@ -307,7 +307,7 @@ def test_uninstall_lists_what_it_leaves_and_exits_zero(tmp_path: Path) -> None:
     code, data = _run(root, tmp_path, "uninstall")
     assert code == 0, data["summary"]
     assert data["left"] == ["docs/roadmap.md"]
-    assert {"dry_run", "footprint", "once", "left", "orphans", "note", "kept_locally"} <= set(data)
+    assert {"dry_run", "scaffold", "once", "left", "orphans", "note", "kept_locally"} <= set(data)
     assert data["summary"].splitlines()[0] == "uninstalled:"
     assert data["kept_config"] is False  # `init` wrote this one, and it goes
 
@@ -329,7 +329,7 @@ def test_a_file_a_later_pass_deletes_is_never_reported_left_in_place(
     code, data = _run(root, tmp_path, "uninstall", *(("--dry-run",) if dry_run else ()))
     assert code == 0, data["summary"]
     assert data["left"] == [] and "left in place" not in data["summary"]
-    assert "skip_modified  AGENTS.md  (retired and hand-edited)" in data["footprint"]
+    assert "skip_modified  AGENTS.md  (retired and hand-edited)" in data["scaffold"]
     assert agents.exists() is dry_run
 
 
@@ -385,7 +385,7 @@ def test_a_removal_that_fails_part_way_exits_2_keeps_what_was_done_and_a_rerun_f
 @needs_git
 @pytest.mark.parametrize(
     ("command", "refusing"),
-    [("upgrade", "footprint"), ("uninstall", "footprint"), ("uninstall", "once")],
+    [("upgrade", "scaffold"), ("uninstall", "scaffold"), ("uninstall", "once")],
     ids=["upgrade-footprint", "uninstall-footprint", "uninstall-once"],
 )
 def test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_nothing(
@@ -402,7 +402,7 @@ def test_a_plan_that_refuses_exits_one_heads_the_report_refused_and_changes_noth
     removed its files. The matching case reddens.
     """
     root = initialised(tmp_path)
-    if refusing == "footprint":
+    if refusing == "scaffold":
         agents = root / "AGENTS.md"
         agents.write_text(
             agents.read_text(encoding="utf-8").replace("<!-- stayfixed:harness:begin -->\n", ""),

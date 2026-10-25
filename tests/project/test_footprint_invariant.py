@@ -72,7 +72,7 @@ from stayfixed.scaffold import digest
 from stayfixed.scaffold.local import LOCAL_ARTIFACTS, LocalDigests
 from tests.gitfixture import git, needs_git
 from tests.project.repos import DOCUMENT, MOVED_OFF_DOCS, forge_record, repository
-from tests.runners import LsRemote
+from tests.runners import LsRemote, Recorder
 
 Command = Literal["init", "upgrade", "uninstall", "assess", "adopt-promote"]
 Report = InitReport | UpgradeReport | UninstallReport
@@ -363,7 +363,7 @@ def _run(
         )
     if command == "upgrade":
         return upgrade(root, machine=machine, runner=LsRemote(), dry_run=dry_run, force=())
-    return uninstall(root, machine=machine, dry_run=dry_run, force=())
+    return uninstall(root, machine=machine, dry_run=dry_run, force=(), runner=Recorder())
 
 
 def _refusals(report: Report) -> list[str]:
