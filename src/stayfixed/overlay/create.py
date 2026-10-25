@@ -8,10 +8,11 @@ git repository of it, and touches no network. A template and not a fork: a fork'
 bound to the upstream network and cannot be made private, and an overlay that is not private is
 the one outcome this whole area exists to prevent.
 
-`finish` is what every overlay `setup` makes runs next: a generated one has the identity record
-named after its owner, and every one gets the commit-time secret scan. Generating is idempotent —
-`gh` may give up on the clone with the repository already created, so a second run is the
-ordinary case rather than the exception — and so is `finish`.
+`finish` is what every overlay `setup` makes runs next: it installs the commit-time secret scan,
+and writes nothing into the tree, so the identity record stays the bytes the template shipped and
+`overlay upgrade` can refresh it. Generating is idempotent — `gh` may give up on the clone with
+the repository already created, so a second run is the ordinary case rather than the exception —
+and so is `finish`.
 
 Each way a tree is made writes its identity record last (`layout.OVERLAY_FILES`), into nothing or
 an empty directory (`fsops.vacant`), and every refusal after `gh repo create` ends in `UNRECORDED`.
@@ -65,12 +66,6 @@ TEMPLATE_PRECONDITION = (
     f"and from {PUBLISHED_TEMPLATE} otherwise; `stayfixed setup --overlay <path>` renders the "
     f"same tree at a path with no network call"
 )
-# What the shipped identity record holds where an owner and a repository name go, and what
-# `finish` replaces with a generated overlay's own. `templates/overlay/stayfixed-overlay.toml`
-# carries the same two lines, and `tests/overlay/test_create.py` renders the template and fails
-# when the two drift apart.
-PLACEHOLDER_OWNER = 'owner = "your-account"'
-PLACEHOLDER_NAME = 'name = "stayfixed-private"'
 # What `gh repo view` prints on stderr, whatever the name, when the repository does not exist or
 # this token cannot see it (measured against gh 2.101.0, `stayfixed/definitely-missing-xyz`):
 # `GraphQL: Could not resolve to a Repository with the name '<slug>'. (repository)`, exit 1. It is
@@ -110,7 +105,7 @@ def target_root(root: Path, owner: str, name: str) -> tuple[Path, str]:
     mixed-case GitHub login is ordinary: validating the raw value refused `OctoCat` while another
     command folded it and accepted it, and the refusal said "is not one path segment" about a value
     that plainly is one. Folding is safe: GitHub logins are case-insensitive, and the folded value
-    is what reaches the slug, the remote and the identity record alike.
+    is what reaches the slug and the remote alike.
     """
     account = segment("owner", owner.strip().lower())
     segment("name", name)
@@ -168,7 +163,7 @@ def _initialise_repository(target: Path, runner: Runner) -> tuple[str, str]:
     # `symbolic-ref` names the unborn branch on every version.
     remote = (
         "`git remote add origin <the private repository>` and `git push -u origin main` once you "
-        f"have created one on GitHub, and write its owner and name into {IDENTITY_RECORD}"
+        "have created one on GitHub"
     )
     step = "git init"
     done = runner.launch(["git", "init"], target)
@@ -338,7 +333,7 @@ def _unrecorded(slug: str, target: Path) -> str:
 
 
 def _arrived(target: Path, slug: str, note: str, template: str) -> Created:
-    """The tree a clone left at `target`, or, before `finish` writes in it, a refusal that it is
+    """The tree a clone left at `target`, or, before `finish` runs in it, a refusal that it is
     not an overlay."""
     fault = overlay_fault(target)
     if fault is not None:
@@ -346,42 +341,7 @@ def _arrived(target: Path, slug: str, note: str, template: str) -> Created:
     return Created(target, (note,), template)
 
 
-def finish(
-    root: Path, *, runner: Runner, owner: str | None = None, name: str = ""
-) -> tuple[str, ...]:
-    """Name a generated overlay after its owner, and install the commit-time secret scan.
-
-    `owner` and `name` go into the identity record in place of the template's placeholders, and
-    only there: a value the owner wrote is a line this does not match, and a record that cannot be
-    read or written is named and passed over, since the tree is already there and recorded either
-    way. A rendered overlay has no owner to name (`owner` is `None`) and keeps the placeholders,
-    which the render's note tells the owner to replace. Both are one path segment, so neither needs
-    quoting inside a TOML string.
-    """
-    notes: list[str] = []
-    if owner is not None:
-        notes.append(_named(root, owner, name))
-    notes.append(_install_secret_scan(root, runner))
-    return tuple(notes)
-
-
-def _named(root: Path, owner: str, name: str) -> str:
-    try:
-        text = fsops.read_regular_text(root / IDENTITY_RECORD, newline="")
-        named = text.replace(PLACEHOLDER_OWNER, f'owner = "{owner}"', 1).replace(
-            PLACEHOLDER_NAME, f'name = "{name}"', 1
-        )
-        if named == text:
-            return f"{IDENTITY_RECORD} already names its owner and repository"
-        fsops.write_within(root, IDENTITY_RECORD, named)
-    except UnicodeDecodeError:
-        return f"{IDENTITY_RECORD} could not be named after {owner}/{name} (it is not UTF-8)"
-    except OSError as exc:
-        return f"{IDENTITY_RECORD} could not be named after {owner}/{name} ({fsops.said(exc)})"
-    return f"named the overlay after {owner}/{name} in {IDENTITY_RECORD}"
-
-
-def _install_secret_scan(root: Path, runner: Runner) -> str:
+def finish(root: Path, *, runner: Runner) -> str:
     """Install the commit-time secret scan, or say why it is not installed.
 
     The overlay's secret scanning runs gitleaks twice and this is one of the two; the other is

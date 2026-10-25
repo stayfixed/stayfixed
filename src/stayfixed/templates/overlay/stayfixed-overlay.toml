@@ -1,11 +1,2 @@
-# What makes this tree a stayfixed overlay: `stayfixed setup --overlay` records it, and
-# `stayfixed overlay upgrade` refreshes it, only where this file names layout 1.
-#
-# `owner` is the account the overlay belongs to and `name` its repository, which `stayfixed setup
-# --overlay create:<owner>/<name>` writes. `requires` is the stayfixed this layout needs:
-# `stayfixed doctor` reports when the stayfixed running does not satisfy it, and a session in a
-# bound repository says so once at its start.
-owner = "your-account"
-name = "stayfixed-private"
 requires = ">=0.1.0"
 layout = 1

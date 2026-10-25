@@ -23,12 +23,11 @@ description: Configure the machine for stayfixed — the preset, the personal pa
    - **They want one on this machine only for now**: `stayfixed setup --preset recommended
      --overlay /path/that/does/not/exist` (or an empty directory they can write) renders the
      shipped template there with no network call, makes it a git repository, installs the secret
-     scan and records it. Relay the note on giving it a remote and filling in `owner` and `name` in
-     its record, and the note that it replaced the overlay the machine recorded before, when there
-     is one.
+     scan and records it. Relay the note on giving it a remote, and the note that it replaced the
+     overlay the machine recorded before, when there is one.
    - **They want one on GitHub**: `stayfixed setup --preset recommended --overlay create:<owner>/stayfixed-private`
      creates it on their GitHub account, from their own published template or the publisher's
-     public one, names its record after them and records it in one step. Creating a repository
+     public one, and records it in one step. Creating a repository
      on their account needs their word first, so **ask before running it**: no flag stands in
      for it, and nothing about the overlay happens unless `--overlay` is named at all. A file at
      `~/<name>`, or a directory there holding something that is not an overlay, is refused before

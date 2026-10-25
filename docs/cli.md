@@ -2199,9 +2199,9 @@ a run that removed what it planned) and `kept_config`.
 to `.`, and pointed at a directory that is not one this command used to create the overlay's
 files there — `.gitignore` and `.github/workflows/scan.yml` among them — report them as work done
 and exit `0`. An overlay is a tree whose identity record, `stayfixed-overlay.toml` at its root,
-parses as TOML and holds `layout = 1`; the record also holds `owner`, `name` and `requires`, the
-floor `stayfixed doctor` and a session's first lines read. Anything else is refused (`2`) with
-nothing written, and the refusal names the file and its four keys: an overlay made before the
+parses as TOML and holds `layout = 1`; the record also holds `requires`, the floor `stayfixed
+doctor` and a session's first lines read, and nothing else. Anything else is refused (`2`) with
+nothing written, and the refusal names the file and its two keys: an overlay made before the
 record shipped carries plugin manifests instead, and no code migrates it, so its owner adds the
 record by hand.
 
@@ -2209,7 +2209,11 @@ Brings an overlay up to date with the template a newer stayfixed ships. It is th
 and not a second copy of it: a skeleton file you have not touched is refreshed, one you have
 edited is skipped and named, and the oracle is the digest `.stayfixed/manifest.json` recorded when
 the file was written. An overlay is where your own rules live, so a silent overwrite here would
-destroy the only copy of something.
+destroy the only copy of something. An overlay `setup --overlay create:` generated has no
+`.stayfixed/manifest.json` (the template repository carries none), and an identity record you
+added by hand has no entry in one, so neither is recorded as stayfixed's: a file there that differs
+from this release's is skipped as `exists and stayfixed did not write it`, and only the retired
+files below are removed by the bytes a release shipped.
 
 **Two files are always listed, however their hashes compare.**
 `common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries
@@ -2725,8 +2729,7 @@ in a note naming the root it replaced, and how to record that one again. A leadi
 `HOME` names, as in the machine file's `[overlay] root`; where `HOME` is empty or relative, such a
 path is refused (`2`) rather than read against `/` or the directory the command ran from. The render is made a git repository with `git init`
 and `git symbolic-ref HEAD refs/heads/main` (not `git init -b main`, which a `git` older than 2.28
-refuses), on `main` with no remote, and the note says how to give it one and to write its owner and
-name into its identity record; a `git` that cannot run, or runs and fails, is a note and not a
+refuses), on `main` with no remote, and the note says how to give it one; a `git` that cannot run, or runs and fails, is a note and not a
 failure, since the tree is there. `--overlay create:<owner>/<name>` asks GitHub for a private
 repository generated from a template — a template and not a fork, since a fork's visibility is
 bound to the upstream network and cannot be made private — and clones it to `<home>/<name>`. It
@@ -2750,8 +2753,7 @@ the name it holds, so every refusal from then on says so and gives the remedy th
 When `gh repo create` itself fails, the command stops there with its exit code and stderr; when it reports success and the clone leaves nothing at
 `<home>/<name>`, `gh repo view` is asked whether the repository exists, and the clone is retried once, after a
 ten-second wait when it does — a wait carried on reasoning rather than a measurement, since the one
-trial run against it did not reproduce the race. The generated overlay's identity record is then
-named after `<owner>/<name>` where it holds the template's placeholders. A rendered or generated
+trial run against it did not reproduce the race. A rendered or generated
 overlay gets the commit-time secret scan with `pre-commit install`; a missing `pre-commit` is a
 note. What `gh`, `git` and `pre-commit` print is quoted in these notes as it came, except that one
 holding anything but a plain path is escaped, and one longer than 120 characters is cut to its
@@ -2781,8 +2783,7 @@ repository `git init` makes there, and, through `pre-commit install`, its `pre-c
 `--overlay create:<owner>/<name>` writes, through `gh repo create <owner>/<name> --private
 --template <template> --clone`, a new private repository on GitHub under `<owner>` and its clone
 at `<home>/<name>` — or, when that clone leaves nothing there, a clone from the retried `git clone`
-— then the `owner` and `name` lines of its `stayfixed-overlay.toml`, and its `pre-commit` git hook.
-Run again over the overlay it made, it generates nothing, and the record already names its owner.
+— then its `pre-commit` git hook. Run again over the overlay it made, it generates nothing.
 
 **Exits** `0` on success, and `2` on each of these refusals:
 

@@ -34,7 +34,7 @@ And these are the machinery. Leave them alone unless you know why:
 
 | Path | What it holds |
 |---|---|
-| `stayfixed-overlay.toml` | what makes this tree a stayfixed overlay: `owner` (your account) and `name` (this repository's), which `stayfixed setup --overlay create:<owner>/<name>` writes and you write into an overlay rendered at a path, `requires` (the stayfixed this layout needs, which `stayfixed doctor` and a session's first lines read, above) and `layout = 1`. `stayfixed setup --overlay` records a tree only when it carries this file, and `stayfixed overlay upgrade` refreshes only such a tree. |
+| `stayfixed-overlay.toml` | what makes this tree a stayfixed overlay: `requires` (the stayfixed this layout needs, which `stayfixed doctor` and a session's first lines read, above) and `layout = 1`, and nothing of yours, so `stayfixed overlay upgrade` can raise the floor. `stayfixed setup --overlay` records a tree only when it carries this file, and `stayfixed overlay upgrade` refreshes only such a tree. |
 | `.pre-commit-config.yaml` | the gitleaks hook, pinned at a revision: the commit-time half of "no credential enters this repository". `stayfixed setup --overlay` installs it when it makes this overlay. |
 | `.github/workflows/scan.yml` | the push-time half, with every action pinned to a commit sha. |
 | `.github/dependabot.yml` | what keeps those pins from rotting: a monthly grouped pull request that moves each sha and the version comment beside it. You read it before you merge it. |

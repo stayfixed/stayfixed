@@ -179,6 +179,19 @@ reddens = [
   "tests/overlay/test_requires.py::test_a_fifo_at_the_identity_record_is_unreadable_to_its_readers_without_waiting",
 ]
 
+# The record is the one carrier of the floor, and `overlay upgrade` refreshes it only while it holds
+# the bytes the ledger recorded. `setup` wrote an owner and a name into it, and the record was then
+# skipped as hand-edited by every later upgrade, so the floor never rose again.
+[[mutation]]
+name = "setup writes into the identity record it rendered"
+file = "src/stayfixed/overlay/create.py"
+before = "def finish(root: Path, *, runner: Runner) -> str:"
+after = '''def finish(root: Path, *, runner: Runner) -> str:
+    fsops.write_within(root, IDENTITY_RECORD, fsops.read_regular_text(root / IDENTITY_RECORD) + 'owner = "me"\n')'''
+reddens = [
+  "tests/overlay/test_upgrade.py::test_an_overlay_set_up_at_a_path_takes_a_raised_floor_with_nothing_for_its_owner_to_edit",
+]
+
 # --- setup and overlay: the structural refusal above the first write (PR 12 review) ---
 
 # A defect that had a test named for it and no mutation: `claude plugin install superpowers@obra` on

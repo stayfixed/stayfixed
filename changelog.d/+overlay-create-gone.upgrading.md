@@ -7,7 +7,7 @@ write, it renders the shipped template there with no network call, makes it a gi
 and `setup` says so when the root it records replaces the one the machine configuration held. The
 note that the commit-time secret scan is not installed names the overlay's path quoted, as the rest
 of the report does.
-`--overlay create:<owner>/<name>` generates the overlay on GitHub, names its identity record after
-`<owner>/<name>` and installs the secret scan, as before. The overlay template repository is
+`--overlay create:<owner>/<name>` generates the overlay on GitHub and installs the secret scan, as
+before. The overlay template repository is
 published with `uv run python scripts/publish_template.py --owner <account> [--yes]` from a
 stayfixed checkout, a maintainer's script rather than a command stayfixed ships.

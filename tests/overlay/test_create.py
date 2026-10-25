@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
@@ -121,11 +120,11 @@ def test_finish_installs_pre_commit_and_says_so_when_it_cannot(tmp_path: Path) -
     # `pre-commit` is a reported finding, never a traceback — the binary is optional.
     created = render(tmp_path / "stayfixed-private", runner=Recorder())
     missing = Recorder(answers={"pre-commit": Completed(127, "", "not found")})
-    notes = finish(created.root, runner=missing)
+    note = finish(created.root, runner=missing)
     # "did not run" and not merely "pre-commit": the success note names the tool too, so the
     # weaker match held on either outcome and this half asserted nothing.
-    assert any("`pre-commit install` did not run" in note for note in notes)
-    assert not any("installed the commit-time" in note for note in notes)
+    assert "`pre-commit install` did not run" in note
+    assert "installed the commit-time" not in note
 
 
 def test_the_secret_scan_note_prints_the_overlay_root_quoted(tmp_path: Path) -> None:
@@ -134,27 +133,9 @@ def test_the_secret_scan_note_prints_the_overlay_root_quoted(tmp_path: Path) -> 
     # drove the terminal and a CI runner's log.
     root = tmp_path / "x\x1b]0;owned\x07"
     root.mkdir()
-    notes = finish(root, runner=Recorder(answers={"pre-commit": Completed(127, "", "not found")}))
-    said = " ".join(notes)
+    said = finish(root, runner=Recorder(answers={"pre-commit": Completed(127, "", "not found")}))
     assert "\x1b" not in said and "\x07" not in said, said
     assert quoted(str(root)) in said, said
-
-
-def test_finish_names_a_generated_overlay_after_its_owner_in_its_record(tmp_path: Path) -> None:
-    # The template ships placeholders where the owner and the repository go, and `finish` puts a
-    # generated overlay's own there, as `overlay init` once suffixed its manifests. Rendered from
-    # the real template, so a placeholder that drifted from `create.PLACEHOLDER_OWNER` or
-    # `PLACEHOLDER_NAME` leaves the record unnamed and this reddens. A second run changes
-    # nothing, and a value the owner wrote is not a placeholder and stays.
-    created = render(tmp_path / "ov", runner=Recorder())
-    notes = finish(created.root, runner=Recorder(), owner="octo", name="mine")
-    record = tomllib.loads((created.root / IDENTITY_RECORD).read_text(encoding="utf-8"))
-    assert (record["owner"], record["name"], record["layout"]) == ("octo", "mine", 1)
-    assert f"named the overlay after octo/mine in {IDENTITY_RECORD}" in notes
-    again = finish(created.root, runner=Recorder(), owner="other", name="theirs")
-    assert f"{IDENTITY_RECORD} already names its owner and repository" in again
-    record = tomllib.loads((created.root / IDENTITY_RECORD).read_text(encoding="utf-8"))
-    assert (record["owner"], record["name"]) == ("octo", "mine")
 
 
 def test_the_wait_before_the_retry_is_spent_only_on_the_race(tmp_path: Path) -> None:
@@ -220,8 +201,7 @@ def test_a_mixed_case_owner_is_folded_before_it_is_judged(tmp_path: Path) -> Non
         answers={"gh repo view octocat/stayfixed-overlay-template": A_TEMPLATE}, on_call=_populate
     )
     generate("OctoCat", "stayfixed-private", root=remote, runner=runner)
-    # And the fold reaches the argv, not just the validator: GitHub is case-insensitive about a
-    # login, but the value is also what the identity record names, and that is not.
+    # And the fold reaches the argv, not just the validator.
     assert "octocat/stayfixed-private" in _the_create_call(runner)
     assert runner.calls[0][3] == "octocat/stayfixed-overlay-template", "the probe folds too"
 
@@ -532,7 +512,6 @@ def test_a_local_overlay_is_a_git_repository_on_main_with_no_remote(tmp_path: Pa
     message = " ".join(created.notes)
     assert "git remote add origin <the private repository>" in message
     assert "git push -u origin main" in message
-    assert f"write its owner and name into {IDENTITY_RECORD}" in message
 
 
 def test_a_local_overlay_carries_a_real_repository_on_main(tmp_path: Path) -> None:

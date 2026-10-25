@@ -84,9 +84,7 @@ def _seed_overlay(path: Path) -> None:
     template writes it, without rendering the whole template — enough for a fixture to read as a
     real overlay's root."""
     path.mkdir(parents=True, exist_ok=True)
-    (path / IDENTITY_RECORD).write_text(
-        'owner = "your-account"\nname = "stayfixed-private"\nlayout = 1\n', encoding="utf-8"
-    )
+    (path / IDENTITY_RECORD).write_text('requires = ">=0.1.0"\nlayout = 1\n', encoding="utf-8")
 
 
 def test_setup_writes_the_machine_file_and_the_deny_rules(tmp_path: Path) -> None:

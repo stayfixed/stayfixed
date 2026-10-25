@@ -547,7 +547,7 @@ def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
                 "nothing was recorded in the machine configuration"
             ) from exc
         root = fsops.resolved(rendered.root)
-        notes = (*rendered.notes, *finish(root, runner=runner))
+        notes = (*rendered.notes, finish(root, runner=runner))
         return root, f"rendered the overlay at {quoted(str(root))}: {'; '.join(notes)}"
     if planned.create is None:
         require_overlay(planned.root, because=_RECORDING)
@@ -558,7 +558,7 @@ def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
     # The one value finished and recorded, as the phase planned it: what the clone's path
     # resolves to now, so a link that arrived there since is followed and not recorded.
     root = fsops.resolved(created.root)
-    finished = "; ".join(finish(root, runner=runner, owner=owner, name=name))
+    finished = finish(root, runner=runner)
     if created.template is None:
         # `generate` found a populated destination and generated nothing (no `gh` call at all),
         # which is what re-running `setup --overlay create:` does after the first run, so there is

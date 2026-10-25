@@ -512,7 +512,7 @@ def test_a_rendered_overlay_carries_its_identity_record_and_no_plugin_manifest(
     # file it fired as a plugin, went. What names it an overlay is its identity record.
     rendered = _render_into(tmp_path)
     record = tomllib.loads((rendered / IDENTITY_RECORD).read_text(encoding="utf-8"))
-    assert set(record) == {"owner", "name", "requires", "layout"}, record
+    assert set(record) == {"requires", "layout"}, record
     assert record["layout"] == 1
     for gone in (".claude-plugin", ".codex-plugin", "hooks"):
         assert not (rendered / gone).exists(), gone
@@ -528,7 +528,7 @@ def test_a_tree_without_the_identity_record_is_no_overlay_and_is_told_what_to_ad
     rendered = _render_into(tmp_path)
     (rendered / IDENTITY_RECORD).unlink()
     assert overlay_fault(rendered) == NO_RECORD.format(root=quoted(str(rendered)))
-    for named in (IDENTITY_RECORD, "owner = ", "name = ", "requires = ", "layout = 1"):
+    for named in (IDENTITY_RECORD, "requires = ", "layout = 1"):
         assert named in NO_RECORD, named
 
 

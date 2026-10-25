@@ -41,10 +41,7 @@ SEGMENT = PROJECT_NAME
 LAYOUT = 1
 # What the record holds, said in every refusal of a tree without a readable one, so the owner of an
 # overlay made before it shipped can add it in one step.
-_KEYS = (
-    f'`owner = "<account>"`, `name = "<repository>"`, `requires = ">=X.Y.Z"` (the stayfixed it '
-    f"needs) and `layout = {LAYOUT}`"
-)
+_KEYS = f'`requires = ">=X.Y.Z"` (the stayfixed it needs) and `layout = {LAYOUT}`'
 # `{root}` is the directory judged, through `printed.quoted`.
 NO_RECORD = (
     f"{{root}} carries no {IDENTITY_RECORD}, the record that names a tree a stayfixed overlay; "
