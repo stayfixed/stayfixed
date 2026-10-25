@@ -445,13 +445,14 @@ def _answers(parser: argparse.ArgumentParser) -> None:
     from stayfixed.config.schema import (
         BRANCH_NAME,
         BRANCH_RULE,
+        COMMIT_TYPE,
+        COMMIT_TYPE_RULE,
         MEMORY_MODES,
         NAME_RULE,
         PROJECT_NAME,
     )
     from stayfixed.harnesses import HARNESSES
     from stayfixed.profiles import shipped
-    from stayfixed.project.questions import COMMIT_TYPE, COMMIT_TYPE_RULE
     from stayfixed.project.templates import LOCAL_ELIGIBLE
 
     answers = parser.add_argument_group(
