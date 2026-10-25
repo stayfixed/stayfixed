@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
@@ -9,9 +10,10 @@ import pytest
 from stayfixed import jsonobject
 from stayfixed.errors import Failure, Refusal
 from stayfixed.overlay.api import finish, generate, render
-from stayfixed.overlay.create import RETRY_WAIT_SECONDS, _is_template
+from stayfixed.overlay.create import RETRY_WAIT_SECONDS, UNRECORDED, _is_template
 from stayfixed.overlay.layout import IDENTITY_RECORD
-from stayfixed.runner import Completed
+from stayfixed.printed import quoted
+from stayfixed.runner import TIMED_OUT, Completed
 from tests.parserlimits import LONG_NUMBER, NESTED
 from tests.runners import Recorder
 
@@ -279,6 +281,53 @@ def test_a_gh_that_ran_and_declined_quotes_its_own_answer(tmp_path: Path) -> Non
         ["gh", "repo", "view"],
         ["gh", "repo", "create"],
     ]
+
+
+def _cut_short(argv: list[str], cwd: Path) -> None:
+    """Stand in for a `gh repo create --clone` whose clone was cut short: a tree with no record."""
+    if argv[:3] == ["gh", "repo", "create"]:
+        (cwd / argv[3].split("/")[-1] / "common").mkdir(parents=True)
+
+
+@pytest.mark.parametrize(
+    ("created", "on_call"),
+    [
+        pytest.param(Completed(TIMED_OUT, "", ""), None, id="timed-out"),
+        pytest.param(Completed(1, "", "Name already exists on this account"), None, id="declined"),
+        pytest.param(Completed(0, "", ""), None, id="nothing-arrived"),
+        pytest.param(Completed(0, "", ""), _cut_short, id="cut-short"),
+    ],
+)
+def test_every_refusal_after_gh_repo_create_says_the_repository_may_exist_and_how_to_record_it(
+    tmp_path: Path, created: Completed, on_call: Callable[[list[str], Path], None] | None
+) -> None:
+    # Once `gh repo create` has run, the repository may exist on GitHub whatever `gh` answered: a
+    # `gh` that hung, one that declined after creating it, a clone that never arrived or one cut
+    # short. Each said "nothing was created", or "delete it and run again", whose next run then
+    # failed on the name GitHub already held. Every one ends in the one remedy that works.
+    runner = Recorder(
+        answers={THE_OWNERS_PROBE: A_TEMPLATE, "gh repo create": created}, on_call=on_call
+    )
+    with pytest.raises((Failure, Refusal)) as stopped:
+        generate("octo", "stayfixed-private", root=tmp_path, runner=runner, wait=lambda _: None)
+    message = str(stopped.value)
+    remedy = UNRECORDED.format(
+        slug="octo/stayfixed-private", path=quoted(str(tmp_path / "stayfixed-private"))
+    )
+    assert message.endswith(remedy), message
+    assert "nothing was created" not in message, message
+
+
+def test_an_empty_destination_nothing_arrived_in_is_not_taken_for_a_clone(tmp_path: Path) -> None:
+    # An empty directory at the destination is cloned into, so its being there says nothing about
+    # whether a clone arrived: only something in it does. Read as "a tree arrived", it skipped the
+    # retried clone and was refused as a tree that is not an overlay.
+    (tmp_path / "stayfixed-private").mkdir()
+    runner = Recorder(answers={THE_OWNERS_PROBE: A_TEMPLATE})
+    with pytest.raises(Failure) as failed:
+        generate("octo", "stayfixed-private", root=tmp_path, runner=runner)
+    assert ["git", "clone"] in [argv[:2] for argv in runner.calls]
+    assert "produced no tree" in str(failed.value)
 
 
 # --- which template `create:` generates from ----------------------------------------------------

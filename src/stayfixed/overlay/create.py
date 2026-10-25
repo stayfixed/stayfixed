@@ -12,6 +12,14 @@ the one outcome this whole area exists to prevent.
 named after its owner, and every one gets the commit-time secret scan. Generating is idempotent —
 `gh` may give up on the clone with the repository already created, so a second run is the
 ordinary case rather than the exception — and so is `finish`.
+
+**A tree is an overlay exactly when its identity record parses** (`identity.overlay_fault`), so
+each way a tree is made writes the record last, and a tree cut short is never one: the render
+writes it after every other file of the template (`layout.OVERLAY_FILES` ends with it), and a
+clone checks it out last, since git checks a tree out in path order and the record's path sorts
+after every other the template ships. An empty directory holds nothing to keep, and is made into
+one as nothing at all is (`fsops.vacant`). Once `gh repo create` has run, the repository may
+exist whatever `gh` answered, so every refusal after it ends in `UNRECORDED` (`_unrecorded`).
 """
 
 from __future__ import annotations
@@ -23,12 +31,12 @@ from pathlib import Path
 
 from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
-from stayfixed.errors import Failure
+from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import json_object
 from stayfixed.overlay.identity import overlay_fault, segment
-from stayfixed.overlay.layout import IDENTITY_RECORD, OVERLAY_FILES
+from stayfixed.overlay.layout import IDENTITY_RECORD
 from stayfixed.overlay.template import templates
-from stayfixed.printed import answered
+from stayfixed.printed import answered, quoted
 from stayfixed.runner import NOT_FOUND, TIMED_OUT, Completed, Runner
 from stayfixed.scaffold import apply, plan
 
@@ -76,6 +84,14 @@ PLACEHOLDER_NAME = 'name = "stayfixed-private"'
 # shorter "Could not resolve", which `Could not resolve host` shares. A named string, not a cap:
 # it bounds nothing and no shipped file changes with it.
 NOT_FOUND_ANSWER = "Could not resolve to a Repository"
+# What every refusal that can follow `gh repo create` ends with, `{slug}` the repository and
+# `{path}` the destination through `printed.quoted`: once `gh` has run, the repository may exist
+# whatever it answered, and a second `create:` fails on the name GitHub already holds, so the
+# remedy that works is to clone it there and record it.
+UNRECORDED = (
+    "{slug} may now exist on GitHub, and nothing was recorded in the machine configuration; once "
+    "{path} holds a clone of it, record it with `stayfixed setup --overlay {path}`"
+)
 
 
 @dataclass(frozen=True)
@@ -114,10 +130,9 @@ def render_template(root: Path, name: str) -> Path:
     template repository's clone."""
     target = root / name
     # **Everything that can refuse runs before anything is created**, and the order is
-    # load-bearing rather than tidy. A render that failed after writing the identity record
-    # (`templates()` on a stayfixed installed without the tree, a refused path) would leave behind
-    # a tree `create:` takes for an overlay already there, and never create the repository at all.
-    # A refusal has to cost nothing on disk.
+    # load-bearing rather than tidy: a refusal costs nothing on disk. A write that fails part-way
+    # (a full disk) leaves a tree with no identity record, which is written last, and so no tree
+    # that `setup` or `create:` takes for an overlay already there.
     #
     # `plan` reads and decides and writes nothing, and it is happy with a root that does not
     # exist yet: `Manifest.read` finds no file and every artifact reads as absent.
@@ -127,7 +142,7 @@ def render_template(root: Path, name: str) -> Path:
     # the instance directory is asked for as the parent of the first file that goes into it —
     # through the same walk, rather than with the `Path.mkdir(parents=True)` this project does
     # not allow into a module that puts files into a repository.
-    fsops.mkdirs_within(root, f"{name}/{OVERLAY_FILES[0]}")
+    fsops.mkdirs_within(root, f"{name}/{IDENTITY_RECORD}")
     apply(target, planned)
     return target
 
@@ -151,8 +166,8 @@ def _initialise_repository(target: Path, runner: Runner) -> tuple[str, str]:
 
     A `git` that cannot run is a note and not a failure: the tree is on disk by now, so refusing
     would hide a directory that exists, and the note says the one command that finishes the job.
-    `target` was not there before the render (`setup` renders only at a path that names nothing),
-    so there is no repository of the owner's for `git init` to meet.
+    `target` was empty or not there before the render (`setup` renders only at a path
+    `fsops.vacant` answers for), so there is no repository of the owner's for `git init` to meet.
     """
     rendered = "rendered from the shipped template; no network call was made"
     # `git init` and then the branch, and not `git init -b main`: `-b` arrived in git 2.28, and an
@@ -256,9 +271,9 @@ def generate(
     # that has to ask before it calls (`setup`'s `--overlay create:`); see `target_root`.
     target, owner = target_root(root, owner, name)
     if overlay_fault(target) is None:
-        # Creating the overlay is idempotent by rule: a second run finds the overlay the first
-        # one cloned and must not create it again. Anything else already there is `setup`'s to
-        # refuse, before this is called.
+        # Creating the overlay is idempotent by rule: a second run finds the overlay the first one
+        # cloned and must not create it again. Anything else already there but an empty directory
+        # is `setup`'s to refuse, before this is called.
         return Created(target, (f"{target} already exists and was left alone",))
     template = _template_for(owner, root=root, runner=runner)
     slug = f"{owner}/{name}"
@@ -275,30 +290,26 @@ def generate(
         ],
         root,
     )
-    # Whether a tree arrived, and not whether it is an overlay: what arrived is `setup`'s to judge,
-    # and its refusal of one that is not says the repository now exists.
-    if fsops.exists(target):
-        return Created(target, (f"created {slug} from {template}",), template)
-    if created.code in (NOT_FOUND, TIMED_OUT):
-        # `gh` could not be launched at all, or hung until the seam gave up. Neither is a state two
-        # further subprocesses and a ten-second wait can learn anything about: `gh repo view` would
-        # ask the same absent binary a second question, get the same answer, and the failure would
-        # then name GitHub for a fault that is this machine's. stayfixed does not install `gh`, so
-        # its absence is the machine owner's to fix: a reported finding that names it, never a
-        # traceback.
+    if not fsops.vacant(target):
+        return _arrived(target, slug, f"created {slug} from {template}", template)
+    if created.code == NOT_FOUND:
+        # `gh` could not be launched, so nothing ran on GitHub, and `gh repo view` would ask the
+        # same absent binary a second question and name GitHub for a fault that is this machine's.
+        # stayfixed does not install `gh`, so its absence is the machine owner's to fix: a
+        # reported finding that names it, never a traceback.
         raise Failure(
             f"`gh repo create {slug} …` could not be run ({answered(created)}), so nothing was "
             f"created and nothing was cloned. Install `gh` and authenticate it, or render the "
             f"overlay locally: {TEMPLATE_PRECONDITION}"
         )
     if created.code != 0:
-        # `gh` ran and declined. Its own stderr is the cause — a missing template repository, an
-        # expired token, a name already taken — and it is quoted rather than replaced by a
-        # guess. The clone is still retried below only when `gh` *succeeded* and nothing
-        # arrived, which is the one shape the race can take.
+        # `gh` ran and declined, or hung until the seam gave up. Its own stderr is the cause — a
+        # missing template repository, an expired token, a name already taken — and it is quoted
+        # rather than replaced by a guess. The clone is retried below only when `gh` *succeeded*
+        # and nothing arrived, which is the one shape the race can take.
         raise Failure(
-            f"`gh repo create {slug} …` exited {created.code} ({answered(created)}), so no tree "
-            f"arrived at {target}. {TEMPLATE_PRECONDITION}"
+            f"`gh repo create {slug} …` {_ended(created)} ({answered(created)}), so no tree "
+            f"arrived at {target}. {TEMPLATE_PRECONDITION}. {_unrecorded(slug, target)}"
         )
 
     # `gh` reported success and nothing arrived. Which of the two failures it was decides whether
@@ -312,23 +323,37 @@ def generate(
     # is not proof of absence — a rate limit or an expired token answers the same — and one fast
     # failure is cheaper than refusing to try.
     cloned = runner.launch(["git", "clone", "--", f"git@github.com:{slug}.git", name], root)
-    if fsops.exists(target):
-        return Created(
-            target, (f"cloned {slug}, generated from {template}, on the second attempt",), template
-        )
+    if not fsops.vacant(target):
+        note = f"cloned {slug}, generated from {template}, on the second attempt"
+        return _arrived(target, slug, note, template)
     raise Failure(
         f"{slug} produced no tree at {target}: `gh repo create --clone` reported success and "
         f"left nothing, and the "
         + ("retried" if raced else "one further")
         + f" `git clone` exited {cloned.code} ({answered(cloned)}). "
         + (
-            "GitHub reports the repository exists, so generation may still be running — wait and "
-            "clone it by hand"
+            "GitHub reports the repository exists, so generation may still be running"
             if raced
             else f"`gh repo view` did not confirm the repository exists ({answered(view)}); "
             f"check `gh auth status`. {TEMPLATE_PRECONDITION}"
         )
+        + f". {_unrecorded(slug, target)}"
     )
+
+
+def _unrecorded(slug: str, target: Path) -> str:
+    """`UNRECORDED` for `slug` cloned to `target`: what every refusal after `gh repo create` ends
+    with."""
+    return UNRECORDED.format(slug=slug, path=quoted(str(target)))
+
+
+def _arrived(target: Path, slug: str, note: str, template: str) -> Created:
+    """The tree a clone left at `target`, or a refusal saying it is not an overlay, before
+    `finish` writes in it, and that the repository may now exist."""
+    fault = overlay_fault(target)
+    if fault is not None:
+        raise Refusal(f"{fault}. {_unrecorded(slug, target)}")
+    return Created(target, (note,), template)
 
 
 def finish(

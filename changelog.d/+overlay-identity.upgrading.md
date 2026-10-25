@@ -6,3 +6,6 @@ without the record, and no code migrates an existing overlay: add `stayfixed-ove
 root by hand, holding `owner = "<account>"`, `name = "<repository>"`, `requires = ">=0.1.0"` and
 `layout = 1`, and move the floor your `.claude-plugin/plugin.json` declared under
 `stayfixed.requires` into `requires`. The old manifests can then be deleted; nothing reads them.
+If you published your own overlay template (`<account>/stayfixed-overlay-template`) with an earlier
+release, add the record to it as well: `stayfixed setup --overlay create:` generates from it, and a
+clone that carries no record is refused after GitHub has created the repository.

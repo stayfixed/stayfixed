@@ -42,7 +42,7 @@ CORE_TO_DELIVERY = (
     (
         "setup/run.py",
         "stayfixed.overlay.api",
-        frozenset({"finish", "generate", "overlay_fault", "render", "require_overlay"}),
+        frozenset({"finish", "generate", "render", "require_overlay"}),
     ),
     ("project/uninstall.py", "stayfixed.attach.api", frozenset({"detach"})),
 )

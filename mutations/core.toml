@@ -6283,3 +6283,15 @@ after = "    if False:"
 reddens = [
   "tests/attach/test_write.py::test_attach_from_a_bare_repositorys_worktree_cannot_tell_its_main_checkout_and_installs_nothing",
 ]
+
+# In the block led by `mutations/`'s "setup records a created overlay at its link and not where it
+# leads": a link at a created overlay's destination, dangling or not, is something there, which
+# `fsops.vacant` answers, and never a destination this run clones into.
+[[mutation]]
+name = "setup takes a dangling link at a created overlay's destination for no destination"
+file = "src/stayfixed/fsops.py"
+before = "        return not exists(path) and not is_symlink(path)"
+after = "        return not exists(path)"
+reddens = [
+  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything",
+]

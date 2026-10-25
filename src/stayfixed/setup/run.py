@@ -54,10 +54,11 @@ plugin is actually installed under everywhere the preset's own `setup` runs.
 `_before_the_first_write` — above the machine file, the settings merge and the plugin installs,
 and for `create:` above `gh repo create` itself:
 
-* **an existing path must be an overlay**, which is `overlay.api.require_overlay`: a tree whose
-  identity record names layout 1. `identity`'s own docstring is honest that a repository can still
-  commit such a record: it stops the accidents, a mistyped path or somebody else's tree.
-* **a `create:` destination must be one `gh` can clone into**: not there, or the overlay an
+* **a path holding something must be an overlay**, which is `overlay.api.require_overlay`: a tree
+  whose identity record names layout 1. A path holding nothing (`fsops.vacant`: not there, or an
+  empty directory) is rendered into, so a mistyped path is a new overlay and not a refusal, and
+  the run that records a root other than the one the machine file held says so (`REPLACED_ROOT`).
+* **a `create:` destination must be one `gh` can clone into**: vacant, or the overlay an
   earlier run made. Its place is `home/<name>`, knowable from the arguments
   (`overlay.api.target_root`), so a file there, or a directory holding anything but an overlay, is
   refused before `gh repo create` makes a repository on the owner's account that nothing would
@@ -84,6 +85,7 @@ from pathlib import Path
 from typing import Any
 
 from stayfixed import REPOSITORY_URL, __version__, fsops
+from stayfixed.config.overlay import overlay_root as recorded_root
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import utf_8_name
 from stayfixed.harnesses import BYTE_ORDER_MARK, lenient_settings
@@ -123,10 +125,6 @@ _RECORDING = (
     "rendered, because this path becomes the machine's trust anchor: every `stayfixed attach` on "
     "this machine reads rules and notes out of it"
 )
-_CREATED = (
-    "the repository was created and cloned, and nothing was recorded in the machine "
-    "configuration; look at what arrived, then record it with `stayfixed setup --overlay <path>`"
-)
 # What `create:` says of a destination it cannot clone into, `{destination}` through
 # `printed.quoted`: asked before `gh` is, so nothing exists on GitHub when either is said.
 DESTINATION_NOT_A_DIRECTORY = (
@@ -136,7 +134,13 @@ DESTINATION_NOT_A_DIRECTORY = (
 DESTINATION_NOT_AN_OVERLAY = (
     "{destination} is a directory that is not an overlay, so `create:` would clone the new "
     "repository over what is there, and nothing was created on GitHub; move it, or name another "
-    "repository — and if an earlier run's clone was cut short there, delete it and run again"
+    "repository"
+)
+# What `setup` notes when it records an overlay root other than the one the machine file held,
+# `{previous}` through `printed.quoted`: a mistyped `--overlay` path is rendered, not refused.
+REPLACED_ROOT = (
+    "the machine configuration recorded the overlay at {previous}, and records this one now; "
+    "`stayfixed setup --overlay {previous}` records that one again"
 )
 # What `--overlay <path>` says of a path that is not there and cannot be rendered, `{path}` and
 # `{parent}` through `printed.quoted`.
@@ -458,11 +462,12 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
         # Refuses a name that is not one path segment, and answers where the tree would land —
         # both without creating anything, which is the whole point of asking here.
         destination, account = target_root(home, owner, name)
-        # What is there already, decided before any `gh` call: nothing, which this run makes; the
-        # overlay an earlier run made, which `generate` leaves alone; or anything else — a file, a
-        # link to nowhere, a directory holding something that is not an overlay — which the clone
-        # would meet only after `gh repo create` had made a repository nothing then records.
-        if fsops.exists(destination) or fsops.is_symlink(destination):
+        # What is there already, decided before any `gh` call: nothing or an empty directory, which
+        # this run clones into; the overlay an earlier run made, which `generate` leaves alone; or
+        # anything else — a file, a link to nowhere, a directory holding something that is not an
+        # overlay — which the clone would meet only after `gh repo create` had made a repository
+        # nothing then records.
+        if not fsops.vacant(destination):
             shown = quoted(str(destination))
             if not fsops.is_dir(destination):
                 raise Refusal(DESTINATION_NOT_A_DIRECTORY.format(destination=shown))
@@ -477,12 +482,12 @@ def _requested_overlay(overlay: str | None, *, home: Path) -> _Overlay | None:
     _recordable(candidate)
     # Through `fsops`, which raises for a path it cannot ask about (a directory above it nobody may
     # search), so that is the floor's refusal and never read as "not there".
-    if not fsops.exists(candidate) and not fsops.is_symlink(candidate):
-        # Not there: the shipped template is rendered at it, so the directory above it has to be
-        # one this user can make it in, asked here rather than met by the render after the
-        # machine file is written.
+    if fsops.vacant(candidate):
+        # Not there, or an empty directory: the shipped template is rendered into it, so the
+        # directory its files are made in has to be one this user can write, asked of a file in
+        # it here rather than met by the render after the machine file is written.
         parent = candidate.parent
-        if not fsops.is_dir(parent) or not fsops.creatable(candidate):
+        if not fsops.is_dir(parent) or not fsops.creatable(candidate / "file"):
             raise Refusal(
                 NO_PLACE_TO_RENDER.format(path=quoted(str(candidate)), parent=quoted(str(parent)))
             )
@@ -502,11 +507,11 @@ def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
     derives `permitted_roots` from that record, so the last thing to touch the tree before it
     becomes the trust anchor asks again.
 
-    The created branch's refusal says the repository exists. It has to: the owner now has a
-    private repository on GitHub that this run made, and the report is discarded on a refusal,
-    so nothing else would ever tell them.
+    The created branch's refusals are `generate`'s, after `gh repo create`, and each says the
+    repository may exist and how to record it: the report is discarded on a refusal, so nothing
+    else would ever tell the owner.
     """
-    from stayfixed.overlay.api import finish, generate, overlay_fault, render, require_overlay
+    from stayfixed.overlay.api import finish, generate, render, require_overlay
 
     if planned.render:
         try:
@@ -527,15 +532,9 @@ def _apply_overlay(planned: _Overlay, *, runner: Runner) -> tuple[Path, str]:
     owner, name = planned.create
     destination = planned.destination if planned.destination is not None else planned.root
     created = generate(owner, name, root=destination.parent, runner=runner)
-    # The one value judged, finished and recorded, as the phase planned it: what the clone's
-    # path resolves to now, so a link that arrived there since is followed and not recorded.
+    # The one value finished and recorded, as the phase planned it: what the clone's path
+    # resolves to now, so a link that arrived there since is followed and not recorded.
     root = fsops.resolved(created.root)
-    # Before `finish`, which writes in the tree; this refusal has to say the repository exists.
-    fault = overlay_fault(root)
-    if fault is not None:
-        raise Refusal(
-            f"{fault}. {owner}/{name} was created and cloned to {quoted(str(root))}, but {_CREATED}"
-        )
     finished = "; ".join(finish(root, runner=runner, owner=owner, name=name))
     if created.template is None:
         # `generate` found a populated destination and generated nothing (no `gh` call at all),
@@ -559,9 +558,9 @@ def _before_the_first_write(
     its own words, and the first refusal ends the run. The steps, in order:
 
     1. **What `--overlay` names** (`_requested_overlay`): a spec without both halves, a name that
-       is not one path segment, a root the machine file cannot hold; for an existing path, a tree
-       that is not an overlay; for one that names nothing, a directory above it this user cannot
-       create it in; and for `create:`, a destination `gh` could not clone into.
+       is not one path segment, a root the machine file cannot hold; for a path holding something,
+       a tree that is not an overlay; for one holding nothing, a directory this user cannot render
+       it in; and for `create:`, a destination `gh` could not clone into.
     2. **The preset** (`load_preset`): a mistyped `--preset`. It used to come one line after the
        home tree had been created for it.
     3. **Where a write under `--home` lands** (`_check_home_usable`): the settings file's
@@ -651,8 +650,11 @@ def setup(
 
     overlay_root: Path | None = None
     if planned_overlay is not None:
+        previous = recorded_root(machine)
         overlay_root, note = _apply_overlay(planned_overlay, runner=runner)
         notes.append(note)
+        if previous is not None and previous != overlay_root:
+            notes.append(REPLACED_ROOT.format(previous=quoted(str(previous))))
         write_machine(machine, personal={}, overlay_root=overlay_root, machine={})
 
     return SetupReport(

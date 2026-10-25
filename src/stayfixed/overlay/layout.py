@@ -36,10 +36,11 @@ IDENTITY_RECORD = "stayfixed-overlay.toml"
 PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
 PRE_COMMIT_HOOK = "pre-commit"
 
-# Every file `templates/overlay/` ships, in one fixed order. The list and the tree are two
-# statements of one thing: `tests/overlay/test_template.py` asserts each way round, so a file
-# deleted from the tree and a file added to it without a line here are both caught rather than
-# one of them.
+# Every file `templates/overlay/` ships, in the order a render writes them. The list and the tree
+# are two statements of one thing: `tests/overlay/test_template.py` asserts each way round, so a
+# file deleted from the tree and a file added to it without a line here are both caught rather than
+# one of them. The identity record is last, because a tree is an overlay exactly when it parses: a
+# render cut short before it is never one.
 # The two files an overlay carries that can grant a capability, and the reason `overlay upgrade`
 # has a decision list at all: an upgrade diffs these and asks about them "regardless of hash",
 # because a hash match is not consent for a permission or a hook entry. Named once, unpacked
@@ -49,7 +50,6 @@ PRE_COMMIT_HOOK = "pre-commit"
 CAPABILITY_NAMES = (f"{COMMON_CLAUDE}/permissions.json", f"{COMMON_CLAUDE}/hooks.json")
 
 OVERLAY_FILES = (
-    IDENTITY_RECORD,
     f"{COMMON_MEMORY}/_README.md",
     *CAPABILITY_NAMES,
     f"{COMMON_CODEX}/common.rules",
@@ -59,6 +59,7 @@ OVERLAY_FILES = (
     ".github/dependabot.yml",
     ".gitignore",
     "README.md",
+    IDENTITY_RECORD,
 )
 
 CAPABILITY_FILES = CAPABILITY_NAMES

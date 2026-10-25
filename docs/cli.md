@@ -2709,9 +2709,11 @@ failed call is a reported note, never a failure.
 
 **The overlay is touched only when `--overlay` names an answer.** It is the one entry for an
 overlay, in three forms. `--overlay <path>` naming an overlay records its root. `--overlay <path>`
-naming nothing renders the shipped template there, with no network call:
-the directory above it has to be one you can create it in, and a path whose parent is missing or
-not writable is refused before the first write. The render is made a git repository with `git init`
+naming nothing, or an empty directory, renders the shipped template there, with no network call:
+the directory it is made in has to be one you can write, and a path whose parent is missing or
+not writable is refused before the first write. So a mistyped path is not refused: it is rendered
+at and recorded, and a run that records a root other than the one the machine file held says so
+in a note naming the root it replaced, and how to record that one again. The render is made a git repository with `git init`
 and `git symbolic-ref HEAD refs/heads/main` (not `git init -b main`, which a `git` older than 2.28
 refuses), on `main` with no remote, and the note says how to give it one and to write its owner and
 name into its identity record; a `git` that cannot run, or runs and fails, is a note and not a
@@ -2727,12 +2729,14 @@ be whoever owns that name there. Any other failure of that question — an expir
 error, a `gh` that is not installed or hung, an answer that is not the JSON asked for — stops the
 command with `gh`'s own message and creates nothing (`1`). What is at `<home>/<name>` already is
 decided before any of that, before the first write and before `gh` is asked anything: nothing,
-which this run makes; the overlay an earlier run made, which is left alone and nothing is
-generated; or anything else — a file, a link to nowhere, a directory that is not an overlay, an
-empty one included — which is refused (`2`), since the clone would meet it only after `gh repo
-create` had made a repository nothing then records. A directory an earlier run's clone left cut
-short is one of those: delete it and run again. When `gh repo create` itself fails, the command stops
-there with its exit code and stderr; when it reports success and the clone leaves nothing at
+or an empty directory, which this run clones into; the overlay an earlier run made, which is left
+alone and nothing is generated; or anything else — a file, a link to nowhere, a directory holding
+something that is not an overlay — which is refused (`2`), since the clone would meet it only
+after `gh repo create` had made a repository nothing then records. Once `gh repo create` has run,
+the repository may exist on GitHub whatever `gh` answered, and a second `create:` would fail on
+the name it holds, so every refusal from then on says so and gives the remedy that works: once
+`<home>/<name>` holds a clone of it, record it with `stayfixed setup --overlay <home>/<name>`.
+When `gh repo create` itself fails, the command stops there with its exit code and stderr; when it reports success and the clone leaves nothing at
 `<home>/<name>`, `gh repo view` is asked whether the repository exists, and the clone is retried once, after a
 ten-second wait when it does — a wait carried on reasoning rather than a measurement, since the one
 trial run against it did not reproduce the race. The generated overlay's identity record is then
@@ -2743,9 +2747,12 @@ holding anything but a plain path is escaped, and one longer than 120 characters
 first 120 and its length.
 Naming `create:` is the request, and no flag stands in front of it. Every path is validated
 **before the first write** — before the machine file, the settings merge and the plugin installs,
-and for `create:` before `gh repo create` runs on anybody's account. An existing path must carry
-the identity record `stayfixed-overlay.toml`, parsing as TOML and holding `layout = 1`, which is
-what `setup` renders; the refusal of a tree without it names the file and its keys. Where the
+and for `create:` before `gh repo create` runs on anybody's account. A path holding something must
+carry the identity record `stayfixed-overlay.toml`, parsing as TOML and holding `layout = 1`, which
+is what `setup` renders; the refusal of a tree without it names the file and its keys. A tree is an
+overlay exactly when that record parses, and each way one is made writes it last: the render after
+every other file, and a clone in path order, where the record's path sorts last. So a render or a
+clone cut short is never taken for an overlay. Where the
 overlay lives is yours to choose and `setup` refuses no place for it; `stayfixed doctor`'s
 `overlay-requires` row warns when another repository's work tree holds it, since that repository
 can put files into it. Each path is judged and recorded resolved, so the record does not follow a
@@ -2757,8 +2764,8 @@ it, once for the preset and again for the overlay root `--overlay` records;
 commands it runs for each plugin `--plugin` names, on each harness with a declared marketplace (`claude plugin marketplace add` and
 `claude plugin install`, `codex plugin marketplace add` and `codex plugin add`), the marketplace
 registrations and installed plugins those commands write into each harness's own configuration.
-`--overlay <path>` naming an overlay writes nothing in it; it is only recorded. Naming nothing, it
-writes the directory with every file of the template plus `.stayfixed/manifest.json`, the
+`--overlay <path>` naming an overlay writes nothing in it; it is only recorded. Naming nothing or an
+empty directory, it writes the directory with every file of the template plus `.stayfixed/manifest.json`, the
 repository `git init` makes there, and, through `pre-commit install`, its `pre-commit` git hook.
 `--overlay create:<owner>/<name>` writes, through `gh repo create <owner>/<name> --private
 --template <template> --clone`, a new private repository on GitHub under `<owner>` and its clone
@@ -2770,9 +2777,9 @@ Run again over the overlay it made, it generates nothing, and the record already
 
 - `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
 - a refused `--overlay`: a path that names nothing under a directory that is missing or that you
-  cannot create it in, an existing path that is not an overlay, a `create:` destination that is
-  there and is not the overlay an earlier run made, or a path that is not UTF-8 text and so cannot
-  be recorded in the machine file;
+  cannot create it in, a path holding something that is not an overlay, a `create:` destination
+  that holds something and is not the overlay an earlier run made, or a path that is not UTF-8 text
+  and so cannot be recorded in the machine file;
 - a `--home` that cannot take what this run writes under it, naming the directory you cannot write
   into, asked only where a write lands: the one the settings file is made in (its directory when
   it is there, the nearest directory above it while it is not); and for `create:`, the one the
@@ -2805,8 +2812,8 @@ and where a write under `--home` lands. Every one of those refusals happens befo
 **with one exception**: for
 `--overlay create:<owner>/<name>`, "not an overlay" is a check on the tree that arrived, so it runs
 after the repository has been created on GitHub and cloned — along with the machine file, the
-settings merge and the plugin installs. That refusal says so, and names the repository and where it
-was cloned to, because nothing else would. Everything else `create:` can be refused for — a
+settings merge and the plugin installs. That refusal, like every one after `gh repo create`, says
+the repository may now exist, and how to record it, because nothing else would. Everything else `create:` can be refused for — a
 malformed spec, a name that is not one path segment, a destination that holds something else, a
 `<home>` you cannot write into, or one the machine file could not record — still happens before
 `gh` is run at all.

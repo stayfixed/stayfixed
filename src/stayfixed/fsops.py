@@ -257,6 +257,18 @@ def is_symlink(path: Path) -> bool:
     return mode is not None and stat.S_ISLNK(mode)
 
 
+def vacant(path: Path) -> bool:
+    """Whether nothing is at `path`, or an empty directory is: what a clone or a render goes into.
+    A directory that cannot be listed is not known to be empty, and is not vacant."""
+    if not is_dir(path):
+        return not exists(path) and not is_symlink(path)
+    try:
+        with os.scandir(path) as entries:
+            return next(entries, None) is None
+    except OSError:
+        return False
+
+
 def linked_directory(path: Path) -> Path | None:
     """The directory a symbolic link at `path` leads its file into, or `None` where `path` is not
     one or that cannot be told: what a failed write through the link names, since the write went

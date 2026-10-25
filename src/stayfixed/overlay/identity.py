@@ -2,14 +2,16 @@
 
 **What an overlay is, for the purpose of recording one.** A tree whose identity record,
 `stayfixed-overlay.toml` at its root (`layout.IDENTITY_RECORD`), parses and names layout 1: the
-file the shipped template writes and the one thing every overlay carries. It replaced the plugin
-manifests an overlay carried while it was a plugin of its own; an overlay made before the record
-shipped is refused with the record to add named in full, since no code migrates one.
+file the shipped template writes and the one thing every overlay carries, written last by each way a
+tree is made (`create`), so a tree cut short is never one. It replaced the plugin manifests an
+overlay carried while it was a plugin of its own; an overlay made before the record shipped is
+refused with the record to add named in full, since no code migrates one.
 
 It is a *structural* probe and not a security boundary: a repository that wants to look like an
-overlay can commit the record. What it buys is that the ordinary accidents stop — a mistyped
-path, a project directory, the stayfixed checkout, somebody else's repository — before `setup`
-records the tree or `overlay upgrade` writes the template into it.
+overlay can commit the record. What it buys is that a tree holding something else — a project
+directory, the stayfixed checkout, somebody else's repository, a render cut short — is neither
+recorded by `setup` nor written into by `overlay upgrade`. It stops no mistyped path that names
+nothing: `setup` renders an overlay there, and says so when the root it records replaces another.
 
 **Nothing a repository authored is quoted back.** The record's bytes come from a directory this
 process was pointed at, and a repository is untrusted input (principle 5), so the refusal says

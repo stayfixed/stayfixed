@@ -297,6 +297,13 @@ def test_no_file_in_the_tree_is_undeclared() -> None:
     assert present == set(OVERLAY_FILES)
 
 
+def test_the_identity_record_is_the_last_file_a_render_writes_and_a_clone_checks_out() -> None:
+    # A tree is an overlay exactly when its record parses, so the record comes last both ways a
+    # tree is made, and one cut short is never an overlay: a render writes in this order, and git
+    # checks a tree out in path order, in which the record's path has to sort after every other.
+    assert OVERLAY_FILES[-1] == IDENTITY_RECORD == max(OVERLAY_FILES)
+
+
 def test_no_retired_file_is_one_the_template_ships() -> None:
     # `overlay upgrade` plans a retired file's removal beside the shipped files' refresh, under
     # the same id. A name in both would be refreshed and removed by one run, and the tree would

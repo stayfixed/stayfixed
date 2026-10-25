@@ -242,7 +242,7 @@ reddens = [
 [[mutation]]
 name = "setup asks about the create: destination after GitHub"
 file = "src/stayfixed/setup/run.py"
-before = "        if fsops.exists(destination) or fsops.is_symlink(destination):"
+before = "        if not fsops.vacant(destination):"
 after = "        if False:"
 reddens = [
   "tests/setup/test_setup.py::test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called[a-file]",
@@ -380,7 +380,7 @@ reddens = [
 [[mutation]]
 name = "overlay create --template asks GitHub about a `gh` that could not run"
 file = "src/stayfixed/overlay/create.py"
-before = "    if created.code in (NOT_FOUND, TIMED_OUT):"
+before = "    if created.code == NOT_FOUND:"
 after = "    if False:"
 reddens = [
   "tests/overlay/test_create.py::test_a_gh_that_cannot_be_run_at_creation_is_named_as_the_cause_and_costs_no_more_calls",
@@ -910,7 +910,8 @@ reddens = [
 
 # A link at `<home>/<name>` is the repository's to retarget, and its target is not: `create:`
 # records what `--overlay <path>` records, the destination resolved, and a link there, dangling or
-# not, is a destination that is there, not one this run makes.
+# not, is a destination that is there, not one this run makes (the entry for that half is in the
+# group of `fsops`, which answers it).
 [[mutation]]
 name = "setup records a created overlay at its link and not where it leads"
 file = "src/stayfixed/setup/run.py"
@@ -918,15 +919,6 @@ before = "    root = fsops.resolved(created.root)"
 after = "    root = created.root"
 reddens = [
   "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_link_is_recorded_where_it_leads",
-]
-
-[[mutation]]
-name = "setup takes a dangling link at a created overlay's destination for no destination"
-file = "src/stayfixed/setup/run.py"
-before = "        if fsops.exists(destination) or fsops.is_symlink(destination):"
-after = "        if fsops.exists(destination):"
-reddens = [
-  "tests/setup/test_setup.py::test_a_created_overlays_destination_that_is_a_dangling_link_is_refused_before_anything",
 ]
 
 # `--overlay`'s path, resolved through a link a repository commits, is spelled in the repository's
@@ -1161,3 +1153,37 @@ file = "src/stayfixed/setup/run.py"
 before = "    existing_deny = [r for r in existing_deny if r not in retired]"
 after = "    existing_deny = list(existing_deny)"
 reddens = ["tests/setup/test_setup.py::test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules"]
+
+# A tree is an overlay exactly when its identity record parses, so a render writes the record last
+# and a render cut short before it leaves no tree a later `setup --overlay` records. The mutation
+# puts the record first again, where a full disk part-way left it behind with half a tree.
+[[mutation]]
+name = "a render writes the identity record first"
+file = "src/stayfixed/overlay/layout.py"
+before = """OVERLAY_FILES = (
+    f"{COMMON_MEMORY}/_README.md",
+    *CAPABILITY_NAMES,
+    f"{COMMON_CODEX}/common.rules",
+    f"{PROJECTS}/README.md",
+    PRE_COMMIT_CONFIG,
+    ".github/workflows/scan.yml",
+    ".github/dependabot.yml",
+    ".gitignore",
+    "README.md",
+    IDENTITY_RECORD,
+)"""
+after = """OVERLAY_FILES = (
+    IDENTITY_RECORD,
+    f"{COMMON_MEMORY}/_README.md",
+    *CAPABILITY_NAMES,
+    f"{COMMON_CODEX}/common.rules",
+    f"{PROJECTS}/README.md",
+    PRE_COMMIT_CONFIG,
+    ".github/workflows/scan.yml",
+    ".github/dependabot.yml",
+    ".gitignore",
+    "README.md",
+)"""
+reddens = [
+  "tests/setup/test_setup.py::test_a_render_cut_short_is_not_an_overlay_the_next_run_records",
+]

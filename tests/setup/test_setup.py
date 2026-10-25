@@ -4,7 +4,6 @@ from __future__ import annotations
 import errno
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -525,22 +524,28 @@ def test_pointing_at_an_existing_overlay_records_its_root_and_creates_nothing(
 
 
 def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
-    # The overlay root is the machine's trust anchor, so an arbitrary directory that merely happens
-    # to exist must not become one. `existing` here is empty — no identity record — which is
-    # exactly the shape a careless `--overlay /tmp/whatever` would have.
+    # The overlay root is the machine's trust anchor, so a directory that merely happens to exist
+    # and hold something must not become one. `existing` here holds a note and no identity record,
+    # which is the shape a careless `--overlay ~/notes` would have; an empty one is rendered into.
     #
-    # Mutation (`mutations/`'s "the overlay probe stops asking for the identity record"): an
-    # empty directory is accepted as an overlay root and this reddens.
-    empty = tmp_path / "not-an-overlay"
-    empty.mkdir()
-    with pytest.raises(Refusal, match=re.escape(f"carries no {IDENTITY_RECORD}")):
+    # Mutation (`mutations/`'s "the overlay probe stops asking for the identity record"): the
+    # record's absence is read as an unreadable record, and the refusal names the wrong fault.
+    from stayfixed.overlay.identity import NO_RECORD
+    from stayfixed.setup.run import _RECORDING
+
+    existing = tmp_path / "not-an-overlay"
+    existing.mkdir()
+    (existing / "notes.md").write_text("mine\n", encoding="utf-8")
+    with pytest.raises(Refusal) as refused:
         setup(
             "recommended",
             home=tmp_path / "home",
             machine=tmp_path / "config.toml",
             runner=Recorder(),
-            overlay=str(empty),
+            overlay=str(existing),
         )
+    shown = quoted(str(existing.resolve()))
+    assert str(refused.value) == f"{NO_RECORD.format(root=shown)}; {_RECORDING}"
 
 
 def test_overlay_create_asks_github_and_records_the_new_root(
@@ -815,19 +820,25 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     # already written"): the hoisted `_requested_overlay` call is replaced by one that trusts
     # the path, leaving only `_apply_overlay`'s floor → the refusal still arrives, and this
     # reddens on the two files and the argv.
+    from stayfixed.setup.run import NO_PLACE_TO_RENDER
+
     home = tmp_path / "home"
     machine = tmp_path / "config.toml"
     runner = Recorder()
     # Under a directory that is not there: a path that names nothing is rendered at, and one whose
     # parent is missing has nowhere to be rendered.
-    with pytest.raises(Refusal, match="is not there, so --overlay would render an overlay at it"):
+    typo = tmp_path.resolve() / "no-such-directory" / "typo"
+    with pytest.raises(Refusal) as refused:
         setup(
             "recommended",
             home=home,
             machine=machine,
             runner=runner,
-            overlay=str(tmp_path / "no-such-directory" / "typo"),
+            overlay=str(typo),
         )
+    assert str(refused.value) == NO_PLACE_TO_RENDER.format(
+        path=quoted(str(typo)), parent=quoted(str(typo.parent))
+    )
     assert _wrote_anything(home, machine) == []
     assert runner.calls == [], "no plugin was installed for a run that refuses its own arguments"
 
@@ -971,6 +982,9 @@ def test_an_overlay_path_a_repository_spells_is_printed_quoted(
         overlay.mkdir()
     if not refused:
         _seed_overlay(overlay)
+    elif printed == "not-an-overlay":
+        # Holding something: an empty directory is rendered into, not refused.
+        (overlay / "notes.md").write_text("mine\n", encoding="utf-8")
     runner = Recorder()
     monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: runner)
     argv = ["setup", "--preset", "recommended", "--home", str(tmp_path / "home")]
@@ -994,10 +1008,13 @@ def test_a_directory_whose_record_names_another_layout_is_not_an_overlay(tmp_pat
     #
     # Mutation (`mutations/`'s "the overlay probe takes any record for an overlay"): the layout is
     # not compared → this directory is accepted and the refusal never fires.
+    from stayfixed.overlay.identity import NOT_A_RECORD
+    from stayfixed.setup.run import _RECORDING
+
     impostor = tmp_path / "some-plugin"
     impostor.mkdir()
     (impostor / IDENTITY_RECORD).write_text("layout = 2\n", encoding="utf-8")
-    with pytest.raises(Refusal, match="is not a layout-1 record"):
+    with pytest.raises(Refusal) as refused:
         setup(
             "recommended",
             home=tmp_path / "home",
@@ -1005,6 +1022,8 @@ def test_a_directory_whose_record_names_another_layout_is_not_an_overlay(tmp_pat
             runner=Recorder(),
             overlay=str(impostor),
         )
+    shown = quoted(str(impostor.resolve()))
+    assert str(refused.value) == f"{NOT_A_RECORD.format(root=shown)}; {_RECORDING}"
 
 
 def test_a_home_that_is_a_link_to_a_directory_is_followed_once_and_written_where_it_leads(
@@ -1427,8 +1446,11 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
     # The one refusal that cannot precede a write, and what it owes the owner. `--overlay
     # create:` asks GitHub to generate from a template repository this project does not publish,
     # so what arrives is whatever is on that account — and if it is not an overlay, the run has
-    # to say so *and* say that a private repository now exists, because the `SetupReport` is
-    # discarded on a refusal and nothing else would ever tell them.
+    # to say so *and* say that a private repository may now exist, with the remedy that works,
+    # because the `SetupReport` is discarded on a refusal and nothing else would ever tell them.
+    from stayfixed.overlay.create import UNRECORDED
+    from stayfixed.overlay.identity import NOT_A_RECORD
+
     def _wrong_tree(argv: list[str], cwd: Path) -> None:
         if argv[:3] != ["gh", "repo", "create"]:
             return
@@ -1446,10 +1468,11 @@ def test_a_created_tree_that_is_not_an_overlay_says_the_repository_now_exists(
             runner=Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_wrong_tree),
             overlay="create:octo/stayfixed-private",
         )
-    message = str(refused.value)
-    assert "is not a layout-1 record" in message
-    assert "octo/stayfixed-private was created and cloned" in message
-    assert "nothing was recorded in the machine configuration" in message
+    shown = quoted(str(home / "stayfixed-private"))
+    assert str(refused.value) == (
+        f"{NOT_A_RECORD.format(root=shown)}. "
+        f"{UNRECORDED.format(slug='octo/stayfixed-private', path=shown)}"
+    )
     assert overlay_root(tmp_path / "config.toml") is None
 
 
@@ -1566,14 +1589,18 @@ def test_a_user_settings_file_the_encoder_cannot_write_back_is_a_failure_naming_
 
 
 @needs_git
-def test_setup_renders_an_overlay_at_an_absent_path_and_records_it(tmp_path: Path) -> None:
+@pytest.mark.parametrize("empty", [False, True], ids=["absent", "empty"])
+def test_setup_renders_an_overlay_at_an_absent_or_empty_path_and_records_it(
+    tmp_path: Path, empty: bool
+) -> None:
     # One entry for an overlay: `--overlay <path>` naming nothing renders the shipped template
     # there, makes it a git repository on `main`, installs the commit-time secret scan and records
-    # it, as two commands of an earlier release did between them.
+    # it, as two commands of an earlier release did between them. An empty directory holds
+    # nothing to keep, so it is a place to render too, where it was refused as not an overlay.
     from stayfixed.overlay.api import overlay_fault
 
     destination = tmp_path / "overlays" / "mine"
-    destination.parent.mkdir()
+    destination.mkdir(parents=True) if empty else destination.parent.mkdir()
     machine = tmp_path / "config.toml"
     runner = Recorder(on_call=real_git)
     report = setup(
@@ -1595,15 +1622,16 @@ def test_setup_renders_an_overlay_at_an_absent_path_and_records_it(tmp_path: Pat
 # --- the destination `create:` clones into, asked before GitHub is -------------------------------
 
 
-@pytest.mark.parametrize("shape", ["a-file", "not-an-overlay", "empty"])
+@pytest.mark.parametrize("shape", ["a-file", "not-an-overlay"])
 def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_called(
     tmp_path: Path, shape: str
 ) -> None:
     # `create:` clones into `<home>/<name>`, and the destination was asked only whether it could
     # be searched: a file there, or a directory holding something else, was met by the clone,
     # after `gh repo create` had made a repository on the owner's account that nothing recorded.
-    # Both refuse before any `gh` argv now, naming what is there. Mutation: `mutations/`'s
-    # "setup asks about the create: destination after GitHub" -> the `gh` calls come first.
+    # Both refuse before any `gh` argv now, naming what is there; an empty directory is cloned
+    # into, as `git clone` does. Mutation: `mutations/`'s "setup asks about the create:
+    # destination after GitHub" -> the `gh` calls come first.
     from stayfixed.setup.run import DESTINATION_NOT_A_DIRECTORY, DESTINATION_NOT_AN_OVERLAY
 
     home = tmp_path / "home"
@@ -1613,8 +1641,7 @@ def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_call
         destination.write_text("mine\n", encoding="utf-8")
     else:
         destination.mkdir()
-        if shape == "not-an-overlay":
-            (destination / "notes.md").write_text("mine\n", encoding="utf-8")
+        (destination / "notes.md").write_text("mine\n", encoding="utf-8")
     machine = tmp_path / "config.toml"
     # The template probe is answered and `gh repo create` succeeds, so under the mutation the
     # repository is really created and the floor's refusal follows it, as it did for the owner.
@@ -1633,10 +1660,17 @@ def test_create_refuses_a_destination_it_cannot_clone_into_before_github_is_call
     assert not machine.exists()
 
 
-def test_create_needs_no_yes_and_makes_an_absent_destination(tmp_path: Path) -> None:
+@pytest.mark.parametrize("empty", [False, True], ids=["absent", "empty"])
+def test_create_needs_no_yes_and_makes_an_absent_or_empty_destination(
+    tmp_path: Path, empty: bool
+) -> None:
     # `--yes` stood in front of `create:` as a consent a model-written command line types as
-    # easily as the command itself. Naming `create:<owner>/<name>` is the request.
+    # easily as the command itself. Naming `create:<owner>/<name>` is the request. An empty
+    # directory at the destination is one `git clone` fills, and was refused as if it held
+    # something the clone would meet.
     home = tmp_path / "home"
+    if empty:
+        (home / "stayfixed-private").mkdir(parents=True)
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
     setup(
@@ -1648,3 +1682,65 @@ def test_create_needs_no_yes_and_makes_an_absent_destination(tmp_path: Path) -> 
     )
     assert overlay_root(machine) == home / "stayfixed-private"
     assert [argv[:3] for argv in runner.calls if argv[0] == "gh"][-1] == ["gh", "repo", "create"]
+
+
+# --- one rule for what an overlay is -------------------------------------------------------------
+
+
+def test_a_render_cut_short_is_not_an_overlay_the_next_run_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A tree is an overlay exactly when its identity record parses, so a render writes the record
+    # last. It wrote it first: a render a full disk cut short left the record behind, and the next
+    # `setup --overlay` at the same path recorded half a tree, with no `.gitignore` and no secret
+    # scan, as "the existing overlay". Mutation (`mutations/`'s "a render writes the identity
+    # record first") -> the second run records it and this reddens.
+    from stayfixed import fsops
+    from stayfixed.overlay.identity import NO_RECORD
+    from stayfixed.setup.run import _RECORDING
+
+    real = fsops.write_within
+    written: list[str] = []
+
+    def full_disk(root: Path, relative: str, *args: Any, **kwargs: Any) -> None:
+        written.append(relative)
+        if len(written) == 2:
+            raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC), relative)
+        real(root, relative, *args, **kwargs)
+
+    monkeypatch.setattr("stayfixed.scaffold.engine.write_within", full_disk)
+    destination = tmp_path.resolve() / "overlay"
+    home, machine = tmp_path / "home", tmp_path / "config.toml"
+    with pytest.raises(Refusal):
+        setup(
+            "recommended", home=home, machine=machine, runner=Recorder(), overlay=str(destination)
+        )
+    monkeypatch.setattr("stayfixed.scaffold.engine.write_within", real)
+    with pytest.raises(Refusal) as refused:
+        setup(
+            "recommended", home=home, machine=machine, runner=Recorder(), overlay=str(destination)
+        )
+    shown = quoted(str(destination))
+    assert str(refused.value) == f"{NO_RECORD.format(root=shown)}; {_RECORDING}"
+    assert overlay_root(machine) is None
+
+
+def test_setup_says_when_it_records_an_overlay_root_other_than_the_recorded_one(
+    tmp_path: Path,
+) -> None:
+    # `--overlay <path>` naming nothing renders an overlay there, so a mistyped path is a new
+    # overlay and not a refusal, and the machine's root moved to it without a word: every later
+    # `attach` then read an empty overlay. The run that moves it says so, naming the root it
+    # replaced; the run that records the same root again says nothing of it.
+    from stayfixed.setup.run import REPLACED_ROOT
+
+    first, second = tmp_path.resolve() / "overlay", tmp_path.resolve() / "overlai"
+    _seed_overlay(first)
+    _seed_overlay(second)
+    home, machine = tmp_path / "home", tmp_path / "config.toml"
+    setup("recommended", home=home, machine=machine, runner=Recorder(), overlay=str(first))
+    again = setup("recommended", home=home, machine=machine, runner=Recorder(), overlay=str(first))
+    moved = setup("recommended", home=home, machine=machine, runner=Recorder(), overlay=str(second))
+    said = REPLACED_ROOT.format(previous=quoted(str(first)))
+    assert said not in again.notes
+    assert said in moved.notes
