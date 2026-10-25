@@ -403,5 +403,6 @@ def _install_secret_scan(root: Path, runner: Runner) -> str:
         return "installed the commit-time secret scan with `pre-commit install`"
     return (
         f"`pre-commit install` did not run ({answered(done)}), so the commit-time secret scan "
-        f"is not installed; install pre-commit and run it in {root}. The push-time scan still runs"
+        f"is not installed; install pre-commit and run it in {quoted(str(root))}. The push-time "
+        "scan still runs"
     )

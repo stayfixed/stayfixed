@@ -128,6 +128,18 @@ def test_finish_installs_pre_commit_and_says_so_when_it_cannot(tmp_path: Path) -
     assert not any("installed the commit-time" in note for note in notes)
 
 
+def test_the_secret_scan_note_prints_the_overlay_root_quoted(tmp_path: Path) -> None:
+    # The note names where to run `pre-commit` by hand, and `setup` prints it: a root reached
+    # through a link a clone commits is spelled in the clone's bytes, and an escape sequence in it
+    # drove the terminal and a CI runner's log.
+    root = tmp_path / "x\x1b]0;owned\x07"
+    root.mkdir()
+    notes = finish(root, runner=Recorder(answers={"pre-commit": Completed(127, "", "not found")}))
+    said = " ".join(notes)
+    assert "\x1b" not in said and "\x07" not in said, said
+    assert quoted(str(root)) in said, said
+
+
 def test_finish_names_a_generated_overlay_after_its_owner_in_its_record(tmp_path: Path) -> None:
     # The template ships placeholders where the owner and the repository go, and `finish` puts a
     # generated overlay's own there, as `overlay init` once suffixed its manifests. Rendered from
