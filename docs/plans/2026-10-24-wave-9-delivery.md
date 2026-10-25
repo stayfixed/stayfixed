@@ -1354,25 +1354,25 @@ closed by the controller after the merge, against the merge commit.
 ### Task 28 — HS4's final review and pull request, 2026-10-25
 
 **Execution.** Wave O's implementer was stopped by a usage limit part-way through Task 24, after
-Tasks 22 and 23 were committed (`00a4109a`, `162d6119`); the owner committed its tree as it stood
-(`a9e77184`) and pushed it, and the controller moved to a cloud session. A fresh implementer
-finished Task 24 from that state (`18677609`): 41 mutation entries for deleted controls removed, the
+Tasks 22 and 23 were committed (`00a4109`, `162d611`); the owner committed its tree as it stood
+(`a9e7718`) and pushed it, and the controller moved to a cloud session. A fresh implementer
+finished Task 24 from that state (`1867760`): 41 mutation entries for deleted controls removed, the
 rest re-pointed, one test that still held live code restored. Wave P ran as one implementer
-(`b8ecde6f..fec2d7bb`). The cloud host runs as root, so ten permission tests fail there on `dev` as
+(`b8ecde6..fec2d7b`). The cloud host runs as root, so ten permission tests fail there on `dev` as
 well; root-skipped tests were run as an unprivileged user, and the oracle's 58 root-only misses
 were set apart from real survivors (none; the one `scripts/plugin_tree.py` survivor predates the
 branch). An automated commit-level security review flagged the deletion of `_outside_the_project`
 on every commit; it was ruled against, as below.
 
-**Final review** at `fec2d7bb`, with three read-only seats (correctness; refusals and deletion;
+**Final review** at `fec2d7b`, with three read-only seats (correctness; refusals and deletion;
 security), run as in-session agents. The security seat joined because the range deletes the
 overlay-root containment check and changes what decides that a checkout is attached. The
 controller's full suite, 3.13 suite and full oracle on that head were green against the root
-baseline. One triaged fix round followed (`fec2d7bb..dfdf2dd8`), then one scoped re-review. It
+baseline. One triaged fix round followed (`fec2d7b..dfdf2dd`), then one scoped re-review. It
 found every triaged item addressed and two regressions of the round (an empty destination this
 user cannot write reached `gh repo create`; a ledger left without its render was no longer
 finished by `uninstall`, while the documents said it was). Both were fixed in
-`dfdf2dd8..b01f7559`, which the controller read, with no further review round.
+`dfdf2dd..b01f755`, which the controller read, with no further review round.
 
 **Rulings taken on the owner's behalf** (each costs what is said if wrong):
 - *What makes a directory an overlay* (six findings at one seam: a cut-short render recorded next
