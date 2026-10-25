@@ -258,11 +258,13 @@ def generate(
     # One spelling of "where this lands and what the owner is called", shared with the caller
     # that has to ask before it calls (`setup`'s `--overlay create:`); see `target_root`.
     target, owner = target_root(root, owner, name)
+    # Through `printed.quoted` in every message, as `UNRECORDED` prints it.
+    shown = quoted(str(target))
     if overlay_fault(target) is None:
         # Creating the overlay is idempotent by rule: a second run finds the overlay the first one
         # cloned and must not create it again. Anything else already there but an empty directory
         # is `setup`'s to refuse, before this is called.
-        return Created(target, (f"{target} already exists and was left alone",))
+        return Created(target, (f"{shown} already exists and was left alone",))
     template = _template_for(owner, root=root, runner=runner)
     slug = f"{owner}/{name}"
     created = runner.launch(
@@ -295,7 +297,7 @@ def generate(
         # and nothing arrived, which is the one shape the race can take.
         raise Failure(
             f"`gh repo create {slug} …` {_ended(created)} ({answered(created)}), so no tree "
-            f"arrived at {target}. {TEMPLATE_PRECONDITION}. {_unrecorded(slug, target)}"
+            f"arrived at {shown}. {TEMPLATE_PRECONDITION}. {_unrecorded(slug, target)}"
         )
 
     # `gh` reported success and nothing arrived. Which of the two failures it was decides whether
@@ -313,7 +315,7 @@ def generate(
         note = f"cloned {slug}, generated from {template}, on the second attempt"
         return _arrived(target, slug, note, template)
     raise Failure(
-        f"{slug} produced no tree at {target}: `gh repo create --clone` reported success and "
+        f"{slug} produced no tree at {shown}: `gh repo create --clone` reported success and "
         f"left nothing, and the "
         + ("retried" if raced else "one further")
         + f" `git clone` exited {cloned.code} ({answered(cloned)}). "

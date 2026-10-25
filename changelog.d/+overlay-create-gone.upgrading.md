@@ -7,7 +7,7 @@ directory you can list and write, it renders the shipped template there with no 
 `overlay init` used to be run by hand. A mistyped path is therefore rendered at rather than refused,
 and `setup` says so when the root it records replaces the one the machine configuration held. The
 note that the commit-time secret scan is not installed names the overlay's path quoted, as the rest
-of the report does.
+of the report does, and so does every note and refusal of `create:` that names `<home>/<name>`.
 `--overlay create:<owner>/<name>` generates the overlay on GitHub and installs the secret scan, as
 before. The overlay template repository is
 published with `uv run python scripts/publish_template.py --owner <account> [--yes]` from a

@@ -464,6 +464,37 @@ def test_what_gh_and_git_print_cannot_drive_a_terminal(
     assert "\x1b" not in message
 
 
+@pytest.mark.parametrize("ending", ["left-alone", "declined", "nothing-arrived"])
+def test_every_message_naming_the_destination_prints_it_quoted(tmp_path: Path, ending: str) -> None:
+    # `UNRECORDED` named the destination through `printed.quoted` and three messages beside it
+    # printed it raw: the overlay left alone, a `gh repo create` that declined, and a clone that
+    # left nothing. The destination is under `--home`, whose path a link can spell in bytes nobody
+    # typed, and an escape in it drove the terminal and a CI log. Mutation: `mutations/`'s
+    # "create: prints its destination raw".
+    root = tmp_path / "x\x1b]0;owned\x07"
+    root.mkdir()
+    answers = {THE_OWNERS_PROBE: A_TEMPLATE}
+    if ending == "left-alone":
+        (root / "stayfixed-private").mkdir()
+        (root / "stayfixed-private" / IDENTITY_RECORD).write_text("layout = 1\n", encoding="utf-8")
+    elif ending == "declined":
+        answers["gh repo create"] = Completed(1, "", "Name already exists on this account")
+    try:
+        said = " ".join(
+            generate(
+                "octo",
+                "stayfixed-private",
+                root=root,
+                runner=Recorder(answers=answers),
+                wait=lambda _: None,
+            ).notes
+        )
+    except (Failure, Refusal) as stopped:
+        said = str(stopped)
+    assert "\x1b" not in said and "\x07" not in said, said
+    assert quoted(str(root / "stayfixed-private")) in said, said
+
+
 def test_what_git_init_prints_cannot_drive_a_terminal(tmp_path: Path) -> None:
     # The same for the local render's `git init`, whose failure is a note.
     runner = Recorder(answers={"git init": HOSTILE})

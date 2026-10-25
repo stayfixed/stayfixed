@@ -1014,6 +1014,18 @@ reddens = [
   "tests/setup/test_setup.py::test_an_overlay_path_a_repository_spells_is_printed_quoted[not-an-overlay]",
 ]
 
+# `create:` named its destination raw in three messages beside `UNRECORDED`, which quoted it.
+[[mutation]]
+name = "create: prints its destination raw"
+file = "src/stayfixed/overlay/create.py"
+before = "    shown = quoted(str(target))"
+after = "    shown = str(target)"
+reddens = [
+  "tests/overlay/test_create.py::test_every_message_naming_the_destination_prints_it_quoted[left-alone]",
+  "tests/overlay/test_create.py::test_every_message_naming_the_destination_prints_it_quoted[declined]",
+  "tests/overlay/test_create.py::test_every_message_naming_the_destination_prints_it_quoted[nothing-arrived]",
+]
+
 [[mutation]]
 name = "setup notes a recorded overlay's path raw"
 file = "src/stayfixed/setup/run.py"
