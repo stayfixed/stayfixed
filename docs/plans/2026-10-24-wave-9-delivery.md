@@ -1391,33 +1391,48 @@ finished by `uninstall`, while the documents said it was). Both were fixed in
   which `detach` removes; the binding id alone outlives `detach`, so a ledger a pull request
   commits later detaches nothing. If wrong: after an `attach` or `detach` that stopped part-way,
   `uninstall` refuses and the remedy is `stayfixed detach`, then `uninstall`.
-- *`check-ignore`*: only no answer (a timeout, or a `git` that cannot start) is a warning; git
-  declining refuses before any write.
+- *`check-ignore`*: any answer but "matched" or "none matched" refuses before any write, as on
+  `dev`. Task 24 made a timeout a warning; the owner's review showed a repository can choose a
+  timeout (git reads every `.gitignore` along each path), so the warning was reverted.
 - *`commit strip`* gives way only to a non-empty `attribution.commit` in the owner's own
   `~/.claude/settings.json`; a repository's settings are never read.
-- *The preset's commit types* are the eleven Conventional Commits types, as Task 25 says; `harden`
+- *The preset's commit types* are the eleven `@commitlint/config-conventional` types; `harden`
   and `guard` are gone, and nothing in the tree used them.
 - *`[plugins] recommended`* replaces `[plugins] install = []`: an empty `install` would have had no
   reader; `init` offers the recommended list and `setup --plugin NAME` installs.
 - *`pluginConfigs`* values are filled only where none exists, so a value `setup` wrote earlier also
   stays; telling the two apart needs a record with one reader.
 - *`uninstall` (core) calls `detach`*: one more pinned core-to-delivery import.
-- *Deleted for want of a reader*: `setup --root` on a machine setup, and the `picked`, `detached`
-  and `unanswered` `--json` keys.
+- *Deleted for want of a reader*: the `picked`, `detached` and `unanswered` `--json` keys;
+  machine setup now refuses `--root`, as it refuses the other flags it does not read.
+
+**The owner's review** at `0bdf081` found one regression and asked for every fix and improvement
+to be made before the merge: the identity record's `owner` and `name` made it a hand-edited file
+that `overlay upgrade` never refreshed, so a raised floor could not reach it (fixed by deleting
+both keys); a refused `uninstall` claiming a detach; the question order read from a sorted JSON
+object (now from `required`); a repository-chosen `check-ignore` timeout (above); the changelog's
+contract changes filed as fixes; `commit strip` speaking on every commit; a second machine never
+arming the overlay's secret scan. With them went one judging helper for both `--overlay` forms, a
+pure `fsops.vacant`, `_Overlay` as an explicit three-way kind, tables derived from their sources,
+and the missing mutation entries and tests. Two lanes ran in parallel worktrees
+(`0bdf081..d4d9e65`, `0bdf081..3ca8532`) and were merged; the controller verified the merged head.
 
 **Follow-ups left out of HS4:**
-- The identity record's `owner` and `name` have no reader; Task 22 specifies them (owner's call).
 - `REPLACED_ROOT` fires when the recorded root is spelled through `~` or a linked home.
 - "A clone checks the record out last" rests on git's path order; parallel checkout or a template
-  path sorting after the record breaks it.
+  path sorting after the record breaks it (now stated where it is relied on).
 - The refusal for a cut-short tree starts with "add the record", which would make it an overlay.
 - The `~` refusal for `--overlay` has no mutation entry; nothing pins that `uninstall`'s refusals
-  precede its `detach`; the doctor row's nesting arm has none either.
+  precede its `detach`.
 - The nesting warning is hidden while the floor row is WARN or RED.
 - `doctor`'s skip row for a manifests-only overlay names no remedy.
 - `--commit-type` and `--attribution-check` refuse or omit only what the owner types; their trace
   lines overstate what `init` writes.
-- `create:` records an overlay already at `<home>/<name>` without comparing its `owner`/`name`.
+- A record added by hand, or a `create:`-generated overlay, has no ledger entry, so `overlay
+  upgrade` reads it as not stayfixed's and does not refresh it.
+- "footprint" stays the internal name of what the documents now call the scaffold.
+- `scripts/publish_template.py` keeps `overlay.api` publishing three names for a maintainer script.
+- The clone retry hard-codes `git@github.com:` and ignores `GH_HOST` and `gh`'s protocol.
 
 **Bug ledger** (in the private overlay): BR-018 and BR-039's `--overlay` half are closed by the
 owner after the merge, against the merge commit; their Fix sections were handed over with this
