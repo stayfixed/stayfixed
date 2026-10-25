@@ -874,6 +874,31 @@ reddens = [
   "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
 ]
 
+# The render's half alone: `detach` keeps the binding id, so a checkout attached once and detached
+# since still has one, and with the ledger a pull request commits after the `detach`, an id alone
+# read as an attachment had `uninstall` run `detach` over the owner's untracked rule file and
+# settings again.
+[[mutation]]
+name = "uninstall takes a binding id with no render for an attachment"
+file = "src/stayfixed/project/uninstall.py"
+before = "        return binding_id is not None and fsops.is_dir(delivery_directory(binding_id))"
+after = "        return binding_id is not None"
+reddens = ["tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing"]
+
+# `attach`'s ledger is left out of the count of what `.stayfixed/local/` keeps only where the
+# repository is attached and `detach` takes it first; left out everywhere, a ledger a clone
+# committed is counted nowhere, the run goes on past its one refusal before any write, removes the
+# scaffold, and stops part-way with the committed ledger still there.
+[[mutation]]
+name = "uninstall never counts attach's ledger among what it keeps"
+file = "src/stayfixed/project/uninstall.py"
+before = "    detaching = {ATTACH_LEDGER} if attached else set()"
+after = "    detaching = {ATTACH_LEDGER}"
+reddens = [
+  "tests/project/test_uninstall.py::test_a_ledger_a_clone_committed_detaches_nothing",
+  "tests/project/test_uninstall.py::test_a_ledger_committed_after_a_detach_detaches_nothing",
+]
+
 # Without `stayfixed.toml` only the scaffold's ledger goes, and `.stayfixed/` with it once it is
 # empty; on an attached repository that would take `attach`'s ledger, the one record of the
 # overlay's plugin and rules it placed, with the delivery still in place, so the run detaches
