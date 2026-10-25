@@ -1770,9 +1770,8 @@ either, that resolve to one file (`roadmap` and `roadmap_history` set to one pat
 only the `AGENTS.md` skeleton and its region share a file by design, an `[artifacts] local` list
 naming a profile artifact, which every pointer at it reads at its committed path, one naming
 `config` or `gitignore`, which only work at the repository root, and a write git would hide, at an
-existing file a `[paths]` value chose, which the refusal names; a `git` that gives no answer about
-one inside a repository, because it timed out or is not installed, is a `note:` line instead,
-while any other failure to answer still refuses (see `upgrade`'s boundary).
+existing file a `[paths]` value chose, which the refusal names, or one inside a repository whose
+`git` cannot say whether it is ignored (see `upgrade`'s boundary).
 
 `--json` carries `dry_run`, `adopted`, `once` and `scaffold` (each the plan's own rendered
 report), `writes` (both plans' targets), `skipped`, `pin` (the release this run resolved,
@@ -1993,13 +1992,13 @@ rule) and a preset's own place are never refused, so a `CLAUDE.md` in your globa
 pattern is not ignored, because git shows every change to it; the artifacts `[artifacts] local`
 keeps under `.stayfixed/local/artifacts/` are exempt, since keeping them out of git is what that
 setting asks for; and outside a git work tree there is no guard, because there is no diff to hide
-from. Inside one (a `.git` in the root or a directory above it), a `git` that gives no answer, because
-it timed out or is not installed, is never a pass said in silence: the run goes on and its report
-ends with a `note:` line saying git could not answer and to check those files once
-`git check-ignore` works. Any other failure to answer refuses the run (`2`) before anything is written, since a
-repository can choose it: git answers a whole batch with exit 128 when one path in it lies inside
-a submodule. Run it on a
-checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
+from. Inside one (a `.git` in the root or a directory above it), a `git` that cannot answer refuses
+the run (`2`) before anything is written, dry run included, and the refusal says to run it again
+once `git check-ignore` works: one that timed out, is not installed, or failed on the batch. A
+repository can cause the first and the last: git reads every `.gitignore` along each
+path it is asked about, so a deep enough path under large enough ignore files outlasts its time
+bound, and git answers a whole batch with exit 128 when one path in it lies inside a submodule.
+Run it on a checkout you trust. There are no hooks to re-trust afterwards: `init` writes no project-level hook
 entries, so an upgrade changes none.
 
 **Reads** `stayfixed.toml`, `.stayfixed/manifest.json`, `.stayfixed/local/artifacts.json`, every
@@ -2143,9 +2142,8 @@ commit records, and a region only where its key names; the diff shows both. No `
 name git's control directory or stayfixed's own `.stayfixed/`, and a symlinked `.stayfixed/` is
 refused. An existing file git ignores at a place a `[paths]` value chose is never removed or
 rewritten: the run is refused (`2`) before any removal, dry run included, by `upgrade`'s rule,
-naming the files; a run inside a repository whose `git` gives no answer, because it timed out or is
-not installed, goes on with a `note:` line, and one whose `git` fails to answer otherwise is
-refused, as `upgrade`'s are. Take
+naming the files, and so is a run inside a repository whose `git` cannot answer, as `upgrade`'s
+is. Take
 stayfixed's part out of them by hand, or take the `[paths]` key out of `stayfixed.toml`; the run
 then leaves those files where they are and lists them. That includes a file stayfixed itself
 created at an ignored place a `[paths]` value chose (`roadmap = "build/roadmap.md"`

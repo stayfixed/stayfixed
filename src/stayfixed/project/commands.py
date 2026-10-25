@@ -223,8 +223,6 @@ def run_init(args: argparse.Namespace) -> Result:
         # Nothing is written by a dry run or a refused one, the stamp included.
         verb = "would write" if report.dry_run or report.refused else "wrote"
         lines.append(STAMPED.format(verb=verb))
-    if report.unanswered:
-        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "adopted": report.adopted,
@@ -333,8 +331,6 @@ def run_upgrade(args: argparse.Namespace) -> Result:
         lines.append(ORPHANS.format(count=report.orphans))
     if unmatched := _unmatched(force, report.footprint):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
-    if report.unanswered:
-        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "moved": [
@@ -417,8 +413,6 @@ def run_uninstall(args: argparse.Namespace) -> Result:
         lines.append(f"note: {KEPT_CONFIG}")
     if unmatched := _unmatched(force, report.footprint, report.once):
         lines.append(FORCE_UNMATCHED.format(count=unmatched))
-    if report.unanswered:
-        lines.append(f"note: {report.unanswered}")
     data = {
         "dry_run": report.dry_run,
         "scaffold": footprint,

@@ -186,8 +186,6 @@ class InitReport:
     # The custom gates the adopted `stayfixed.toml` configures, by name: `assess`, `gate` and
     # `adopt promote` run their commands. Names only, each held to the loader's grammar.
     custom_gates: tuple[str, ...] = ()
-    # `ignored.UNANSWERED` when git could not say whether a file this run writes is ignored.
-    unanswered: str = ""
     # The configuration the run wrote or adopted, from which the command says what it picked.
     config: Config | None = None
 
@@ -437,7 +435,6 @@ def init(
         head_note,
         stamped,
         tuple(sorted(config.gates.custom)) if existing is not None else (),
-        passes.unanswered,
         config,
     )
     if dry_run or report.refused:

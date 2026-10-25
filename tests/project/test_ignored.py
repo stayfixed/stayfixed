@@ -13,7 +13,7 @@ from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.errors import Refusal
 from stayfixed.gitenv import git_run
 from stayfixed.project import ignored as module
-from stayfixed.project.ignored import DECLINED, IGNORED, IGNORED_REMOVING, UNANSWERED
+from stayfixed.project.ignored import DECLINED, IGNORED, IGNORED_REMOVING
 from stayfixed.project.init import init
 from stayfixed.project.uninstall import uninstall
 from stayfixed.project.upgrade import upgrade
@@ -284,19 +284,23 @@ def test_outside_a_repository_there_is_no_diff_to_hide_from(tmp_path: Path) -> N
 
 
 @needs_git
+@pytest.mark.parametrize("command", ["upgrade", "uninstall"])
 @pytest.mark.parametrize("timed_out", [False, True], ids=["declined", "timed-out"])
-def test_a_check_ignore_that_cannot_answer_inside_a_repository_warns_only_when_it_timed_out(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool
+def test_a_check_ignore_that_cannot_answer_inside_a_repository_refuses_before_any_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timed_out: bool, command: str
 ) -> None:
-    # A guard that cannot answer must not read as a pass. A `git` that timed out under load must
-    # not stop the run either: it goes on and says git could not answer. `timed-out` is every `git`
-    # call ending the way `git_run` reports its 5 s timeout, `(-1, "")`: whether this is a
-    # repository was asked of `rev-parse`, which timed out too, so the guard passed silently. Any
-    # other answer refuses: git answers a batch holding a path inside a submodule with exit 128,
-    # so a pulled commit that put one `[paths]` value there made the guard a warning, and
-    # `upgrade` appended to a git-ignored `.env` beside it. Mutations (oracle): `mutations/`'s "a
-    # guard whose git timed out reads as no repository" -> `timed-out`, asking `rev-parse` again;
-    # "a check-ignore that declines is a warning" -> `declined`.
+    # A guard that cannot answer must not read as a pass, nor as a warning the run writes past:
+    # a repository can choose either way of not answering. git reads every `.gitignore` along each
+    # path it is asked about, so a commit holding a deep decoy path under large `.gitignore` files
+    # runs `check-ignore` past `git_run`'s 5 s bound, `(-1, "")`, and a run that only noted that
+    # appended to, or deleted, a git-ignored `.env` beside it. git answers a batch holding a path
+    # inside a submodule with exit 128, the other way. `timed-out` is every `git` call here ending
+    # the way `git_run` reports its timeout: whether this is a repository was once asked of
+    # `rev-parse`, which timed out too, and the guard passed silently. Both refuse with nothing
+    # written. Mutations (oracle): `mutations/`'s "a guard whose git timed out reads as no
+    # repository" -> `timed-out`, asking `rev-parse` again; "a check-ignore that gives no answer
+    # lets the run write" -> `timed-out`; "a check-ignore that declines lets the run write" ->
+    # `declined`.
     root = initialised(tmp_path)
 
     def failing(where: Path, *args: str, **kwargs: object) -> tuple[int, str]:
@@ -307,18 +311,16 @@ def test_a_check_ignore_that_cannot_answer_inside_a_repository_warns_only_when_i
         return git_run(where, *args)
 
     monkeypatch.setattr(module, "git_run", failing)
-    # An existing file at a place a `[paths]` value chose, so there is something to ask about.
-    (root / "notes.md").write_text("ours\n", encoding="utf-8")
-    _append(root / CONFIG_FILE, '\n[paths]\nagents_md = "notes.md"\n')
-    if timed_out:
-        report = upgrade(
-            root, machine=tmp_path / "absent.toml", runner=LsRemote(), dry_run=True, force=()
-        )
-        assert report.unanswered == UNANSWERED
-        return
+    # An existing file at a place a `[paths]` value chose, with a record stating its bytes, so
+    # `upgrade` would overwrite it and `uninstall` remove it.
+    (root / "notes.md").write_text(MARKER, encoding="utf-8")
+    _forge_roadmap(root, "notes.md", MARKER)
     before = snapshot(root)
     with pytest.raises(Refusal) as refused:
-        _upgrade(root, tmp_path)
+        if command == "upgrade":
+            _upgrade(root, tmp_path)
+        else:
+            _uninstall(root, tmp_path)
     assert str(refused.value) == DECLINED
     assert_snapshot_unchanged(root, before)
 
