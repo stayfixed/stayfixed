@@ -259,12 +259,13 @@ def is_symlink(path: Path) -> bool:
 
 def vacant(path: Path) -> bool:
     """Whether nothing is at `path`, or an empty directory is: what a clone or a render goes into.
-    A directory that cannot be listed is not known to be empty, and is not vacant."""
+    A directory that cannot be listed is not known to be empty, and one that cannot be searched
+    takes nothing in, so neither is vacant."""
     if not is_dir(path):
         return not exists(path) and not is_symlink(path)
     try:
         with os.scandir(path) as entries:
-            return next(entries, None) is None
+            return next(entries, None) is None and os.access(path, os.X_OK)
     except OSError:
         return False
 
