@@ -82,7 +82,9 @@ name = "setup creates a new overlay under the caller's cwd instead of --home"
 file = "src/stayfixed/setup/run.py"
 before = "            created = generate(owner, name, root=planned.destination.parent, runner=runner)"
 after = "            created = generate(owner, name, root=Path.cwd(), runner=runner)"
-reddens = ["tests/setup/test_setup.py::test_overlay_create_asks_github_and_records_the_new_root"]
+reddens = [
+  "tests/setup/test_setup.py::test_create_needs_no_yes_and_makes_an_absent_or_empty_destination[absent]",
+]
 
 # A preset's own default must never win over a personal value already recorded — by an earlier
 # `setup` run or by the owner's own hand — or a second `setup --preset recommended` resets it.
@@ -1275,6 +1277,18 @@ file = "src/stayfixed/setup/commands.py"
 before = "        if args.preset is not None or args.overlay is not None or args.plugin is not None:"
 after = "        if args.preset is not None or args.overlay is not None:"
 reddens = ["tests/setup/test_git_hooks.py::test_git_hooks_refuses_every_flag_that_asks_machine_setup_to_act[plugin]"]
+
+# A plugin name is joined to the preset's marketplace into one argv element: one shaped like an
+# option, naming a marketplace of its own or carrying an escape reached `claude plugin install`.
+[[mutation]]
+name = "setup --plugin takes any name"
+file = "src/stayfixed/setup/commands.py"
+before = 'PLUGIN_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")'
+after = 'PLUGIN_NAME = re.compile(r"\A.+\Z")'
+reddens = [
+  "tests/setup/test_commands.py::test_the_parser_refuses_a_plugin_name_outside_its_grammar_and_writes_nothing[option-shaped]",
+  "tests/setup/test_commands.py::test_the_parser_refuses_a_plugin_name_outside_its_grammar_and_writes_nothing[marketplace]",
+]
 
 [[mutation]]
 name = "setup --approval-boundary names a relative settings file as given"

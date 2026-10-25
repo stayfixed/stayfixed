@@ -142,6 +142,19 @@ def claude_code(main: Path, *, ignoring: tuple[str, ...] = ()) -> Callable[[list
 def real_git(argv: list[str], cwd: Path) -> None:
     """A `Recorder.on_call` that runs each `git` argv for real, for a case about the repository a
     command leaves behind; every other program stays recorded and answered from the script, so
-    `pre-commit`, `gh` and `claude` are never launched."""
+    `pre-commit`, `gh` and `claude` are never launched.
+
+    In `tests.gitfixture.env`'s sealed environment, as every fixture `git` is: inherited, the
+    developer's global configuration (an `init.defaultBranch`, a template directory with hooks in
+    it) shaped the repository the case judges, and a credential prompt could block the run."""
+    from tests.gitfixture import env
+
     if argv[0] == "git":
-        subprocess.run(argv, cwd=cwd, check=True, capture_output=True)
+        subprocess.run(
+            argv,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            env=env(cwd.parent),
+            stdin=subprocess.DEVNULL,
+        )

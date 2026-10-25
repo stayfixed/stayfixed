@@ -564,39 +564,6 @@ def test_an_overlay_missing_the_layout_is_refused(tmp_path: Path) -> None:
     assert str(refused.value) == f"{NO_RECORD.format(root=shown)}; {_RECORDING}"
 
 
-def test_overlay_create_asks_github_and_records_the_new_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The first of `--overlay`'s three answers: nothing exists yet, so `setup` both creates the
-    # repository and records what it created — the same probe `overlay.create` uses
-    # (`.claude-plugin`) is what tells this test the create branch, and not a no-op, ran.
-    #
-    # `home`, and not `Path.cwd()`, is asserted here rather than merely the leaf name: measured
-    # while writing this module, `root=Path.cwd()` created a real `stayfixed-private/` inside
-    # this checkout the first time this branch ran under a test, because `tmp_path` was never
-    # in that call at all. Mutation: change `_apply_overlay`'s `root=home` back to
-    # `root=Path.cwd()` → reddens on this line without touching the `.name` check alone.
-    #
-    # `monkeypatch.chdir(tmp_path)` is not decoration: it is what keeps that exact mutation's
-    # own oracle run from recreating the real directory a second time — under the mutation,
-    # the create call falls back to `Path.cwd()`, and this way that lands inside `tmp_path`
-    # instead of wherever the process happened to be running from.
-    monkeypatch.chdir(tmp_path)
-    home = tmp_path / "home"
-    machine = tmp_path / "config.toml"
-    runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    report = setup(
-        "recommended",
-        home=home,
-        machine=machine,
-        runner=runner,
-        overlay="create:octo/stayfixed-private",
-    )
-    assert any(argv[:3] == ["gh", "repo", "create"] for argv in runner.calls)
-    assert report.overlay == home / "stayfixed-private"
-    assert overlay_root(machine) == report.overlay
-
-
 @pytest.mark.parametrize(
     ("probe", "template"),
     [
@@ -834,8 +801,9 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
     #
     # Mutation (`mutations/`'s "setup asks whether --overlay is an overlay after it has
     # already written"): the hoisted `_requested_overlay` call is replaced by one that trusts
-    # the path, leaving only `_apply_overlay`'s floor → the refusal still arrives, and this
-    # reddens on the two files and the argv.
+    # the path, leaving only `_apply_overlay`'s floor → the refusal still arrives, in the floor's
+    # words, and this reddens on the refusal, the two files and the argv. A plugin is named, as in
+    # the companion below, so a run that went on to install it is in the argv.
     from stayfixed.setup.run import NO_PLACE_TO_RENDER
 
     home = tmp_path / "home"
@@ -851,6 +819,7 @@ def test_a_refused_overlay_path_is_refused_before_the_first_write(tmp_path: Path
             machine=machine,
             runner=runner,
             overlay=str(typo),
+            plugins=["superpowers"],
         )
     assert str(refused.value) == NO_PLACE_TO_RENDER.format(
         path=quoted(str(typo)), parent=quoted(str(typo.parent))
@@ -1734,25 +1703,32 @@ def test_an_empty_directory_this_user_cannot_list_and_write_is_refused_naming_th
 
 @pytest.mark.parametrize("empty", [False, True], ids=["absent", "empty"])
 def test_create_needs_no_yes_and_makes_an_absent_or_empty_destination(
-    tmp_path: Path, empty: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, empty: bool
 ) -> None:
     # `--yes` stood in front of `create:` as a consent a model-written command line types as
     # easily as the command itself. Naming `create:<owner>/<name>` is the request. An empty
     # directory at the destination is one `git clone` fills, and was refused as if it held
     # something the clone would meet.
+    #
+    # The overlay is made under `home` and never `Path.cwd()`: a machine command runs from
+    # wherever the owner sits, and `root=Path.cwd()` once made a real `stayfixed-private/` inside
+    # this checkout the first time a test ran the branch. Mutation: `mutations/`'s "setup creates a
+    # new overlay under the caller's cwd instead of --home". The `chdir` keeps that mutation's own
+    # run from making it there again: its clone lands in `tmp_path` instead.
+    monkeypatch.chdir(tmp_path)
     home = tmp_path / "home"
     if empty:
         (home / "stayfixed-private").mkdir(parents=True)
     machine = tmp_path / "config.toml"
     runner = Recorder(answers={_OCTOS_PROBE: _A_TEMPLATE}, on_call=_populate_overlay)
-    setup(
+    report = setup(
         "recommended",
         home=home,
         machine=machine,
         runner=runner,
         overlay="create:octo/stayfixed-private",
     )
-    assert overlay_root(machine) == home / "stayfixed-private"
+    assert report.overlay == overlay_root(machine) == home / "stayfixed-private"
     assert [argv[:3] for argv in runner.calls if argv[0] == "gh"][-1] == ["gh", "repo", "create"]
 
 

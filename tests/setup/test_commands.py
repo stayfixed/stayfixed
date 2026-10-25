@@ -33,6 +33,33 @@ def test_the_command_is_discovered() -> None:
     assert "setup" in help_text
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["Superpowers", "-flag", "a b", "x@evil", "../x", "a\x1b[2J"],
+    ids=["capital", "option-shaped", "space", "marketplace", "path", "escape"],
+)
+def test_the_parser_refuses_a_plugin_name_outside_its_grammar_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    # `--plugin NAME` is joined to the preset's marketplace into one argv element, so a name is
+    # lowercase letters, digits and `-`, led by a letter or a digit: nothing that reads as an
+    # option, names a marketplace of its own or reaches past the name. Refused by the parser, naming
+    # the rule and never the value, before anything is written or run. Mutation: `mutations/`'s
+    # "setup --plugin takes any name".
+    from stayfixed.setup.commands import PLUGIN_RULE
+
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    machine = tmp_path / "config.toml"
+    argv = ["setup", "--home", str(tmp_path / "home"), "--machine", str(machine)]
+    with pytest.raises(SystemExit):
+        invoke([*argv, f"--plugin={name}"])
+    err = capsys.readouterr().err
+    assert PLUGIN_RULE in err, err
+    assert name not in err, err
+    assert not machine.exists() and not stub.calls
+
+
 def test_the_preset_flow_runs_through_the_cli_with_a_stubbed_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
