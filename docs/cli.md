@@ -2677,8 +2677,9 @@ is written through a link at it the same way.
 own sections: `stayfixed trust revoke` withdraws an approval from `~/.config/stayfixed/trust.json`,
 and `stayfixed attach` keeps its binding record, render and composed store under
 `~/.local/share/stayfixed/`. It is the only
-one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` (default
-`.`) is read only by `--git-hooks` (below).
+one that writes the machine configuration file and `<home>/.claude/settings.json`. `--root` names
+the repository `--git-hooks` installs into (below); machine setup reads no repository, so it refuses
+`--root` (`2`) with nothing written, where it used to take the flag and read nothing of it.
 
 `setup` is the only writer of the machine configuration file, and its readers do not change to
 suit it: `[personal]`, `[guards]` and the session `[budgets]` are `config.owner`'s, which every
@@ -2789,6 +2790,7 @@ at `<home>/<name>` — or, when that clone leaves nothing there, a clone from th
 **Exits** `0` on success, and `2` on each of these refusals:
 
 - `--uninstall`, which is taken only with `--git-hooks` (below), before anything is written;
+- `--root`, which names the repository `--git-hooks` installs into, before anything is written;
 - a refused `--overlay`: a path that names nothing under a directory that is missing or that you
   cannot create it in, a path holding something that is not an overlay, a `create:` destination
   that holds something and is not the overlay an earlier run made, a directory at either that you

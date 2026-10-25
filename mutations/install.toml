@@ -970,8 +970,8 @@ reddens = [
 [[mutation]]
 name = "setup --git-hooks resolves --root past fsops"
 file = "src/stayfixed/setup/commands.py"
-before = "    root = _root(args.root)"
-after = "    root = Path(args.root).resolve()"
+before = '    root = _root(args.root or ".")'
+after = '    root = Path(args.root or ".").resolve()'
 reddens = [
   "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it[install]",
   "tests/setup/test_git_hooks.py::test_a_root_through_a_symlink_loop_is_refused_naming_it[uninstall]",
@@ -1172,6 +1172,15 @@ after = "    if False:\n        raise Refusal(_UNINSTALL_ALONE)"
 reddens = [
   "tests/setup/test_commands.py::test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup",
 ]
+
+# `--root` names the repository `--git-hooks` installs into: machine setup took it, read nothing of
+# it and configured the machine, exit 0.
+[[mutation]]
+name = "setup drops --root and runs the machine setup"
+file = "src/stayfixed/setup/commands.py"
+before = "    if args.root is not None:\n        raise Refusal(_ROOT_ALONE)"
+after = "    if False:\n        raise Refusal(_ROOT_ALONE)"
+reddens = ["tests/setup/test_commands.py::test_machine_setup_refuses_root_and_writes_nothing"]
 
 # `--git-hooks` takes no flag that asks machine setup to act: each refuses beside it, where all but
 # `--preset` were dropped and the hook installed.

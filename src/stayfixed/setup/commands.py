@@ -59,6 +59,14 @@ _UNINSTALL_ALONE = (
     "--uninstall removes the commit-message hook and is taken only with --git-hooks; run "
     "`stayfixed setup --git-hooks --uninstall` to remove it, and nothing was written"
 )
+# `--root` names the repository `--git-hooks` installs into, and machine setup reads no repository:
+# it took the flag, read nothing of it and configured the machine, exit 0, for a person who named a
+# repository. Refused before anything is written, naming the flag that gives it a meaning.
+_ROOT_ALONE = (
+    "--root names the repository --git-hooks installs into, and machine setup reads no "
+    "repository; run `stayfixed setup --git-hooks --root PATH` for the hook, or drop --root, "
+    "and nothing was written"
+)
 
 
 # A plugin name as `setup --plugin` takes it, joined to the preset's marketplace into one argv
@@ -83,7 +91,7 @@ def _root(given: str) -> Path:
 def run_git_hooks(args: argparse.Namespace) -> Result:
     from stayfixed.guards.api import Found, install, uninstall
 
-    root = _root(args.root)
+    root = _root(args.root or ".")
     # Each path is git's answer, from a `core.hooksPath` the repository sets or under the name a
     # submodule's `.gitmodules` chose, so each is printed through `printed.quoted`, as the
     # refusals print it; `--json` carries it as it is.
@@ -166,6 +174,8 @@ def run_setup(args: argparse.Namespace) -> Result:
         return run_git_hooks(args)
     if args.uninstall:
         raise Refusal(_UNINSTALL_ALONE)
+    if args.root is not None:
+        raise Refusal(_ROOT_ALONE)
 
     from stayfixed.setup.run import setup
 
@@ -311,5 +321,6 @@ def register(groups: SubParsers) -> None:
         action="store_true",
         help="with --git-hooks, remove the hook and restore what it chained to",
     )
-    setup.add_argument("--root", default=".", help=SETUP_ROOT_HELP)
+    # `None` and not `.`, so machine setup can tell a `--root` it was handed from one it was not.
+    setup.add_argument("--root", default=None, help=SETUP_ROOT_HELP)
     setup.set_defaults(func=run_setup)

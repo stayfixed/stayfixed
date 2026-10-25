@@ -86,6 +86,26 @@ def test_uninstall_without_git_hooks_refuses_and_runs_no_machine_setup(
     assert not stub.calls
 
 
+def test_machine_setup_refuses_root_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--root` says which repository `--git-hooks` installs into, and machine setup reads no
+    # repository: it took the flag, read nothing of it and configured the machine, exit 0, for a
+    # person who named a repository. Refused before anything is written, as `--uninstall` is.
+    #
+    # Mutation: `mutations/`'s "setup drops --root and runs the machine setup".
+    from stayfixed.setup.commands import _ROOT_ALONE
+
+    stub = Recorder()
+    monkeypatch.setattr("stayfixed.setup.commands.subprocess_runner", lambda: stub)
+    machine = tmp_path / "config.toml"
+    argv = ["setup", "--root", str(tmp_path), "--home", str(tmp_path / "home")]
+    assert invoke([*argv, "--machine", str(machine)]) == 2
+    assert capsys.readouterr().err == f"stayfixed: refused: {_ROOT_ALONE}\n"
+    assert not machine.exists()
+    assert not stub.calls
+
+
 def test_the_machine_default_is_the_file_every_reader_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

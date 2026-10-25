@@ -2,18 +2,11 @@
 GitHub anything: a file there, or a directory holding something that is not an overlay, is refused
 with nothing written and no repository created, where the clone used to meet it only after `gh repo
 create` had made a private repository nothing then recorded; an empty directory you can list and
-write is cloned into, a link there or a directory you cannot both list and write is refused in the
-same way, and the overlay an earlier run made is left alone. Once `gh repo create` has run, every
-refusal says the repository may now exist on GitHub and how to record it: clone it to
-`<home>/<name>`, then run `stayfixed setup --overlay <home>/<name>`. An `--overlay` path beginning
-with `~` is refused while `HOME` is empty or relative, where it was read against `/` or the working
-directory and an overlay was rendered and recorded there.
-Naming `create:` is the request, so `--yes` is gone from `setup`, and a command line that still
-passes it is refused by the parser. `setup --overlay` no longer refuses a place for the overlay:
-where it lives is yours to choose, and `stayfixed doctor`'s `overlay-requires` row warns when
-another repository's work tree holds it. `stayfixed attach` no longer runs `pre-commit install` in
-the overlay; `setup --overlay` installs the commit-time secret scan when it makes one, and
-`doctor`'s `pre-commit` row says when it is missing. And `init`, `upgrade` and `uninstall` go on
-when `git check-ignore` gives no answer, timing out under load or not installed, saying so in a
-`note:` line, where they used to refuse until it answered; any
-other failure to answer still refuses, since a repository can cause one.
+write is cloned into, a link there is refused in the same way, and the overlay an earlier run made
+is left alone. A directory you cannot search, or one holding no overlay that you cannot both list
+and write, is refused in one sentence by both `--overlay <path>` and `create:`, naming that
+directory, where `create:` blamed `--home` for it and `--overlay <path>` named a file inside it.
+Once `gh repo create` has run, every refusal says the repository may now exist on GitHub and how to
+record it: clone it to `<home>/<name>`, then run `stayfixed setup --overlay <home>/<name>`. An
+`--overlay` path beginning with `~` is refused while `HOME` is empty or relative, where it was read
+against `/` or the working directory and an overlay was rendered and recorded there.
