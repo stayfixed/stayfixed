@@ -814,6 +814,18 @@ reddens = [
   "tests/guards/test_hygiene.py::test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked",
 ]
 
+# A missing preset default loses no walk only while another root is walked. With none walked,
+# `test hygiene` says so and points at `assess`, which must then name every entry, the preset's
+# own included, or both commands are silent about why nothing was checked.
+[[mutation]]
+name = "a missing preset default goes unnamed when no root is walked"
+file = "src/stayfixed/guards/roots.py"
+before = "    walked = any(isinstance(found, Path) for _, found in judged)"
+after = "    walked = True"
+reddens = [
+  "tests/assess/test_probes.py::test_a_code_root_no_walk_takes_is_named_with_its_reason[preset-defaults-none-walked]",
+]
+
 # In the block led by `mutations/`'s "a gate that could not judge counts as passing": every
 # configured gate is a value CI reads, and each built-in finds what its area's command finds.
 [[mutation]]
@@ -1051,7 +1063,7 @@ reddens = [
 ]
 
 # With no code root left to walk, every profile's walk saw nothing, and its silence is no answer:
-# the summary says there was nothing to check rather than calling the tree clean.
+# the summary says no code root was walked rather than calling the tree clean.
 [[mutation]]
 name = "test hygiene calls an unwalked tree clean"
 file = "src/stayfixed/guards/commands.py"

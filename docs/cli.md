@@ -1226,7 +1226,7 @@ A row names no finding: `assess` lists them as items.
 
 | Probe | Reads | Severity | Principle | Reported when |
 |---|---|---|---|---|
-| `code-roots` | `[ledger] code_roots` | advice | — | an entry no walk takes, each named in config order, quoted when it lies outside the path grammar, with its reason: it names the repository root itself (`.`, `./`), it is no readable path inside the repository free of links, `..` and `.git`, or it names no directory here, unless the preset's default `code_roots` lists it, since a missing directory loses no walk |
+| `code-roots` | `[ledger] code_roots` | advice | — | an entry no walk takes, each named in config order, quoted when it lies outside the path grammar, with its reason: it names the repository root itself (`.`, `./`), it is no readable path inside the repository free of links, `..` and `.git`, or it names no directory here, unless the preset's default `code_roots` lists it, in any spelling the fold reads alike, and another entry is walked, since then a missing directory loses no walk |
 | `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
 | `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
@@ -3762,7 +3762,7 @@ walk. `src/` and `./src` are read as `src`. An entry that names the repository r
 leaves the repository, passes through a link, a `..` or `.git`, or names no directory is walked
 by none of them and refused by nothing: `stayfixed assess`'s `code-roots` item counts it, and
 `.stayfixed/assessment.json` names it with the reason, except a missing directory the preset's
-default lists, which loses no walk.
+default lists while another entry is walked, which then loses no walk.
 `evidence_boundary_required_for` names the severities whose entries must carry a filled
 `**What this evidence does not establish:**` line, the template's placeholder not counting. Widening it is how a project asks the same of `medium`. Each value must be one of the
 severities, `high`, `medium` and `low`, spelled as the table below spells it. A value that names

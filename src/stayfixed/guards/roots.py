@@ -5,7 +5,7 @@ asks the hint, so a stack's code never imports this area."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -65,12 +65,24 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
     return found
 
 
-def dropped_roots(root: Path, config: Config) -> list[tuple[str, str]]:
+def dropped_roots(
+    root: Path, config: Config, *, defaults: Collection[str] = ()
+) -> list[tuple[str, str]]:
     """Each `ledger.code_roots` entry `contained_roots` leaves out, in config order, with its
     reason: `ROOT_ITSELF`, `NOT_CONTAINED` or `NOT_A_DIRECTORY`. An entry inside another one is
-    not here: the wider walk takes it in. The entry is the repository's own text, so a caller
-    prints it through `stayfixed.printed`."""
-    return [(entry, judged) for entry, judged in _judged(root, config) if isinstance(judged, str)]
+    not here: the wider walk takes it in. Nor, while some entry is walked, is a missing directory
+    `defaults` (the preset's `code_roots`) lists, folded as `_judged` folds: it loses no walk, and
+    dropping it from the list would leave it unwalked once the repository makes it. The entry is
+    the repository's own text, so a caller prints it through `stayfixed.printed`."""
+    judged = list(_judged(root, config))
+    walked = any(isinstance(found, Path) for _, found in judged)
+    quiet = {(PurePosixPath(entry).as_posix(), NOT_A_DIRECTORY) for entry in defaults}
+    return [
+        (entry, found)
+        for entry, found in judged
+        if isinstance(found, str)
+        and not (walked and (PurePosixPath(entry).as_posix(), found) in quiet)
+    ]
 
 
 def _judged(root: Path, config: Config) -> Iterator[tuple[str, Path | str]]:
