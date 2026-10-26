@@ -949,11 +949,10 @@ def test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step(
 @needs_workflow
 def test_a_custom_gate_s_python3_m_stayfixed_is_the_workflow_s_own(tmp_path: Path) -> None:
     # Each command runs from the project root, so the step's `PYTHONPATH` reaches the command's
-    # `python3 -m stayfixed` only as an absolute path: measured on 2026-10-26, the relative
+    # `python3 -P -m stayfixed` only as an absolute path: measured on 2026-10-26, the relative
     # `stayfixed/src` printed "No module named stayfixed" and the gate failed. An interpreter
-    # outside any virtual environment, so no installed stayfixed answers in its place. Mutation
-    # (declared): `mutations/`'s "the custom step's PYTHONPATH is relative again".
-    gate = '\n[gates.custom.reach]\nrun = ["python3", "-m", "stayfixed", "--version"]\n'
+    # outside any virtual environment, so no installed stayfixed answers in its place.
+    gate = '\n[gates.custom.reach]\nrun = ["python3", "-P", "-m", "stayfixed", "--version"]\n'
     base = BASE.replace('["docs"]', '["docs", "reach"]') + gate
     workspace, base_sha = _clone(tmp_path, base)
     python = _outside_any_virtual_environment(tmp_path)

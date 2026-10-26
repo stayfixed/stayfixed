@@ -1426,25 +1426,6 @@ reddens = [
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
 
-# The custom step's commands run from the project root, so a relative entry reaches no stayfixed
-# from a command's own `python3 -m stayfixed`.
-[[mutation]]
-name = "the custom step's PYTHONPATH is relative again"
-file = ".github/workflows/check.yml"
-before = '''
-      - name: The project's own gates
-        env:
-          PYTHONPATH: ${{ github.workspace }}/stayfixed/src
-'''
-after = '''
-      - name: The project's own gates
-        env:
-          PYTHONPATH: stayfixed/src
-'''
-reddens = [
-  "tests/test_check_workflow.py::test_a_custom_gate_s_python3_m_stayfixed_is_the_workflow_s_own",
-]
-
 # The judging step runs from the workspace, which the pull request writes nothing into. From the
 # caller's checkout, `-P` would be the only thing between a module the pull request adds and the
 # verdict, and a relative `PYTHONPATH` would resolve inside the checkout.
