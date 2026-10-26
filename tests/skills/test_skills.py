@@ -215,10 +215,17 @@ def test_the_adopt_skill_asks_before_it_runs_the_custom_gates() -> None:
     builtin = words.index("run `stayfixed assess --builtin`")
     plain = words.index("`stayfixed assess`")
     skipped = SKIPPED.split(":", 1)[0]
-    assert builtin < words.index(skipped) < words.index("explicit yes") < plain
+    # A run that never reaches its summary prints no such line either, so it stops the adoption
+    # rather than reading as "no custom gate". Mutation (by hand): the stop sentence deleted ->
+    # this reddens.
+    stop = words.index("When it prints no `assessment:` summary line, stop the adoption")
+    assert "never go on to step 2 without that summary" in words[stop:plain]
+    # The line clips its names, so the question names them from the inventory's full list.
+    listed = words.index("the `skipped` list in `.stayfixed/assessment.json` holds every one")
+    assert builtin < stop < words.index(skipped) < listed < words.index("explicit yes") < plain
     assert "**Silence, a timeout or an empty answer is a no.**" in words[builtin:plain]
-    # A no keeps the assessment already made, rather than running anything more.
-    assert "On a no, keep the `--builtin` result" in words[plain:]
+    # Anything but a yes keeps the assessment already made, rather than running anything more.
+    assert "Otherwise keep the `--builtin` result" in words[plain:]
     # Nothing conditions the question on `init`'s output: neither its note's words nor a
     # sentence that names `init` and a note. Mutation (by hand): the old step 1, keyed on
     # `init`'s note, restored -> this reddens.
@@ -238,13 +245,13 @@ def test_init_offers_the_adopt_skill_as_its_last_step() -> None:
     assert "the `adopt` skill" in " ".join(steps[-1].split())
 
 
-def test_the_adopt_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption() -> None:
-    # After a no, the first step assessed with `--builtin`, and the closing message then handed
-    # over `stayfixed adopt promote`, which runs every custom gate the clone configures: in a
-    # clone the base is the clone author's, so its having the command is no brake. Every command
-    # the two skills name that runs gates is named with `--builtin` for a no as well. Mutation
-    # (oracle): the closing step's `--builtin` dropped -> `adopt promote` has no such form and
-    # this reddens.
+def test_the_adopt_skill_runs_the_custom_gates_only_after_a_yes_in_this_session() -> None:
+    # `stayfixed assess` and `stayfixed adopt promote` without `--builtin` run every custom gate
+    # the clone configures, and in a clone the base is the clone author's, so its having the
+    # command is no brake. The flag is the default: a missing question, a no, silence or a later
+    # session all leave it on, and the plain form is named only under the user's yes. Mutation
+    # (oracle): the closing step's `--builtin` dropped -> the plain form is handed over with no
+    # yes and this reddens.
     text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (
@@ -260,4 +267,9 @@ def test_the_adopt_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_ad
     assert named == ["stayfixed assess", "stayfixed adopt promote"]
     for command in named:
         assert f"`{command} --builtin`" in words, command
-    assert "A no holds for the whole adoption" in words
+    adopt = " ".join((SKILLS / "adopt" / "SKILL.md").read_text(encoding="utf-8").split())
+    assert "takes `--builtin` unless the user said yes, in this session" in adopt
+    assert "Only the user's own explicit reply in this session is a yes" in adopt
+    sentences = re.split(r"(?<=\.)\**\s+", adopt)
+    plain = [s for s in sentences if re.search(r"`stayfixed (?:assess|adopt promote)`", s)]
+    assert plain and all(s.startswith(("On a yes", "After a yes")) for s in plain), plain
