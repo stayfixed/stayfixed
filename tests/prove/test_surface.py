@@ -16,5 +16,9 @@ def test_the_surface_is_what_consumers_reach_for() -> None:
         "Verdict",
         # what a receipt counts
         "Counts",
+        # the receipt's one line, and the reason an interrupt ends a run with: the ledger's
+        # `bugs regressions` prints the first and stops its set of runs at the second
+        "line",
+        "INTERRUPTED",
     }
     assert required == set(api.__all__)

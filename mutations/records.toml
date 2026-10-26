@@ -3176,6 +3176,30 @@ before = '        parts.append(f"\n## {section.heading} ({len(selected)})\n\n")'
 after = '        parts.append(f"\n## {section.heading}\n\n")'
 reddens = ["tests/ledger/test_literals.py::test_the_index_is_the_one_it_rendered"]
 
+# `bugs regressions` runs a fixed entry's regression and no other's, counts only `proved` as
+# proved, and starts nothing after a run an interrupt ended. Each is reddened by a case that runs
+# no real runner.
+[[mutation]]
+name = "bugs regressions runs an entry of any status"
+file = "src/stayfixed/ledger/regressions.py"
+before = '        if entry.status != "fixed" or not argv:'
+after = "        if not argv:"
+reddens = ["tests/ledger/test_regressions.py::test_only_fixed_entries_run"]
+
+[[mutation]]
+name = "bugs regressions counts every verdict as proved"
+file = "src/stayfixed/ledger/commands.py"
+before = "    not_proved = sum(1 for _, receipt in ran if receipt.verdict is not Verdict.PROVED)"
+after = "    not_proved = sum(1 for _, receipt in ran if False)"
+reddens = ["tests/ledger/test_regressions.py::test_an_argv_no_adapter_recognises_is_not_proved"]
+
+[[mutation]]
+name = "bugs regressions goes on past an interrupt"
+file = "src/stayfixed/ledger/regressions.py"
+before = "        if receipt.reason == INTERRUPTED:\n            break"
+after = "        if False:\n            break"
+reddens = ["tests/ledger/test_regressions.py::test_an_interrupted_regression_starts_no_further_one"]
+
 # The origin note names both remotes; a token in either one's userinfo is taken out before it does.
 [[mutation]]
 name = "the origin note names a remote's credentials"

@@ -1,4 +1,4 @@
-"""The `bugs` group: `new`, `index [--check]`, `check`, `renumber OLD NEW`."""
+"""The `bugs` group: `new`, `index [--check]`, `check`, `regressions`, `renumber OLD NEW`."""
 
 from __future__ import annotations
 
@@ -21,6 +21,10 @@ UNWRITTEN = (
     "{index} could not be written ({reason}); once it can be, run `stayfixed {name} index` again"
 )
 _INERT = "nothing to check: no ledger directory and no generated index"
+# What `regressions` says when no fixed entry carries a `regression` to run.
+NO_REGRESSIONS = "nothing to run: no fixed entry carries a regression"
+# The exit code of a run a Ctrl-C or a terminating signal ended, as a shell reports one.
+INTERRUPTED_EXIT = 130
 BASE_HELP = (
     "also fail when a commit HEAD forked from this base ref at carries the ledger and the tree "
     "has none, or carries an entry the tree lacks, so a change that deletes the ledger or an "
@@ -88,6 +92,39 @@ def run_bugs_check(args: argparse.Namespace) -> Result:
     # Labels only on the line: a path, a line number and a rule are this command's; the detail
     # may quote the repository and stays in `data`.
     return Result(f"FAIL: {len(found)} ledger problem(s): {labels(found)}", data, exit_code=1)
+
+
+def run_bugs_regressions(args: argparse.Namespace) -> Result:
+    import sys
+
+    from stayfixed.ledger.regressions import regressions
+    from stayfixed.prove.api import INTERRUPTED, Verdict, line
+
+    root, config = root_and_config(args)
+    # The runner's output goes to standard error in both forms, as a custom gate's does, so that
+    # under `--json` standard output holds the one object.
+    ran = regressions(root, config, echo=sys.stderr)
+    rows = []
+    lines = []
+    for entry, receipt in ran:
+        said = line(receipt)
+        rows.append(
+            {
+                "id": entry.id,
+                "path": entry.path.as_posix(),
+                "verdict": str(receipt.verdict),
+                "line": said,
+            }
+        )
+        lines.append(f"{printable(entry.id)}: {said}")
+    not_proved = sum(1 for _, receipt in ran if receipt.verdict is not Verdict.PROVED)
+    data = {"regressions": rows, "not_proved": not_proved}
+    if not ran:
+        return Result(NO_REGRESSIONS, data)
+    lines.append(f"{len(ran)} regression(s), {not_proved} not proved")
+    if ran[-1][1].reason == INTERRUPTED:
+        return Result("\n".join(lines), data, exit_code=INTERRUPTED_EXIT)
+    return Result("\n".join(lines), data, exit_code=1 if not_proved else 0)
 
 
 def run_bugs_new(args: argparse.Namespace) -> Result:
@@ -164,6 +201,12 @@ def register(groups: SubParsers) -> None:
     )
     check.add_argument("--base", default=None, help=BASE_HELP)
     check.set_defaults(func=run_bugs_check)
+    regressions = common_flags(
+        sub.add_parser(
+            "regressions", help="run each fixed entry's regression and say what its runner proved"
+        )
+    )
+    regressions.set_defaults(func=run_bugs_regressions)
     renumber = common_flags(sub.add_parser("renumber", help="move an entry to a free identifier"))
     renumber.add_argument("old")
     renumber.add_argument("new")

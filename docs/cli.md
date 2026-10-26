@@ -15,9 +15,10 @@ Three things hold everywhere:
   command's keys are its own and are listed with it below — `doctor`'s `checks`, `memory refs`'s
   advisory `notices`, `docs trail`'s `undeclared`, and the two of `docs trail`'s keys that are
   not lists at all, `written` and `stale`.
-- **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
-  treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
-  not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
+- **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error, and from
+  [`bugs regressions`](#stayfixed-bugs-regressions) alone `130`, when an interrupt ended one of its
+  runs. A caller that treats `1` as "proceed anyway" must still never treat `2` that way — a
+  refusal is a boundary, not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
   symbolic link, whatever it points at, before reading anything through it: a link to
   `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in three
   commands that read the file the way a session does: `stayfixed hook` runs on with no project
@@ -52,6 +53,7 @@ Three things hold everywhere:
 - [`stayfixed bugs new TITLE --severity S --area A [--source S] [--related ID …] [--no-fetch]`](#stayfixed-bugs-new-title---severity-s---area-a---source-s---related-id----no-fetch)
 - [`stayfixed bugs index [--check]`](#stayfixed-bugs-index---check)
 - [`stayfixed bugs check [--base REF]`](#stayfixed-bugs-check---base-ref)
+- [`stayfixed bugs regressions`](#stayfixed-bugs-regressions)
 - [`stayfixed bugs renumber OLD NEW`](#stayfixed-bugs-renumber-old-new)
 - [`stayfixed docs check [--budgets] [--links]`](#stayfixed-docs-check---budgets---links)
 - [`stayfixed docs trail [--check]`](#stayfixed-docs-trail---check)
@@ -911,7 +913,8 @@ Spaces may surround each item and each comma; a tab may not. `regression:`, `reg
 as it does an empty item and an item holding a control character below U+0020, or DEL.
 `bugs renumber` leaves a `regression` exactly as written, while its sweep renames a test whose name
 carries the old identifier in a scanned file, so it names each entry whose argv still names the old
-identifier as one that may need editing by hand. `bugs new` does not write one yet.
+identifier as one that may need editing by hand. [`bugs regressions`](#stayfixed-bugs-regressions)
+runs it once the entry is `fixed`. `bugs new` does not write one yet.
 
 **Writes** the entry file (creating `<paths.bugs>` for the first entry) and `<paths.bug_index>`;
 and, unless `--no-fetch`, whatever the `git fetch --quiet --no-recurse-submodules origin` it runs
@@ -1008,6 +1011,33 @@ and with `OLD` rewritten to `NEW`: a void pointer an earlier move left toward `O
 naming either, still names the renumber.
 
 **Writes** nothing.
+
+## `stayfixed bugs regressions`
+
+Run the `regression` of every entry whose `status` is `fixed`, in identifier order, each as
+[`stayfixed prove`](#stayfixed-prove---timeout-seconds---junit-path----command-) runs a command
+and judged as it judges one: from the project root, under the caller's environment, with
+`[gates] custom_timeout_seconds` as each run's bound. An entry of any other status is not run,
+whatever it carries: a `rejected` one has no fix to regress, a `partial` one is still open and a
+`void` one is a renumber's pointer. An argv no runner adapter recognises is `not proven`, and
+nothing is started for it.
+
+The line names each run, `<id>: ` and then the receipt's line as `prove` prints it, and ends
+`<n> regression(s), <m> not proved`; with nothing to run, it is `nothing to run: no fixed entry
+carries a regression`. `--json` carries `regressions`, one `{"id", "path", "verdict", "line"}`
+object a run, `path` being the entry file's from the project root, and `not_proved`. The runner's
+standard output goes to standard error in both forms, as a custom gate's does, so under `--json`
+standard output holds the one object. Exits `0` when every run is `proved` or there is none, and
+`1` otherwise. A Ctrl-C, or a SIGTERM or SIGHUP, during a run ends that run `not proven` and the
+command with `130`: nothing after it starts. A ledger that does not parse fails (`1`).
+
+The run catches an honest regression and is no control against a hostile one: the argv is read
+from the tree the change wrote, so a change that can rewrite the test can rewrite the argv too.
+
+**Reads** the ledger's entry files, and what `prove` reads. **Writes** nothing in the project, as
+`prove` writes nothing there; what each runner writes, it writes. **Runs** each argv, as the
+README's [What stayfixed sends where](../README.md#what-stayfixed-sends-where) row for `prove`
+says.
 
 ## `stayfixed bugs renumber OLD NEW`
 
