@@ -236,10 +236,12 @@ jobs:
       # runner's privileges, so by the time they run the verdict is out of their reach and only
       # their own results are left to them. The runner image and the interpreter above are all
       # they get: a command that needs the project's toolchain installs it itself. `only:` is read
-      # as in the step above.
+      # as in the step above. `PYTHONPATH` is absolute here because each command runs from the
+      # project root: a `python3 -m stayfixed` one of them starts resolves a relative entry against
+      # the caller's checkout and finds no stayfixed, where this one finds the workflow's own.
       - name: The project's own gates
         env:
-          PYTHONPATH: stayfixed/src
+          PYTHONPATH: ${{ github.workspace }}/stayfixed/src
           ROOT: ${{ steps.base.outputs.root }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
           WORKFLOW_SHA: ${{ steps.stayfixed.outputs.sha }}
