@@ -469,7 +469,7 @@ internal error. A caller must never read 2 as permission. One command is deliber
 outside that rule: `stayfixed hook` degrades open with **0** on an internal error, on every event,
 because a bug in stayfixed must not cost you a tool call, and on `UserPromptSubmit` an exit 2 would
 erase what you typed. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) states it. And `stayfixed bugs regressions` adds one: **130** when a
-Ctrl-C or a terminating signal ended one of its runs, as a shell reports an interrupted command.
+Ctrl-C, a SIGTERM or a SIGHUP ended one of its runs, whichever of the three it was.
 
 ## Memory, in one page
 

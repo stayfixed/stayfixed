@@ -21,10 +21,10 @@ UNWRITTEN = (
     "{index} could not be written ({reason}); once it can be, run `stayfixed {name} index` again"
 )
 _INERT = "nothing to check: no ledger directory and no generated index"
-# What `regressions` says when no fixed entry carries a `regression` to run.
+# What `regressions` says when no fixed entry carries a `regression` to run, and after its runs.
 NO_REGRESSIONS = "nothing to run: no fixed entry carries a regression"
-# The exit code of a run a Ctrl-C or a terminating signal ended, as a shell reports one.
-INTERRUPTED_EXIT = 130
+REGRESSIONS_RAN = "{ran} regression(s), {not_proved} not proved"
+INTERRUPTED_EXIT = 130  # once a Ctrl-C, a SIGTERM or a SIGHUP ended a run, whichever it was
 BASE_HELP = (
     "also fail when a commit HEAD forked from this base ref at carries the ledger and the tree "
     "has none, or carries an entry the tree lacks, so a change that deletes the ledger or an "
@@ -121,7 +121,7 @@ def run_bugs_regressions(args: argparse.Namespace) -> Result:
     data = {"regressions": rows, "not_proved": not_proved}
     if not ran:
         return Result(NO_REGRESSIONS, data)
-    lines.append(f"{len(ran)} regression(s), {not_proved} not proved")
+    lines.append(REGRESSIONS_RAN.format(ran=len(ran), not_proved=not_proved))
     if ran[-1][1].reason == INTERRUPTED:
         return Result("\n".join(lines), data, exit_code=INTERRUPTED_EXIT)
     return Result("\n".join(lines), data, exit_code=1 if not_proved else 0)

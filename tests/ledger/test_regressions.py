@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.ledger import regressions as module
-from stayfixed.ledger.commands import INTERRUPTED_EXIT, NO_REGRESSIONS
+from stayfixed.ledger.commands import INTERRUPTED_EXIT, NO_REGRESSIONS, REGRESSIONS_RAN
 from stayfixed.prove.run import INTERRUPTED, Receipt, Verdict
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
@@ -103,7 +103,7 @@ def test_a_fixed_entry_whose_regression_passes_is_proved(tmp_path: Path) -> None
     assert code == 0
     first, last = out.splitlines()
     assert first.startswith("BR-001: proved: ")
-    assert last == "1 regression(s), 0 not proved"
+    assert last == REGRESSIONS_RAN.format(ran=1, not_proved=0)
 
 
 @needs_git
