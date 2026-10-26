@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 ROOT_ITSELF = (
     "names the repository root, so a walk would take in every environment and worktree under it"
 )
-NOT_CONTAINED = "leaves the repository, or reaches its directory through a link"
+NOT_CONTAINED = "is no readable path inside the repository free of links, `..` and `.git`"
 NOT_A_DIRECTORY = "names no directory here"
 
 

@@ -195,10 +195,11 @@ _FAILED = "the {name} profile's red-run hint failed: {kind}"
 _UNTOLD = "the {name} profile's red-run hint stopped its walk at a bound and could not tell"
 _UNJUDGED = ", so this tree cannot be judged"
 _NARROW = "; narrow `[ledger] code_roots` to the directories that hold code"
-# What the summary says in place of "tree is clean" when no code root is left to walk: every
-# profile's walk saw nothing, so its silence is no answer about the tree. `assess` names each
-# entry left out, and why.
-NO_ROOTS = "no [ledger] code_roots entry names a directory here, so there was nothing to check"
+# What the summary says after the uncommitted-change check's answer, in place of "tree is clean",
+# when no code root is left to walk: every profile's walk saw nothing, so its silence is no answer
+# about the tree. `assess` counts each entry left out; its inventory names it, and why.
+NO_ROOTS = "no [ledger] code_roots entry names a directory here, so no code root was walked"
+NO_CHANGE = "no uncommitted change"
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
@@ -247,9 +248,9 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     clean = "tree is clean" + "".join(
         f"; the {name} profile has nothing to report" for name in reports
     )
-    if not roots:
-        clean = NO_ROOTS
     summary = "; ".join(findings) or clean
+    if not roots:
+        summary = "; ".join([*(findings or [NO_CHANGE]), NO_ROOTS])
     data = {"dirty": dirty, "profiles": reports}
     return Result(summary, data, exit_code=1 if findings else 0)
 

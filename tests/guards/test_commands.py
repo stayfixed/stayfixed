@@ -10,7 +10,7 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
-from stayfixed.guards.commands import NO_ROOTS
+from stayfixed.guards.commands import NO_CHANGE, NO_ROOTS
 from tests.gitfixture import git
 from tests.profiles import redrun
 from tests.profiles.python.bytecode import compile_module, make_stale
@@ -369,8 +369,8 @@ def test_test_hygiene_does_not_call_a_tree_with_no_usable_code_root_clean(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `.` names the repository root, which no walk takes, so a profile's walk saw nothing and
-    # its silence says nothing about the tree. Oracle: `mutations/`'s "test hygiene calls an
-    # unwalked tree clean".
+    # its silence says nothing about the tree; the uncommitted-change check still ran, and its
+    # answer stays. Oracle: `mutations/`'s "test hygiene calls an unwalked tree clean".
     root = repo(tmp_path)
     (root / "stayfixed.toml").write_text(
         CONFIG + '\n[ledger]\ncode_roots = ["."]\n', encoding="utf-8"
@@ -379,8 +379,11 @@ def test_test_hygiene_does_not_call_a_tree_with_no_usable_code_root_clean(
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 0
     out = capsys.readouterr().out
-    assert out == f"{NO_ROOTS}\n"
+    assert out == f"{NO_CHANGE}; {NO_ROOTS}\n"
     assert "clean" not in out
+    (root / "new.txt").write_text("x\n", encoding="utf-8")
+    assert invoke(argv) == 1
+    assert capsys.readouterr().out == f"1 uncommitted change(s) in the tree; {NO_ROOTS}\n"
 
 
 @needs_git
