@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.ledger import regressions as module
-from stayfixed.ledger.commands import INTERRUPTED_EXIT, NO_REGRESSIONS, REGRESSIONS_RAN
+from stayfixed.ledger.commands import NO_REGRESSIONS, REGRESSIONS_RAN
 from stayfixed.prove.run import INTERRUPTED, Receipt, Verdict
 from tests.cli import cli
 from tests.gitfixture import git, needs_git
@@ -133,9 +133,8 @@ def test_a_passing_sibling_is_not_counted_as_not_proved(tmp_path: Path) -> None:
 
 @needs_git
 def test_only_fixed_entries_run(tmp_path: Path) -> None:
-    # `rejected` has no fix to regress, `partial` is still open and `void` is a renumber's pointer:
-    # each may carry a `regression`, and none is run. Mutation (oracle): `mutations/`'s "bugs
-    # regressions runs an entry of any status" -> all five run and four more are not proved.
+    # Why only `fixed`: `docs/cli.md`'s `stayfixed bugs regressions`. Mutation (oracle):
+    # `mutations/`'s "bugs regressions runs an entry of any status" -> all five run.
     failing = ["sh", "-c", "exit 1"]
     entries = {
         "BR-001": ("open", failing),
@@ -185,7 +184,7 @@ def test_an_interrupted_regression_starts_no_further_one(
     code, data = as_json(tmp_path, root)
     assert started == [tuple(PASSING)]
     assert [row["id"] for row in data["regressions"]] == ["BR-001"]  # type: ignore[attr-defined]
-    assert code == INTERRUPTED_EXIT
+    assert code == 1
 
 
 @needs_git

@@ -15,10 +15,9 @@ Three things hold everywhere:
   command's keys are its own and are listed with it below — `doctor`'s `checks`, `memory refs`'s
   advisory `notices`, `docs trail`'s `undeclared`, and the two of `docs trail`'s keys that are
   not lists at all, `written` and `stale`.
-- **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error, and from
-  [`bugs regressions`](#stayfixed-bugs-regressions) alone `130`, when an interrupt ended one of its
-  runs. A caller that treats `1` as "proceed anyway" must still never treat `2` that way — a
-  refusal is a boundary, not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
+- **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
+  treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
+  not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a
   symbolic link, whatever it points at, before reading anything through it: a link to
   `/dev/zero` would otherwise be read until memory ran out. The refusal exits `2`, except in three
   commands that read the file the way a session does: `stayfixed hook` runs on with no project
@@ -1028,11 +1027,12 @@ carries a regression`. `--json` carries `regressions`, one `{"id", "path", "verd
 object a run, `path` being the entry file's from the project root, and `not_proved`. The runner's
 standard output goes to standard error in both forms, as a custom gate's does, so under `--json`
 standard output holds the one object. Exits `0` when every run is `proved` or there is none, and
-`1` otherwise. A Ctrl-C, or a SIGTERM or SIGHUP, during a run ends that run `not proven` and the
-command with `130`: nothing after it starts. A ledger that does not parse fails (`1`).
+`1` otherwise, as `prove` does. A Ctrl-C, or a SIGTERM or SIGHUP, during a run ends that run `not
+proven`, and nothing after it starts. A ledger that does not parse fails (`1`).
 
-The run catches an honest regression and is no control against a hostile one: the argv is read
-from the tree the change wrote, so a change that can rewrite the test can rewrite the argv too.
+The run catches an honest regression and is no control against a hostile one: the argv is read from
+the tree the change wrote, which can rewrite it as easily as the test. Who runs it is decided as for
+any custom gate, by the base branch's `run` and the person's yes before a clone's commands run.
 
 **Reads** the ledger's entry files, and what `prove` reads. **Writes** nothing in the project, as
 `prove` writes nothing there; what each runner writes, it writes. **Runs** each argv, as the
@@ -3766,17 +3766,17 @@ alone. There the gate's own `run` provides the runner, for example in a scratch 
 
 ```toml
 [gates.custom.regressions]
-run = ["sh", "-c", 'v="$(mktemp -d)" && python3 -m venv "$v" && "$v/bin/pip" install -q pytest && PATH="$v/bin:$PATH" exec python3 -P -m stayfixed bugs regressions']
+run = ["sh", "-c", 'v="$(mktemp -d)" && python3 -m venv "$v" && "$v/bin/pip" install -q pytest==9.1.1 && PATH="$v/bin:$PATH" exec python3 -P -m stayfixed bugs regressions']
 ```
 
 Each `regression` then names the runner itself, `["pytest", "tests/test_total.py"]`, and what its
-tests import is added to the install. `-P` keeps the project root off the module path, as the
-step's own `python3 -P -s -m stayfixed` does. This `run` reaches stayfixed only where `PYTHONPATH`
-names it, so on a machine `stayfixed bugs regressions` is run directly. The installation, every
-regression and the gate itself are bounded by the same `custom_timeout_seconds`, so a project with
-many slow regressions raises it; a set that runs past it ends as a gate that could not run, never
-as a pass. Named in `[stayfixed] enforced`, the gate makes a regression that is not proved fail the
-run; otherwise it is advisory, like any other gate.
+tests import is added to the install, pinned as pytest is. `-P` keeps the project root off the
+module path, as the step's own `python3 -P -s -m stayfixed` does. This `run` reaches stayfixed only
+where `PYTHONPATH` names it, so on a machine `stayfixed bugs regressions` is run directly. The
+installation, every regression and the gate itself are bounded by the same `custom_timeout_seconds`,
+so a project with many slow regressions raises it; a set that runs past it ends as a gate that could
+not run, never as a pass. Named in `[stayfixed] enforced`, the gate makes a regression that is not
+proved fail the run; otherwise it is advisory, like any other gate.
 
 **Enforcement is per gate.** `[stayfixed] enforced` lists the gates promoted while a project
 adopts stayfixed, and `state = "installed"` means every gate the project runs. Both keys are
