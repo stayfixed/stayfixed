@@ -41,7 +41,8 @@ from stayfixed.config.schema import COMMIT_TYPE_WORD, IN_REPO_MODE
 from stayfixed.findings import Severity
 from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
-from stayfixed.guards.api import contained_roots, dropped_roots
+from stayfixed.config.loader import preset_defaults
+from stayfixed.guards.api import NOT_A_DIRECTORY, contained_roots, dropped_roots
 from stayfixed.printed import clipped
 from stayfixed.scaffold import EntriesError, judged_entries
 
@@ -115,11 +116,15 @@ def _names(out: str) -> list[str]:
 def _code_roots(context: ProbeContext) -> Looked:
     """Each `[ledger] code_roots` entry no walk takes, with its reason, in config order. Through
     `clipped`: almost every such entry, `.` and `..` among them, lies outside the path grammar,
-    where `printable` would withhold them all."""
+    where `printable` would withhold them all. A preset default that names no directory here is
+    left unnamed: a missing directory loses no walk, and narrowing the list would drop it later."""
+    config = context.config
+    preset = preset_defaults(config.project.name, preset=config.stayfixed.preset).ledger.code_roots
     return Looked(
         tuple(
             f"{clipped(entry)}: {reason}"
-            for entry, reason in dropped_roots(context.root, context.config)
+            for entry, reason in dropped_roots(context.root, config)
+            if not (reason == NOT_A_DIRECTORY and entry in preset)
         )
     )
 

@@ -1225,7 +1225,7 @@ A row names no finding: `assess` lists them as items.
 
 | Probe | Reads | Severity | Principle | Reported when |
 |---|---|---|---|---|
-| `code-roots` | `[ledger] code_roots` | advice | — | an entry no walk takes, each named in config order, quoted when it lies outside the path grammar, with its reason: it names the repository root itself (`.`, `./`), it leaves the repository or reaches its directory through a link, or it names no directory here |
+| `code-roots` | `[ledger] code_roots` | advice | — | an entry no walk takes, each named in config order, quoted when it lies outside the path grammar, with its reason: it names the repository root itself (`.`, `./`), it leaves the repository or reaches its directory through a link, or it names no directory here, unless the preset's default `code_roots` lists it, since a missing directory loses no walk |
 | `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
 | `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
@@ -3759,7 +3759,8 @@ are the trees `bugs check` sweeps for mentions of an identifier, each of which m
 entry behind it, and the trees `memory refs`, `test hygiene` and the `todo-markers` probe
 walk. `src/` and `./src` are read as `src`. An entry that names the repository root itself,
 leaves the repository, passes through a link or names no directory is walked by none of them
-and refused by nothing: `stayfixed assess`'s `code-roots` probe names it, with the reason.
+and refused by nothing: `stayfixed assess`'s `code-roots` probe names it, with the reason, except
+a missing directory the preset's default lists, which loses no walk.
 `evidence_boundary_required_for` names the severities whose entries must carry a filled
 `**What this evidence does not establish:**` line, the template's placeholder not counting. Widening it is how a project asks the same of `medium`. Each value must be one of the
 severities, `high`, `medium` and `low`, spelled as the table below spells it. A value that names

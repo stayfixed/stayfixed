@@ -25,7 +25,7 @@ one gate and the command reader:
   red-run hint walks the same roots, handed to it by this area's guard rather than imported.
   `assess`'s `code-roots` probe names the entries those walks leave out, each with its reason
   (`dropped_roots`), read from the same loop, so the entries named and the entries walked cannot
-  disagree.
+  disagree; it leaves a preset default that names no directory (`NOT_A_DIRECTORY`) unnamed.
 - `assess` runs the `commit` gate (`commit_gate`), `(root, config, base) -> list[Finding]`;
   `commit check` reads the same range through the same `check_range`.
 - `prove` reads a test command past its assignments, `env` and `uv run …` the way every red-run
@@ -61,12 +61,13 @@ from stayfixed.guards.githooks import (
     install,
     uninstall,
 )
-from stayfixed.guards.roots import contained_roots, dropped_roots
+from stayfixed.guards.roots import NOT_A_DIRECTORY, contained_roots, dropped_roots
 from stayfixed.guards.uvrun import run_directory
 
 __all__ = [
     "HOOK_MARKER",
     "HOOK_NAME",
+    "NOT_A_DIRECTORY",
     "Found",
     "Installed",
     "Launch",

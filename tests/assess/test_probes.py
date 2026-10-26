@@ -115,22 +115,28 @@ def test_todo_markers_names_each_file_in_the_code_roots_once(tmp_path: Path) -> 
         ('["."]', (f"'.': {ROOT_ITSELF}",)),
         ('["src", "lib"]', (f"lib: {NOT_A_DIRECTORY}",)),
         ('["../shared"]', (f"'../shared': {NOT_CONTAINED}",)),
+        ('["src", "tests"]', ()),
+        ('["src", "scripts"]', (f"scripts: {NOT_CONTAINED}",)),
     ],
-    ids=["dot", "missing", "outside"],
+    ids=["dot", "missing", "outside", "preset-default-missing", "preset-default-link"],
 )
 def test_a_code_root_no_walk_takes_is_named_with_its_reason(
     tmp_path: Path, roots: str, where: tuple[str, ...]
 ) -> None:
     # Every walk over `[ledger] code_roots` skips such an entry without a word, so the inventory
     # is where a person learns of it: each entry, quoted where it lies outside the path grammar,
-    # with its reason. Oracle: `mutations/`'s "assess leaves the dropped code roots unnamed".
+    # with its reason. Oracle: `mutations/`'s "assess leaves the dropped code roots unnamed". A
+    # directory the preset's own default names and the repository lacks loses no walk, so it is
+    # no item; one the repository made a link is. Mutation (advisory): the preset check
+    # dropped -> `tests` is named; the reason check dropped -> the link is not.
     root = _repo(tmp_path, tail=f"\n[ledger]\ncode_roots = {roots}\n")
     (root / "src").mkdir()
     (tmp_path / "shared").mkdir()
+    (root / "scripts").symlink_to("src")
     items = _items(root, tmp_path, "code-roots")
-    assert [(i.rule, i.severity, i.principle, i.where) for i in items] == [
-        ("code-roots", Severity.ADVICE, None, where)
-    ]
+    assert [(i.rule, i.severity, i.principle, i.where) for i in items] == (
+        [("code-roots", Severity.ADVICE, None, where)] if where else []
+    )
 
 
 def test_the_count_is_whole_past_the_cap(tmp_path: Path) -> None:
@@ -569,8 +575,7 @@ def test_a_profile_this_stayfixed_does_not_ship_is_one_warning_and_the_rest_stil
         (PROFILE_NOT_SHIPPED, Severity.WARNING, ("[stayfixed] profile",))
     ]
     assert "python" in profile[0].remedy
-    # `_repo` holds none of the preset's code roots, which `code-roots` names.
-    assert [i.probe for i in items if i.probe != PROFILE] == ["code-roots", "codeowners"]
+    assert [i.probe for i in items if i.probe != PROFILE] == ["codeowners"]
 
 
 def test_no_profile_configured_reports_no_profile_item(tmp_path: Path) -> None:
