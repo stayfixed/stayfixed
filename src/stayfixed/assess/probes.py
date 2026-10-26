@@ -36,12 +36,14 @@ from typing import TYPE_CHECKING
 
 from stayfixed import fsops
 from stayfixed.assess.model import Item, item
+from stayfixed.config.loader import preset_defaults
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import COMMIT_TYPE_WORD, IN_REPO_MODE
 from stayfixed.findings import Severity
 from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
-from stayfixed.guards.api import contained_roots
+from stayfixed.guards.api import contained_roots, dropped_roots
+from stayfixed.printed import clipped
 from stayfixed.scaffold import EntriesError, judged_entries
 
 if TYPE_CHECKING:
@@ -109,6 +111,15 @@ def _head(context: ProbeContext) -> str | None:
 def _names(out: str) -> list[str]:
     """NUL-terminated names, the empty tail dropped."""
     return [name for name in out.split("\0") if name]
+
+
+def _code_roots(context: ProbeContext) -> Looked:
+    """Each `[ledger] code_roots` entry `dropped_roots` names, through `clipped`: almost every one,
+    `.` and `..` among them, lies outside the path grammar, where `printable` withholds them all."""
+    config = context.config
+    preset = preset_defaults(config.project.name, preset=config.stayfixed.preset).ledger.code_roots
+    dropped = dropped_roots(context.root, config, defaults=preset)
+    return Looked(tuple(f"{clipped(entry)}: {reason}" for entry, reason in dropped))
 
 
 def _todo_markers(context: ProbeContext) -> Looked:
@@ -266,6 +277,14 @@ def _commit_types(context: ProbeContext) -> Looked:
 
 
 PROBES: tuple[Probe, ...] = (
+    Probe(
+        "code-roots",
+        None,
+        Severity.ADVICE,
+        "name each code root as a directory inside the repository that no link leads through, "
+        "such as `src`: no check walks an entry named here",
+        _code_roots,
+    ),
     Probe(
         "todo-markers",
         1,

@@ -36,6 +36,8 @@ def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
         "git_path",
         # which roots a configuration's paths may reach, for ledger.scan and memory.refs
         "contained_roots",
+        # the entries those walks leave out, and why, for assess's code-roots probe
+        "dropped_roots",
         # the commit gate stayfixed.assess.gates runs
         "commit_gate",
         # how a command reads past its launch, for prove to ask the adapters what it runs, to

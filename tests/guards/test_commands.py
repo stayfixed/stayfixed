@@ -10,6 +10,7 @@ import pytest
 
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.findings import LISTED_LIMIT
+from stayfixed.guards.commands import NO_CHANGE, NO_ROOTS
 from tests.gitfixture import git
 from tests.profiles import redrun
 from tests.profiles.python.bytecode import compile_module, make_stale
@@ -352,6 +353,7 @@ def test_test_hygiene_is_clean_on_a_committed_tree(
     # Python is detected with nothing to report, and the summary says so in the words a person
     # reads. Oracle: `mutations/`'s "test hygiene's clean summary names no stack".
     root = repo(tmp_path)
+    (root / "src").mkdir()  # a code root to walk, empty, which git does not list
     argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
     assert invoke(argv) == 0
     assert capsys.readouterr().out == "tree is clean\n"
@@ -360,6 +362,28 @@ def test_test_hygiene_is_clean_on_a_committed_tree(
     git(root, "commit", "-q", "-m", "chore: python")
     assert invoke(argv) == 0
     assert capsys.readouterr().out == "tree is clean; the python profile has nothing to report\n"
+
+
+@needs_git
+def test_test_hygiene_does_not_call_a_tree_with_no_usable_code_root_clean(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `.` names the repository root, which no walk takes, so a profile's walk saw nothing and
+    # its silence says nothing about the tree; the uncommitted-change check still ran, and its
+    # answer stays. Oracle: `mutations/`'s "test hygiene calls an unwalked tree clean".
+    root = repo(tmp_path)
+    (root / "stayfixed.toml").write_text(
+        CONFIG + '\n[ledger]\ncode_roots = ["."]\n', encoding="utf-8"
+    )
+    git(root, "commit", "-q", "-am", "chore: the root as a code root")
+    argv = ["test", "hygiene", "--root", str(root), "--machine", str(tmp_path / "m.toml")]
+    assert invoke(argv) == 0
+    out = capsys.readouterr().out
+    assert out == f"{NO_CHANGE}; {NO_ROOTS}\n"
+    assert "clean" not in out
+    (root / "new.txt").write_text("x\n", encoding="utf-8")
+    assert invoke(argv) == 1
+    assert capsys.readouterr().out == f"1 uncommitted change(s) in the tree; {NO_ROOTS}\n"
 
 
 @needs_git
@@ -543,9 +567,10 @@ def detected_everywhere(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def committed_project(tmp_path: Path) -> Path:
-    """A repository whose one file, its configuration, is committed: a clean tree."""
+    """A repository whose one file, its configuration, is committed: a clean tree, with its one
+    code root, `src`, there to walk and empty, which git does not list."""
     root = tmp_path / "repo"
-    root.mkdir()
+    (root / "src").mkdir(parents=True)
     (root / "stayfixed.toml").write_text(redrun.CONFIG, encoding="utf-8")
     git(root, "init", "-q", "-b", "main")
     git(root, "add", "-A")

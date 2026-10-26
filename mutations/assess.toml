@@ -798,6 +798,19 @@ reddens = [
   "tests/assess/test_report.py::test_a_gate_that_could_not_run_is_annotated_at_its_level_with_its_fixed_reason",
 ]
 
+# Every walk over `[ledger] code_roots` skips an entry it cannot take without a word, so the
+# `code-roots` probe is the one place a person learns of it.
+[[mutation]]
+name = "assess leaves the dropped code roots unnamed"
+file = "src/stayfixed/assess/probes.py"
+before = "    dropped = dropped_roots(context.root, config, defaults=preset)"
+after = "    dropped = []"
+reddens = [
+  "tests/assess/test_probes.py::test_a_code_root_no_walk_takes_is_named_with_its_reason[dot]",
+  "tests/assess/test_probes.py::test_a_code_root_no_walk_takes_is_named_with_its_reason[missing]",
+  "tests/assess/test_probes.py::test_a_code_root_no_walk_takes_is_named_with_its_reason[outside]",
+]
+
 [[mutation]]
 name = "a todo-markers grep that did not answer reads as no marker"
 file = "src/stayfixed/assess/probes.py"

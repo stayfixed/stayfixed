@@ -330,10 +330,8 @@ reddens = [
 [[mutation]]
 name = "an escaping code root is followed"
 file = "src/stayfixed/guards/roots.py"
-before = '''            candidate = contained(
-                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root
-            )'''
-after = '            candidate = root / entry'
+before = "            candidate = contained(root, folded, resolved_root=resolved_root)"
+after = "            candidate = root / entry"
 reddens = ["tests/profiles/python/test_hygiene.py::test_only_contained_code_roots_are_scanned"]
 
 # The two-paragraph attribution block, and the reason the paragraph rule needed a walk rather
@@ -810,10 +808,22 @@ reddens = [
 [[mutation]]
 name = "a code root spelled with a slash is dropped again"
 file = "src/stayfixed/guards/roots.py"
-before = "                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root"
-after = "                root, entry, resolved_root=resolved_root"
+before = "            candidate = contained(root, folded, resolved_root=resolved_root)"
+after = "            candidate = contained(root, entry, resolved_root=resolved_root)"
 reddens = [
   "tests/guards/test_hygiene.py::test_a_code_root_spelled_with_a_trailing_or_leading_slash_is_still_walked",
+]
+
+# A missing preset default loses no walk only while another root is walked. With none walked,
+# `test hygiene` says so and points at `assess`, which must then name every entry, the preset's
+# own included, or both commands are silent about why nothing was checked.
+[[mutation]]
+name = "a missing preset default goes unnamed when no root is walked"
+file = "src/stayfixed/guards/roots.py"
+before = "    walked = any(isinstance(found, Path) for _, found in judged)"
+after = "    walked = True"
+reddens = [
+  "tests/assess/test_probes.py::test_a_code_root_no_walk_takes_is_named_with_its_reason[preset-defaults-none-walked]",
 ]
 
 # In the block led by `mutations/`'s "a gate that could not judge counts as passing": every
@@ -1050,6 +1060,17 @@ after = "        if note is None:"
 reddens = [
   "tests/guards/test_commands.py::test_test_hygiene_reports_a_repository_in_two_stacks_as_two_entries",
   "tests/guards/test_commands.py::test_test_hygiene_reports_every_stack_by_its_markers_and_not_by_configuration",
+]
+
+# With no code root left to walk, every profile's walk saw nothing, and its silence is no answer:
+# the summary says no code root was walked rather than calling the tree clean.
+[[mutation]]
+name = "test hygiene calls an unwalked tree clean"
+file = "src/stayfixed/guards/commands.py"
+before = "    if not roots:"
+after = "    if False:"
+reddens = [
+  "tests/guards/test_commands.py::test_test_hygiene_does_not_call_a_tree_with_no_usable_code_root_clean",
 ]
 
 [[mutation]]

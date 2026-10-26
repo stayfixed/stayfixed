@@ -58,6 +58,7 @@ UNWRITABLE = (
 NOT_A_FILE = (
     f"refusing to write {ASSESSMENT}: something that is not a file is there; remove it and re-run"
 )
+SUMMARY_LEAD = "assessment:"
 SKIPPED = (
     "not run, as --builtin asked: the custom gate(s) {names}, whose commands this repository "
     "configured; they count toward no total above"
@@ -189,7 +190,7 @@ def render(assessment: Assessment) -> str:
     repository chose."""
     failing = assessment.would_fail
     lines = [
-        f"assessment: state {assessment.state}; {len(failing)} of {len(assessment.gates)} "
+        f"{SUMMARY_LEAD} state {assessment.state}; {len(failing)} of {len(assessment.gates)} "
         f"gate(s) would fail if enforced; {len(assessment.items)} item(s); the whole list is in "
         f"{ASSESSMENT}",
         "",

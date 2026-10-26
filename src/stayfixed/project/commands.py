@@ -83,7 +83,8 @@ STAMPED = (
 )
 # Names and a count, never a command: each name is a custom gate's, which the loader holds to
 # `PROJECT_NAME`, and past `findings.LISTED_LIMIT` the rest are counted. Said before anything runs
-# them, so the dry run a person approves carries it, and the `init` skill asks before `assess`.
+# them, so the dry run a person approves carries it. The `adopt` skill asks before any runs, keyed
+# on `assess --builtin`'s own output and never on this note.
 CUSTOM_GATES = (
     "note: stayfixed.toml configures {count} custom gate(s), {names}; `stayfixed assess`, "
     "`stayfixed gate` and `stayfixed adopt promote` run each one's command from [gates.custom], "

@@ -83,9 +83,8 @@ unless you name it: each runs in every session, and neither is pinned. **Codex h
 against this project's own spike record and each plugin's own published install instructions,
 2026-09-18): install `superpowers` and `context7` by hand there if you use Codex, the same way
 you would install any other Codex plugin — `setup` reports this as a note rather than guessing a
-marketplace name (nothing is vendored on a guess). The adoption skill will delegate to
-superpowers where it is present. The adoption skill that walks a plan with the agent ships in a
-later package.
+marketplace name (nothing is vendored on a guess). The `adopt` skill, which `init` offers as
+its last step, brainstorms the adoption through superpowers where it is present.
 
 ## What each agent enforces
 
@@ -525,8 +524,8 @@ key. The `close-bug` skill walks the closing of an entry through these commands.
 
 ## Skills and agents
 
-`skills/` ships two ported skills (`close-bug`, `memory-sweep`), six authored ones
-(`file-bug`, `sweep-defect-class`, `review-plan-three-lenses`, `attribute-failure`,
+`skills/` ships two ported skills (`close-bug`, `memory-sweep`), seven authored ones
+(`adopt`, `file-bug`, `sweep-defect-class`, `review-plan-three-lenses`, `attribute-failure`,
 `run-correctness-audit`, `retro-to-guard`), and thin wrappers for the commands the CLI
 registers; `agents/` ships a read-only `code-navigator`. Every skill is written in action
 language — never a harness tool's name — with the per-harness mapping in
