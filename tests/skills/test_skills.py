@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.areas import area_modules
+from stayfixed.assess.assessment import SKIPPED
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 from stayfixed.overlay.template import template_root
 from stayfixed.project.commands import CUSTOM_GATES
@@ -95,6 +96,7 @@ def test_the_walk_finds_the_ported_skills() -> None:
         "attribute-failure",
         "run-correctness-audit",
         "retro-to-guard",
+        "adopt",
     } <= names
     # The same guard for the wider walk: a `references/` that goes quiet takes its own
     # invocation cases with it.
@@ -201,37 +203,55 @@ def test_the_agent_file_carries_its_frontmatter_and_names_no_product() -> None:
     assert "if one is installed" in body  # the capability, not the product
 
 
-def test_the_init_skill_asks_before_it_runs_a_kept_file_s_custom_gates() -> None:
-    # `init` adopts a clone's `stayfixed.toml`, and the adoption's first command, `stayfixed
-    # assess`, runs every command its `[gates.custom]` names. `init` says so in a note, and the
-    # skill names that note by its words and asks before the first `stayfixed assess`. Mutation
-    # (by hand): the step's question removed -> the ask no longer comes first and this reddens.
-    text = (SKILLS / "init" / "references" / "adoption.md").read_text(encoding="utf-8")
-    adoption = " ".join(text.split())
-    lead = CUSTOM_GATES.split("{count}", 1)[0].strip()
-    first_run = adoption.index("run `stayfixed assess`")
-    assert adoption.index(lead) < adoption.index("explicit yes") < first_run
-    # A no still produces an assessment, through the flag that runs none of those commands:
-    # before it, the only way to honour a no was to stop. Mutation (by hand): the no's command
-    # back to plain `stayfixed assess` -> this reddens.
-    assert "`stayfixed assess --builtin` on a no" in adoption[first_run:]
-    # Without the note there is nothing to ask, and the assessment still runs: that run was the
-    # tail of the if-sentence, where an agent reading "if" could skip it. It is its own branch,
-    # and the relay follows both. Mutation (by hand): the `Otherwise` branch deleted -> reddens.
-    otherwise = adoption.index("- Otherwise, run `stayfixed assess`.")
-    assert first_run < otherwise < adoption.index("Either way, relay the summary")
+def test_the_adopt_skill_asks_before_it_runs_the_custom_gates() -> None:
+    # Plain `stayfixed assess` runs every command a clone's `[gates.custom]` names, and the
+    # `adopt` skill may be invoked with no `init` before it: in a later session, or in a clone of
+    # an adopted repository. So its first step cannot wait for `init`'s note. It runs the
+    # assessment that runs none of those commands first, and that run's own line naming the gates
+    # it left out is what the question keys on. Mutation (by hand): step 1's first command made
+    # plain `stayfixed assess` -> the `--builtin` run no longer comes first and this reddens.
+    text = (SKILLS / "adopt" / "SKILL.md").read_text(encoding="utf-8")
+    words = " ".join(text.split())
+    builtin = words.index("run `stayfixed assess --builtin`")
+    plain = words.index("`stayfixed assess`")
+    skipped = SKIPPED.split(":", 1)[0]
+    assert builtin < words.index(skipped) < words.index("explicit yes") < plain
+    assert "**Silence, a timeout or an empty answer is a no.**" in words[builtin:plain]
+    # A no keeps the assessment already made, rather than running anything more.
+    assert "On a no, keep the `--builtin` result" in words[plain:]
+    # Nothing conditions the question on `init`'s output: neither its note's words nor a
+    # sentence that names `init` and a note. Mutation (by hand): the old step 1, keyed on
+    # `init`'s note, restored -> this reddens.
+    assert CUSTOM_GATES.split("{count}", 1)[0].strip() not in words
+    assert not [s for s in words.split(". ") if "`init`" in s and "note" in s]
 
 
-def test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption() -> None:
+def test_init_offers_the_adopt_skill_as_its_last_step() -> None:
+    # The adoption is a skill of its own, so `init` hands over to it instead of linking a
+    # reference of its own; every path through the walk reaches its last step.
+    text = (SKILLS / "init" / "SKILL.md").read_text(encoding="utf-8")
+    assert "references/adoption.md" not in text
+    assert not (SKILLS / "init" / "references" / "adoption.md").exists()
+    walk = text.split("## Walk", 1)[1].split("## Rules", 1)[0]
+    steps = re.split(r"\n(?=\d+\. )", walk.strip())
+    assert steps[-1].startswith(f"{len(steps)}. ")
+    assert "the `adopt` skill" in " ".join(steps[-1].split())
+
+
+def test_the_adopt_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption() -> None:
     # After a no, the first step assessed with `--builtin`, and the closing message then handed
     # over `stayfixed adopt promote`, which runs every custom gate the clone configures: in a
     # clone the base is the clone author's, so its having the command is no brake. Every command
-    # the skill names that runs gates is named with `--builtin` for a no as well. Mutation
+    # the two skills name that runs gates is named with `--builtin` for a no as well. Mutation
     # (oracle): the closing step's `--builtin` dropped -> `adopt promote` has no such form and
     # this reddens.
     text = "\n".join(
         path.read_text(encoding="utf-8")
-        for path in (SKILLS / "init" / "SKILL.md", *(SKILLS / "init" / "references").glob("*.md"))
+        for path in (
+            SKILLS / "adopt" / "SKILL.md",
+            SKILLS / "init" / "SKILL.md",
+            *(SKILLS / "init" / "references").glob("*.md"),
+        )
     )
     words = " ".join(text.split())
     named = [

@@ -1,16 +1,22 @@
-# Starting the adoption
+---
+name: adopt
+description: Take a repository that has run init to its gates enforced — assess it, asking before any command of its own runs, brainstorm and write the adoption's design and plan, and hand over the promotion. Use right after init, in a later session that carries an adoption on, or in a clone of a repository that has adopted stayfixed.
+---
 
-After the scaffold is written:
+# Adopting stayfixed
 
-1. Assess the repository. Pick the command first:
-   - If `init` printed a `note: stayfixed.toml configures … custom gate(s)` line, the file the
-     user kept names commands of its own, and `stayfixed assess` runs them. Name those gates to
-     the user, say that the next command runs their commands on this machine, and ask for an
-     explicit yes. **Silence, a timeout or an empty answer is a no.** On a yes, run
-     `stayfixed assess`, or `stayfixed assess --builtin` on a no, which runs the built-in gates
-     and the probes and none of those commands, and names the gates it left out. A no holds
-     for the whole adoption: every later command that runs gates takes `--builtin` too.
-   - Otherwise, run `stayfixed assess`.
+For a repository `init` has taken onto stayfixed, in this session or an earlier one, in this
+checkout or a clone of it: no step below relies on what an earlier command printed.
+
+1. Assess the repository, running none of its own commands first: run
+   `stayfixed assess --builtin`, which runs the built-in gates and the probes and no custom
+   gate. When its summary has a `not run, as --builtin asked` line, `stayfixed.toml`
+   configures custom gates, and the assessment without the flag runs their commands. Name
+   those gates to the user, say that the next command runs their commands on this machine,
+   and ask for an explicit yes. **Silence, a timeout or an empty answer is a no.** On a yes,
+   run `stayfixed assess`. On a no, keep the `--builtin` result. A no holds for the whole
+   adoption: every later command that runs gates takes `--builtin` too. With no such line
+   there is nothing to ask, and the `--builtin` result is the whole assessment.
 
    Either way, relay the summary: its table of gates, its table of items when there are any,
    and every `note:` line. The whole list is in `.stayfixed/assessment.json`. Use it for the
@@ -22,7 +28,7 @@ After the scaffold is written:
    - which gates to enforce first;
    - which findings to fix, and which to file as ledger entries through the `file-bug` skill;
    - what the project deliberately does differently.
-3. Write the adoption down: the design in the `[paths] specs` directory as
+3. Put the adoption in writing: the design in the `[paths] specs` directory as
    `<date>-stayfixed-adoption-design.md`, and the plan directly in `[paths] plans` as
    `<date>-stayfixed-adoption.md`; a second adoption, such as a subproject's, adds a slug:
    `<date>-stayfixed-adoption-<slug>.md`. No command requires the plan, and it is still the
@@ -48,3 +54,6 @@ After the scaffold is written:
      user declined. Say that it promotes no custom gate, and that promoting one means running
      its command, which needs the user's explicit yes first;
    - the undo: `stayfixed uninstall`.
+
+What this skill does not do: write a gate or edit `stayfixed.toml`. A gate the brainstorm settles
+on is the user's to add, and `stayfixed adopt promote` is what moves `state` and `enforced`.

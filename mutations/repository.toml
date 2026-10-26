@@ -1412,12 +1412,12 @@ reddens = ["tests/skills/test_skills.py::test_the_readme_maps_every_tool_name_fo
 # In the block led by `mutations/`'s "adopt promote --builtin still runs the custom gates": a no to
 # running a clone's own commands holds through `--builtin`.
 [[mutation]]
-name = "the init skill hands over adopt promote without --builtin after a no"
-file = "skills/init/references/adoption.md"
+name = "the adopt skill hands over adopt promote without --builtin after a no"
+file = "skills/adopt/SKILL.md"
 before = "     step 1 it is `stayfixed adopt promote --builtin`: without the flag it runs the commands the"
 after = "     step 1 it is `stayfixed adopt promote`: without the flag it runs the commands the"
 reddens = [
-  "tests/skills/test_skills.py::test_the_init_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption",
+  "tests/skills/test_skills.py::test_the_adopt_skill_keeps_a_no_to_the_clone_s_commands_through_the_whole_adoption",
 ]
 
 # The expression check is only as good as what it reads: the strict reader's step scripts, in
