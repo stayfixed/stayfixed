@@ -1414,16 +1414,35 @@ file = ".github/workflows/check.yml"
 before = '''
       - name: The project's own gates
         env:
-          PYTHONPATH: stayfixed/src
+          PYTHONPATH: ${{ github.workspace }}/stayfixed/src
 '''
 after = '''
       - name: The project's own gates
         env:
-          PYTHONPATH: stayfixed/src:project
+          PYTHONPATH: ${{ github.workspace }}/stayfixed/src:project
 '''
 reddens = [
   "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[custom]",
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
+]
+
+# The custom step's commands run from the project root, so a relative entry reaches no stayfixed
+# from a command's own `python3 -m stayfixed`.
+[[mutation]]
+name = "the custom step's PYTHONPATH is relative again"
+file = ".github/workflows/check.yml"
+before = '''
+      - name: The project's own gates
+        env:
+          PYTHONPATH: ${{ github.workspace }}/stayfixed/src
+'''
+after = '''
+      - name: The project's own gates
+        env:
+          PYTHONPATH: stayfixed/src
+'''
+reddens = [
+  "tests/test_check_workflow.py::test_a_custom_gate_s_python3_m_stayfixed_is_the_workflow_s_own",
 ]
 
 # The judging step runs from the workspace, which the pull request writes nothing into. From the
@@ -1633,7 +1652,7 @@ reddens = [
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
 ]
 
-# The same class in an earlier step: the gate steps' `PYTHONPATH` is `stayfixed/src`, and the
+# The same class in an earlier step: the gate steps' `PYTHONPATH` names `stayfixed/src`, and the
 # interpreter imports a `sitecustomize.py` it finds there at start-up, so a copy into stayfixed's
 # own checkout is code in the verdict's process.
 [[mutation]]

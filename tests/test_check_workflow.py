@@ -89,6 +89,9 @@ GATE_ENV: dict[str, Node] = {
     "WORKFLOW_SHA": "${{ steps.stayfixed.outputs.sha }}",
     "ONLY": "${{ inputs.only }}",
 }
+# The custom step's own: its commands run from the project root, so a `python3 -m stayfixed` one
+# starts finds the workflow's stayfixed only through an absolute entry.
+CUSTOM_ENV: dict[str, Node] = {**GATE_ENV, "PYTHONPATH": "${{ github.workspace }}/stayfixed/src"}
 SCRIPT = "<script>"
 # What each gate invocation goes on to, on the line it continues onto with `\`.
 BACKSLASH = "\\"
@@ -141,7 +144,7 @@ STEPS: list[dict[str, Node]] = [
         "run": SCRIPT,
     },
     {"name": JUDGE, "env": GATE_ENV, "run": SCRIPT},
-    {"name": CUSTOM, "env": GATE_ENV, "run": SCRIPT},
+    {"name": CUSTOM, "env": CUSTOM_ENV, "run": SCRIPT},
 ]
 # And each script's text, command for command as `_lines` reads it — a line continued with `\` is
 # one command, and comments, blank lines and indentation are aside: `STEPS` holds what a step is
@@ -371,15 +374,18 @@ def _judge(
     runner puts it, `stayfixed/` beside `project/`.
     """
     runner = {
+        "${{ github.workspace }}": str(workspace),
         "${{ steps.base.outputs.root }}": "project/.",
         "${{ steps.base.outputs.base_sha }}": base_sha,
         "${{ steps.stayfixed.outputs.sha }}": "0" * 40,
         "${{ inputs.only }}": only,
     }
-    named = {
-        key: runner[value] if value.startswith("${{") else value
-        for key, value in _step_env(step).items()
-    }
+    named = {}
+    for key, value in _step_env(step).items():
+        for expression, replaced in runner.items():
+            value = value.replace(expression, replaced)
+        assert "${{" not in value, (key, value)
+        named[key] = value
     checkout = workspace / "stayfixed"
     if not checkout.exists():
         checkout.symlink_to(ROOT, target_is_directory=True)
@@ -936,6 +942,24 @@ def test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step(
     # The marker first: a `.pth` that ran is the finding, whatever the step then said.
     assert not marker.exists(), printed
     assert code == 0, printed
+
+
+@needs_git
+@needs_bash
+@needs_workflow
+def test_a_custom_gate_s_python3_m_stayfixed_is_the_workflow_s_own(tmp_path: Path) -> None:
+    # Each command runs from the project root, so the step's `PYTHONPATH` reaches the command's
+    # `python3 -m stayfixed` only as an absolute path: measured on 2026-10-26, the relative
+    # `stayfixed/src` printed "No module named stayfixed" and the gate failed. An interpreter
+    # outside any virtual environment, so no installed stayfixed answers in its place. Mutation
+    # (declared): `mutations/`'s "the custom step's PYTHONPATH is relative again".
+    gate = '\n[gates.custom.reach]\nrun = ["python3", "-m", "stayfixed", "--version"]\n'
+    base = BASE.replace('["docs"]', '["docs", "reach"]') + gate
+    workspace, base_sha = _clone(tmp_path, base)
+    python = _outside_any_virtual_environment(tmp_path)
+    code, printed, _ = _judge(workspace, base_sha, "reach", step=CUSTOM, interpreter=python)
+    assert code == 0, printed
+    assert f"stayfixed {stayfixed.__version__}" in printed
 
 
 @needs_git
