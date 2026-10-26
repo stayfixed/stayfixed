@@ -63,15 +63,15 @@ mismatch there.
 | Lane | Pull request | Branch | Targets | Plan | Release |
 |---|---|---|---|---|---|
 | HS | HS1 — the value floor (d4, D-2), key classes and who sets them (d12), layered preferences (d13), the owner's guard switch (d5), budgets (d5, d12), the ratchet rows (d15), one trust record and `stayfixed trust` (d11) | `wp/hs1-floor-layers-trust` | `dev` | `docs/plans/2026-10-15-wave-9-hs1-floor-layers-trust.md` | `0.4.0` |
-| HS | HS2 — the overlay's two scopes (d7, no `machines/<name>/`), the binding id (d8, with no `checkout` approval), the rendered plugin's names (d17, layers 1–2), Codex and worktrees (d20), `attach`/`detach` (d22); pins, the `overlay` approval kind, the node-id allowlist (d9, d10, d19), `doctor --footprint` (d21) and overlay tightening (d16) are cut (owner, 2026-10-19) | `wp/hs2-delivery` | `dev` | `docs/plans/2026-10-24-wave-9-delivery.md`, one plan for HS2, HS3 and HS4, written after HS2's measurements (d18) | `0.5.0` |
-| HS | HS3 — `harness` by default (d14), the composed store (d23), in-repo notes (d24), `local-only` (d25), the reviewed record (d26), the index (d27), the durable-note guard (d28), the memory doctor (d29) | `wp/hs3-memory` | `dev` | the same plan | `0.5.0` |
-| HS | HS4 — scopes in the template (d7), `setup --overlay` (d30, with no machine-file migration), the guided `init` (d33), the scaffold rename (d21); migration code (d31, d32) is cut (owner, 2026-10-19) | `wp/hs4-onboarding` | `dev` | the same plan | `0.5.0` |
-| CP | RC1 — the list field with quoted items, read-only (d39) | `wp/rc1-list-field` | `dev` | `docs/plans/2026-10-18-wave-9-cp-proof.md`, one plan for RC1, CP1 and SP | `0.4.0` |
-| CP | CP1 — the report readers, the five runner adapters, `prove` (d34); merged as PR 106. The evidence records (d35) are deferred until a report reads them (owner, 2026-10-19) | `wp/cp1-prove` | `dev` | the same plan | `0.4.0` |
-| CP | CP2 — regressions (d36) | `wp/cp2-regressions` | `dev` | `docs/plans/<date>-wave-9-release-0-6.md` (create), one plan for CP2, CP3, PF1 and PF2, written once HS4 has merged into `dev` | `0.6.0` |
+| HS | HS2 — the overlay's two scopes (d7, no `machines/<name>/`), the binding id (d8, with no `checkout` approval), the rendered plugin's names (d17, layers 1–2), Codex and worktrees (d20), `attach`/`detach` (d22); pins, the `overlay` approval kind, the node-id allowlist (d9, d10, d19), `doctor --footprint` (d21) and overlay tightening (d16) are cut (owner, 2026-10-19) | `wp/hs2-delivery` | `dev` | `docs/plans/2026-10-24-wave-9-delivery.md`, one plan for HS2, HS3 and HS4, written after HS2's measurements (d18); merged as PR 119 | `0.5.0` |
+| HS | HS3 — `harness` by default (d14), the composed store (d23), in-repo notes (d24), `local-only` (d25), the reviewed record (d26), the index (d27), the durable-note guard (d28), the memory doctor (d29) | `wp/hs3-memory` | `dev` | the same plan; merged as PR 120 | `0.5.0` |
+| HS | HS4 — scopes in the template (d7), `setup --overlay` (d30, with no machine-file migration), the guided `init` (d33), the scaffold rename (d21); migration code (d31, d32) is cut (owner, 2026-10-19) | `wp/hs4-onboarding` | `dev` | the same plan; merged as PR 121 | `0.5.0` |
+| CP | RC1 — the list field with quoted items, read-only (d39) | `wp/rc1-list-field` | `dev` | `docs/plans/2026-10-18-wave-9-cp-proof.md`, one plan for RC1, CP1 and SP; merged as PR 105 | `0.5.0` |
+| CP | CP1 — the report readers, the five runner adapters, `prove` (d34); merged as PR 106. The evidence records (d35) are deferred until a report reads them (owner, 2026-10-19) | `wp/cp1-prove` | `dev` | the same plan | `0.5.0` |
+| CP | CP2 — regressions (d36) | `wp/cp2-regressions` | `dev` | `docs/plans/2026-10-26-wave-9-release-0-6.md`, one plan for CP2 and CP3, written once HS4 had merged into `dev` | `0.6.0` |
 | CP | CP3 — the `adopt` skill and BR-010 (d37) | `wp/cp3-adopt` | `dev` | the same plan | `0.6.0` |
-| PF | PF1 — committed rules files released from the manifest (d38); the list, its union merge and the `profiles` rename wait until a second profile ships rules | `wp/pf1-profiles` | `dev` | the same plan as CP2's | `0.6.0` |
-| PF | PF2 — profile context delivered (d38) | `wp/pf2-profile-context` | `dev` | the same plan | `0.6.0` |
+| PF | PF1 — committed rules files released from the manifest (d38); the list, its union merge and the `profiles` rename wait until a second profile ships rules; **deferred with PF2** (owner, 2026-10-26) | `wp/pf1-profiles` | `dev` | none yet | after `0.6.0` |
+| PF | PF2 — profile context delivered (d38); **deferred** (owner, 2026-10-26): no checkout lacks its committed rules while `init` writes them, so PF1 and PF2 return with an `init` that does not write them for an attached checkout | `wp/pf2-profile-context` | `dev` | none yet | after `0.6.0` |
 | BM | benchmark part 1, then the final run (d40) | `wp/bench` | `dev` | the wave-7 side-lanes plan's Lane 2, rewritten in place against the tree | any |
 | SP | the matcher measurement (d41); merged as PR 103 | `wp/matcher-spike` | `dev` | the RC1 and CP1 plan, Wave J | any |
 | CL | the cleanup lane: deletion-only pull requests against what earlier waves shipped (`prove`'s residue, CL1 the hook wrapper, CL2 the guards, CL3 the user's own home, CL4 `assess`'s CODEOWNERS probe, and the redundancies); CL5, the conventions, waits for HS3 | `cleanup/*` | `dev` | none: each pull request states its cut and its net size | any |
@@ -145,9 +145,9 @@ the releases are the owner's checkpoints, each cut once its lanes are on `dev`.
 
 | Release | Cut once these are on `dev` | Then |
 |---|---|---|
-| `0.4.0` | RC1, CP1, HS1 | Task 1 |
-| `0.5.0` | HS2, HS3, HS4 | Task 2 |
-| `0.6.0` | CP2, CP3, PF1, PF2 | Task 3, then Tasks 4–5 |
+| `0.4.0` | skipped (owner, 2026-10-26): no release was cut before HS4 merged | — |
+| `0.5.0` | RC1, CP1, HS1, HS2, HS3, HS4 | Tasks 1–2 |
+| `0.6.0` | CP2, CP3 | Task 3, then Tasks 4–5 |
 
 A lane of a later release that lands first ships in the earlier release cut after it, which is
 harmless with no users; BM and SP touch nothing `scripts/plugin_tree.py` puts in the plugin. A pull
@@ -320,7 +320,10 @@ The owner runs every push of a release (the commits, the tags, `scripts/publish_
 approves the `pypi` deployment in GitHub's web interface. The controller runs only checks,
 read-backs and dry runs, and never calls the pending-deployments API.
 
-### Task 1: Cut `0.4.0` (controller, with the owner)
+### Task 1: The release check before `0.5.0` (controller, with the owner)
+
+`0.4.0` is skipped (owner, 2026-10-26), so this task runs once, before `0.5.0`; Steps 2 and 3 read
+`0.5.0` for `0.4.0`, and its upgrading section says `0.4.0` was never published.
 
 - [ ] **Step 1:** when RC1, CP1 and HS1 have merged into `dev` and `gh pr checks` read every job
   green on each, run `uv run python scripts/release.py check` on `dev` — `RELEASING.md`'s first
@@ -423,3 +426,49 @@ servers. Where the step needs only a `SessionStart`, it drives one with
 ## Findings
 
 Written by Tasks 1–5 and by each lane's controller when its pull request merges.
+
+### Task 2 Step 1 — `attach` on copies of the owner's overlay, 2026-10-26
+
+Run at `dev` = `11fe104` with the checkout's own `stayfixed` (version string `0.3.1`, the release
+not yet cut), on `rsync` copies of the owner's overlay and of two attached checkouts (this repository and
+one other, without `.claude/worktrees`, `.git/worktrees` and `.venv`), every link and every path in
+the old attach ledgers re-pointed into the copy, under an isolated `HOME`, `CLAUDE_CONFIG_DIR`,
+`XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL` with `GIT_CONFIG_NOSYSTEM=1` and `env -i`.
+
+First pass, with no manual step: `setup --overlay <copy>` exits 2 with the identity-record refusal
+("… carries no stayfixed-overlay.toml, the record that names a tree a stayfixed overlay; add it at
+the overlay's root, holding `requires = ">=X.Y.Z"` … and `layout = 1` …"), so both `attach` runs
+refuse with "no overlay root is recorded in the machine configuration".
+
+Second pass, after the two manual steps the upgrading fragments name (`stayfixed-overlay.toml`
+holding `requires = ">=0.1.0"` and `layout = 1`, the floor the old `.claude-plugin/plugin.json`
+declared; the five links under each checkout's `docs/memory` deleted):
+
+```
+$ stayfixed setup --overlay <overlay>
+machine configuration written to <home>/.config/stayfixed/config.toml; 0 plugin(s) installed; deny rules merged; stayfixed is on PATH; overlay recorded at '<overlay>'; recorded the existing overlay at '<overlay>'; installed the commit-time secret scan with `pre-commit install`
+exit=0
+$ (in stayfixed) stayfixed attach
+attached: 1 Codex rule file(s); settings merged; binding <id> recorded
+binding <id>: project stayfixed, origin 'git@github.com:stayfixed/stayfixed.git'
+hook entry added: UserPromptSubmit … (three entries) / PreToolUse … (one entry)
+exit=0
+$ (in stayfixed) stayfixed doctor
+17 checks: 0 red, 0 warn, 2 skipped
+$ (in the second checkout) stayfixed attach
+attached: 1 Codex rule file(s); settings merged; binding <id> recorded
+binding <id>: project <second>, origin '<its origin>'
+exit=0
+$ (in the second checkout) stayfixed doctor
+17 checks: 0 red, 1 warn, 2 skipped; warn: versions
+```
+
+`git status --porcelain=v1 -uall` was empty before and after each `attach`; the isolated
+`installed_plugins.json` holds one `overlay-<id>@stayfixed-delivery-<id>` row per checkout. The second checkout's `versions` warning is its
+`stayfixed.toml` declaring an older version (`stayfixed upgrade` is the remedy). The overlay's hook
+entries name the overlay by a path under `$HOME`, so under the isolated `HOME` they find no script and
+exit 0 by their own `[ -f "$1" ] || exit 0`; on the owner's machine they resolve as before. The
+`0.5.0` upgrading section therefore lists, for the owner: add the identity record, delete the old
+links under `paths.memory` and `~/.claude/projects/<slug>/memory`, then `setup --overlay <root>`
+and `attach` in each checkout. The live desktop worktree session (the delivery plan's D6) is still
+to run with the owner before `0.5.0`.
