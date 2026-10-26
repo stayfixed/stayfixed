@@ -36,12 +36,12 @@ from typing import TYPE_CHECKING
 
 from stayfixed import fsops
 from stayfixed.assess.model import Item, item
+from stayfixed.config.loader import preset_defaults
 from stayfixed.config.paths import PathEscape, contained
 from stayfixed.config.schema import COMMIT_TYPE_WORD, IN_REPO_MODE
 from stayfixed.findings import Severity
 from stayfixed.fsops import read_bounded, read_regular_text
 from stayfixed.gitenv import QUERY_TIMEOUT_SECONDS, git_run
-from stayfixed.config.loader import preset_defaults
 from stayfixed.guards.api import NOT_A_DIRECTORY, contained_roots, dropped_roots
 from stayfixed.printed import clipped
 from stayfixed.scaffold import EntriesError, judged_entries
