@@ -3,7 +3,10 @@ as `stayfixed prove` runs a command, from the project root with `[gates] custom_
 its bound, and prints one line an entry with the receipt `prove` would print. It exits 0 when every
 regression is proved, 1 when one is not, and 130 when a Ctrl-C or a terminating signal ended a run,
 after which nothing more starts. `--json` carries each entry's identifier, file, verdict and line,
-and the runner's own output goes to standard error, so standard output stays one object.
+and the runner's own output goes to standard error, so standard output stays one object. It runs
+as a `[gates.custom]` gate, `run = ["stayfixed", "bugs", "regressions"]` where stayfixed is
+installed and `["python3", "-m", "stayfixed", "bugs", "regressions"]` in the reusable workflow;
+`docs/cli.md` says what each needs.
 The reusable workflow's step that runs a project's own gates now hands them an absolute
 `PYTHONPATH`, so a `[gates.custom]` command can run `python3 -m stayfixed …` there and reach the
 workflow's own stayfixed; with the relative path it had, such a command found no stayfixed.
