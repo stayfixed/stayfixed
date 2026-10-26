@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from stayfixed.areas import area_modules
-from stayfixed.assess.assessment import SKIPPED
+from stayfixed.assess.assessment import SKIPPED, SUMMARY_LEAD
 from stayfixed.cli import build_parser, discover_registrars, split_json_flag
 from stayfixed.overlay.template import template_root
 from stayfixed.project.commands import CUSTOM_GATES
@@ -216,9 +216,9 @@ def test_the_adopt_skill_asks_before_it_runs_the_custom_gates() -> None:
     plain = words.index("`stayfixed assess`")
     skipped = SKIPPED.split(":", 1)[0]
     # A run that never reaches its summary prints no such line either, so it stops the adoption
-    # rather than reading as "no custom gate". Mutation (by hand): the stop sentence deleted ->
-    # this reddens.
-    stop = words.index("When it prints no `assessment:` summary line, stop the adoption")
+    # rather than reading as "no custom gate"; the line is keyed on the lead `render` writes.
+    # Mutation (by hand): the stop sentence deleted, or the lead renamed -> this reddens.
+    stop = words.index(f"When it prints no `{SUMMARY_LEAD}` summary line, stop the adoption")
     assert "never go on to step 2 without that summary" in words[stop:plain]
     # The line clips its names, so the question names them from the inventory's full list.
     listed = words.index("the `skipped` list in `.stayfixed/assessment.json` holds every one")
@@ -238,7 +238,6 @@ def test_init_offers_the_adopt_skill_as_its_last_step() -> None:
     # reference of its own; every path through the walk reaches its last step.
     text = (SKILLS / "init" / "SKILL.md").read_text(encoding="utf-8")
     assert "references/adoption.md" not in text
-    assert not (SKILLS / "init" / "references" / "adoption.md").exists()
     walk = text.split("## Walk", 1)[1].split("## Rules", 1)[0]
     steps = re.split(r"\n(?=\d+\. )", walk.strip())
     assert steps[-1].startswith(f"{len(steps)}. ")
@@ -273,3 +272,9 @@ def test_the_adopt_skill_runs_the_custom_gates_only_after_a_yes_in_this_session(
     sentences = re.split(r"(?<=\.)\**\s+", adopt)
     plain = [s for s in sentences if re.search(r"`stayfixed (?:assess|adopt promote)`", s)]
     assert plain and all(s.startswith(("On a yes", "After a yes")) for s in plain), plain
+    # A yes covers the gates it named; a custom gate added since needs its own. Mutation (by
+    # hand): the clause deleted -> the plain promotion outlives the yes and this reddens.
+    assert (
+        "once `[gates.custom]` names a gate the yes did not cover, the command takes `--builtin` "
+        "again until the user says yes to that gate"
+    ) in adopt

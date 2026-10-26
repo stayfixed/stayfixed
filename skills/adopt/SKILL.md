@@ -60,7 +60,9 @@ harness's ask-the-user tool, and never run this skill in a forked context: a sub
      enforces every built-in gate that passes now and names the rest; run it again as the plan
      lands. Say that it promotes no custom gate, and that promoting one runs its command, which
      needs the user's explicit yes first. After a yes in step 1, it is `stayfixed adopt promote`
-     instead, and say that it runs those custom gates' commands;
+     instead: say that it runs those custom gates' commands, and that once `[gates.custom]` names
+     a gate the yes did not cover, the command takes `--builtin` again until the user says yes to
+     that gate;
    - the undo: `stayfixed uninstall`.
 
 What this skill does not do: write a gate or edit `stayfixed.toml`. A gate the brainstorm settles

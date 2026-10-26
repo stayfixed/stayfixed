@@ -114,9 +114,8 @@ def _names(out: str) -> list[str]:
 
 
 def _code_roots(context: ProbeContext) -> Looked:
-    """Each `[ledger] code_roots` entry no walk takes, with its reason, in config order, against
-    the preset's own defaults. Through `clipped`: almost every such entry, `.` and `..` among
-    them, lies outside the path grammar, where `printable` would withhold them all."""
+    """Each `[ledger] code_roots` entry `dropped_roots` names, through `clipped`: almost every one,
+    `.` and `..` among them, lies outside the path grammar, where `printable` withholds them all."""
     config = context.config
     preset = preset_defaults(config.project.name, preset=config.stayfixed.preset).ledger.code_roots
     dropped = dropped_roots(context.root, config, defaults=preset)
