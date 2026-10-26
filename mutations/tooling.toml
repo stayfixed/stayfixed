@@ -1414,12 +1414,12 @@ file = ".github/workflows/check.yml"
 before = '''
       - name: The project's own gates
         env:
-          PYTHONPATH: stayfixed/src
+          PYTHONPATH: ${{ github.workspace }}/stayfixed/src
 '''
 after = '''
       - name: The project's own gates
         env:
-          PYTHONPATH: stayfixed/src:project
+          PYTHONPATH: ${{ github.workspace }}/stayfixed/src:project
 '''
 reddens = [
   "tests/test_check_workflow.py::test_no_module_the_checkout_carries_is_imported_by_a_gate_step[custom]",
@@ -1633,7 +1633,7 @@ reddens = [
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
 ]
 
-# The same class in an earlier step: the gate steps' `PYTHONPATH` is `stayfixed/src`, and the
+# The same class in an earlier step: the gate steps' `PYTHONPATH` names `stayfixed/src`, and the
 # interpreter imports a `sitecustomize.py` it finds there at start-up, so a copy into stayfixed's
 # own checkout is code in the verdict's process.
 [[mutation]]
