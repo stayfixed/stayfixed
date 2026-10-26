@@ -138,8 +138,8 @@ def test_a_code_root_no_walk_takes_is_named_with_its_reason(
     # with its reason. Oracle: `mutations/`'s "assess leaves the dropped code roots unnamed". A
     # directory the preset's own default names and the repository lacks loses no walk while
     # another root is walked, so it is no item, in any spelling the fold takes; one the
-    # repository made a link is. With no root walked, every entry is named: oracle, "a missing
-    # preset default goes unnamed when no root is walked".
+    # repository made a link is. With no root walked, every entry is named. Oracle: `mutations/`'s
+    # "a missing preset default goes unnamed when no root is walked".
     root = _repo(tmp_path, tail=f"\n[ledger]\ncode_roots = {roots}\n")
     (root / "src").mkdir()
     (tmp_path / "shared").mkdir()
