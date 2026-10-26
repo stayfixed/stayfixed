@@ -195,6 +195,10 @@ _FAILED = "the {name} profile's red-run hint failed: {kind}"
 _UNTOLD = "the {name} profile's red-run hint stopped its walk at a bound and could not tell"
 _UNJUDGED = ", so this tree cannot be judged"
 _NARROW = "; narrow `[ledger] code_roots` to the directories that hold code"
+# What the summary says in place of "tree is clean" when no code root is left to walk: every
+# profile's walk saw nothing, so its silence is no answer about the tree. `assess` names each
+# entry left out, and why.
+NO_ROOTS = "no [ledger] code_roots entry names a directory here, so there was nothing to check"
 
 
 def run_test_hygiene(args: argparse.Namespace) -> Result:
@@ -220,9 +224,10 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     # hint and detects nothing, so a Python project in a subdirectory gets the stale-bytecode
     # note after a failed run, and this command must not call the same tree clean.
     reports: dict[str, dict[str, int]] = {}
+    roots = contained_roots(root, config)
     for name, hint in ((name, hint) for name, hint in hints if hint is not None):
         try:
-            report, note = answer(hint, contained_roots(root, config))
+            report, note = answer(hint, roots)
         except NotText:
             raise Refusal(_WORDLESS.format(name=name) + _UNJUDGED) from None
         except Exception as exc:
@@ -242,6 +247,8 @@ def run_test_hygiene(args: argparse.Namespace) -> Result:
     clean = "tree is clean" + "".join(
         f"; the {name} profile has nothing to report" for name in reports
     )
+    if not roots:
+        clean = NO_ROOTS
     summary = "; ".join(findings) or clean
     data = {"dirty": dirty, "profiles": reports}
     return Result(summary, data, exit_code=1 if findings else 0)

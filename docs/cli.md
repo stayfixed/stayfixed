@@ -570,7 +570,11 @@ root, and also, whether or not they do, when it has something to report: a Pytho
 subdirectory has no marker at the root and still gets its stale bytecode named. So a repository
 in two stacks gets two entries whatever `[stayfixed] profile` names. The summary
 names each such finding as `<profile>: <its note>`, and a clean tree reads `tree is clean`
-followed by `; the <profile> profile has nothing to report` for each profile listed. `--json`
+followed by `; the <profile> profile has nothing to report` for each profile listed. When no
+`[ledger] code_roots` entry names a directory a walk takes, no profile has looked at anything, so
+in place of `tree is clean` it reads `no [ledger] code_roots entry names a directory here, so
+there was nothing to check`, still exit `0`; `stayfixed assess` names each entry left out and
+why. `--json`
 carries `dirty` and, under `profiles`, each listed profile's counts by its name
 (`{"python": {"stale": 0, "roots": 2}}`). Exits `1` when the tree is dirty or a profile has
 something to report, `2` when git cannot report the tree or a shipped profile's hint cannot be
@@ -1221,6 +1225,7 @@ A row names no finding: `assess` lists them as items.
 
 | Probe | Reads | Severity | Principle | Reported when |
 |---|---|---|---|---|
+| `code-roots` | `[ledger] code_roots` | advice | — | an entry no walk takes, each named in config order, quoted when it lies outside the path grammar, with its reason: it names the repository root itself (`.`, `./`), it leaves the repository or reaches its directory through a link, or it names no directory here |
 | `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
 | `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
@@ -3751,9 +3756,12 @@ and `BR-nnn` in every message. It is interpolated into patterns and filenames, s
 a shape — a capital letter followed by up to seven more capitals or digits — and a prefix
 outside it is a refusal (`2`), not a finding. The number is three digits or more. `code_roots`
 are the trees `bugs check` sweeps for mentions of an identifier, each of which must have an
-entry behind it; `evidence_boundary_required_for` names the severities whose entries must carry
-a filled `**What this evidence does not establish:**` line, the template's placeholder not
-counting. Widening it is how a project asks the same of `medium`. Each value must be one of the
+entry behind it, and the trees `memory refs`, `test hygiene` and the `todo-markers` probe
+walk. `src/` and `./src` are read as `src`. An entry that names the repository root itself,
+leaves the repository, passes through a link or names no directory is walked by none of them
+and refused by nothing: `stayfixed assess`'s `code-roots` probe names it, with the reason.
+`evidence_boundary_required_for` names the severities whose entries must carry a filled
+`**What this evidence does not establish:**` line, the template's placeholder not counting. Widening it is how a project asks the same of `medium`. Each value must be one of the
 severities, `high`, `medium` and `low`, spelled as the table below spells it. A value that names
 none would require the line of no entry, so it is a refusal (`2`), counted and not quoted, of
 every command that reads the ledger — `bugs`, `plan check`, `memory refs`, `init` and `upgrade`

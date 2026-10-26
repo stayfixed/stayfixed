@@ -5,6 +5,7 @@ asks the hint, so a stack's code never imports this area."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,15 @@ from stayfixed.config.paths import PathEscape, contained
 
 if TYPE_CHECKING:
     from stayfixed.config.schema import Config
+
+# Why an entry is left out of every walk, one fixed reason each, in `dropped_roots`. No entry is
+# refused: `ledger.code_roots` is written by the preset and the repository only, and a walk that
+# takes too much costs only that repository's own sessions, so the entry is named, not stopped.
+ROOT_ITSELF = (
+    "names the repository root, so a walk would take in every environment and worktree under it"
+)
+NOT_CONTAINED = "leaves the repository, or reaches its directory through a link"
+NOT_A_DIRECTORY = "names no directory here"
 
 
 def contained_roots(root: Path, config: Config) -> list[Path]:
@@ -45,21 +55,40 @@ def contained_roots(root: Path, config: Config) -> list[Path]:
     directory, the first keeps its place.
     """
     found: list[Path] = []
-    resolved_root = root.resolve()
-    for entry in config.ledger.code_roots:
-        try:
-            candidate = contained(
-                root, PurePosixPath(entry).as_posix(), resolved_root=resolved_root
-            )
-        except PathEscape:
-            continue
-        if not fsops.is_dir(candidate):
+    for _, candidate in _judged(root, config):
+        if not isinstance(candidate, Path):
             continue
         if any(_covers(kept, candidate) for kept in found):
             continue
         found = [kept for kept in found if not _covers(candidate, kept)]
         found.append(candidate)
     return found
+
+
+def dropped_roots(root: Path, config: Config) -> list[tuple[str, str]]:
+    """Each `ledger.code_roots` entry `contained_roots` leaves out, in config order, with its
+    reason: `ROOT_ITSELF`, `NOT_CONTAINED` or `NOT_A_DIRECTORY`. An entry inside another one is
+    not here: the wider walk takes it in. The entry is the repository's own text, so a caller
+    prints it through `stayfixed.printed`."""
+    return [(entry, judged) for entry, judged in _judged(root, config) if isinstance(judged, str)]
+
+
+def _judged(root: Path, config: Config) -> Iterator[tuple[str, Path | str]]:
+    """Each entry with the directory it names, or the reason no walk takes it: the one loop both
+    functions above read, so the entries walked and the entries named cannot disagree."""
+    resolved_root = root.resolve()
+    for entry in config.ledger.code_roots:
+        folded = PurePosixPath(entry).as_posix()
+        if folded == ".":
+            # `contained()` refuses `.` as it refuses `..`, and the reason is not the same.
+            yield entry, ROOT_ITSELF
+            continue
+        try:
+            candidate = contained(root, folded, resolved_root=resolved_root)
+        except PathEscape:
+            yield entry, NOT_CONTAINED
+            continue
+        yield entry, candidate if fsops.is_dir(candidate) else NOT_A_DIRECTORY
 
 
 def _covers(directory: Path, other: Path) -> bool:
