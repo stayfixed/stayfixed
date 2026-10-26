@@ -3746,26 +3746,37 @@ read the committed place, where in CI the file is not, and `stayfixed assess` re
 and `stayfixed adopt promote` never enforces it.
 
 **A fixed bug's regression as a gate.** [`stayfixed bugs regressions`](#stayfixed-bugs-regressions)
-runs as a custom gate, in one of two spellings:
+runs as a custom gate. Where an installed `stayfixed` is on `PATH`, as on a machine stayfixed was
+installed on, the gate is
 
 ```toml
 [gates.custom.regressions]
 run = ["stayfixed", "bugs", "regressions"]
-# run = ["python3", "-m", "stayfixed", "bugs", "regressions"]   # the reusable workflow's spelling
 ```
 
-The first needs an installed `stayfixed` on `PATH` where the gate runs, as on a machine stayfixed
-was installed on. The second is the one [the reusable workflow](#the-reusable-workflow) runs: its
-step "The project's own gates" installs nothing and puts the workflow's own stayfixed on
-`PYTHONPATH`, so `python3 -m stayfixed` finds it there, and it runs anywhere else the `python3` on
-`PATH` imports stayfixed. Each regression's runner must be on `PATH` where the gate runs as well:
-in the reusable workflow that is the runner image and the step's interpreter and nothing more, so a
-project whose runner lives in an environment of its own writes each `regression` wrapped in the
-command that provides it, such as `["uv", "run", "pytest", "tests/test_total.py"]`, which `prove`
-reads past to the runner. Every regression and the gate itself are bounded by the same
-`custom_timeout_seconds`, so a project with many slow regressions raises it; a set that runs past it
-ends as a gate that could not run, never as a pass. Named in `[stayfixed] enforced`, the gate makes
-a regression that is not proved fail the run; otherwise it is advisory, like any other gate.
+and each regression's runner must be on `PATH` there too: a project whose runner lives in an
+environment of its own writes each `regression` wrapped in the command that provides it, such as
+`["uv", "run", "pytest", "tests/test_total.py"]`, which `prove` reads past to the runner. Neither
+holds in [the reusable workflow](#the-reusable-workflow). Its step "The project's own gates" has
+the runner image and the interpreter `python-version` names and nothing more, so no `stayfixed`,
+`uv` or `pytest` is on `PATH`, and the workflow's own stayfixed is reached through `PYTHONPATH`
+alone. There the gate's own `run` provides the runner, for example in a scratch virtual environment put first on
+`PATH`, which a system interpreter marked externally managed allows where it refuses a bare
+`pip install`:
+
+```toml
+[gates.custom.regressions]
+run = ["sh", "-c", 'v="$(mktemp -d)" && python3 -m venv "$v" && "$v/bin/pip" install -q pytest && PATH="$v/bin:$PATH" exec python3 -P -m stayfixed bugs regressions']
+```
+
+Each `regression` then names the runner itself, `["pytest", "tests/test_total.py"]`, and what its
+tests import is added to the install. `-P` keeps the project root off the module path, as the
+step's own `python3 -P -s -m stayfixed` does. This `run` reaches stayfixed only where `PYTHONPATH`
+names it, so on a machine `stayfixed bugs regressions` is run directly. The installation, every
+regression and the gate itself are bounded by the same `custom_timeout_seconds`, so a project with
+many slow regressions raises it; a set that runs past it ends as a gate that could not run, never
+as a pass. Named in `[stayfixed] enforced`, the gate makes a regression that is not proved fail the
+run; otherwise it is advisory, like any other gate.
 
 **Enforcement is per gate.** `[stayfixed] enforced` lists the gates promoted while a project
 adopts stayfixed, and `state = "installed"` means every gate the project runs. Both keys are
