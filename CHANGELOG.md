@@ -2,6 +2,604 @@
 
 <!-- towncrier release notes start -->
 
+## 0.6.0 (2026-10-28)
+
+### Upgrading
+
+- 0.4.0 and 0.5.0 were never published: this release carries what both were to ship, so every entry
+  under it is a change from 0.3.1. No code migrates an installation. On a machine whose checkouts
+  0.3.1 attached to an overlay, take these steps in this order; each is described in its own entry
+  below.
+
+  1. Before upgrading, run `stayfixed detach` in a checkout an earlier release attached from a linked
+     worktree: its ledger is that worktree's, which this release no longer reads.
+  2. Upgrade the command with `uv tool upgrade stayfixed`. A plugin added from the marketplace at an
+     earlier release's tag, such as `@v0.3.1`, cannot be added again at the new one (Claude Code
+     refuses a source that differs from the one its settings record), so remove the marketplace,
+     which uninstalls the plugin and its saved options, and add it again:
+     `/plugin marketplace remove stayfixed-marketplace`, then
+     `/plugin marketplace add stayfixed/stayfixed@v0.6.0` and
+     `/plugin install stayfixed@stayfixed-marketplace`.
+  3. Add `stayfixed-overlay.toml` at the overlay's root, holding `requires = ">=0.1.0"` and
+     `layout = 1`, then run `stayfixed overlay upgrade --root <overlay>`, with `--dry-run` first,
+     which removes the overlay's retired `hooks/hooks.json` or names it where you edited it.
+  4. Delete the links under `paths.memory` in each checkout and `~/.claude/projects/<slug>/memory`
+     for each, and the `reply_language` and `artifact_language` lines under `[personal]` in
+     `~/.config/stayfixed/config.toml`.
+  5. Run `stayfixed setup --overlay <overlay>`, which records the overlay, installs its commit-time
+     secret scan and copies your personal values into the plugin options the removal took; then
+     `stayfixed attach` once in each checkout, which gives it a binding id.
+  6. Read your notes, then run `stayfixed memory promote --changed` once to keep them as standing
+     rules.
+  7. Run `stayfixed upgrade` in each repository whose `stayfixed doctor` warns on its `versions` row.
+
+  New for a project to opt into: a fixed bug entry can name a test under `regression`, which
+  `stayfixed bugs regressions` runs as a custom gate (under Added); the entry on `regression` below
+  says which stayfixed can read such an entry.
+- A `[budgets]` value in `stayfixed.toml` above the preset's, which 0.3.1 ignored, is now in force:
+  every command and gate that reads the budget applies the number written there, and `stayfixed
+  doctor`'s `budgets` row names it as raised. A pull request that raises a budget above the base
+  branch's is now refused by `stayfixed gate`, where 0.3.1 read both sides at the preset's value and
+  saw no change.
+- A stayfixed older than this release cannot read a bug entry carrying `regression` (an unknown
+  frontmatter key). Once any entry carries one, `stayfixed bugs check` reports it as
+  `unreadable-entry`, the index as `stale-index` and every entry relating to it as
+  `dangling-related`, and `stayfixed bugs new`, `bugs index`, `bugs index --check` and
+  `bugs renumber` exit 1 naming the key. A repository whose entries carry one needs this release,
+  or a newer one, wherever any of those commands or the `bugs` gate runs, CI included.
+- An overlay is now named by its identity record, `stayfixed-overlay.toml` at its root, and no
+  longer by plugin manifests: the overlay template ships no `.claude-plugin/`, `.codex-plugin/` or
+  `hooks/hooks.json`, since `stayfixed attach` renders what the overlay holds into a plugin of its
+  own on each machine. `stayfixed setup --overlay` and `stayfixed overlay upgrade` refuse a tree
+  without the record, and no code migrates an existing overlay: add `stayfixed-overlay.toml` to its
+  root by hand, holding the two lines `requires = ">=0.1.0"` and `layout = 1`, which is the record the
+  template ships, byte for byte. If your `.claude-plugin/plugin.json` declared a higher floor under
+  `stayfixed.requires`, put that in `requires` instead. The record names no owner and no
+  repository, so nothing in it is yours to fill in. The old manifests can then be deleted; nothing
+  reads them. `stayfixed overlay upgrade` removes `hooks/hooks.json` itself where it holds what a
+  release shipped, and names it where you edited it. With `.codex-plugin/` gone, nothing delivers the
+  overlay's hooks, skills or agents to Codex any more: Codex gets the overlay's rules alone, copied
+  into `.codex/rules/` by `attach`.
+  If you published your own overlay template (`<account>/stayfixed-overlay-template`) with an earlier
+  release, add the record to it as well: `stayfixed setup --overlay create:` generates from it, and a
+  clone that carries no record is refused after GitHub has created the repository.
+- The `bg-cleanup` session guard no longer refuses a backgrounded `Bash` call: a leaked `&` job or a
+  leading `sleep` now gets a hint naming the remedy, and the call runs. A trailing `wait` counts as
+  cleanup. `stayfixed guard bg-cleanup` is gone, so a script or CI step that called it must drop the
+  call.
+- The commit attribution check is now off by default: `[commit_messages] attribution_check` is
+  `false` in the recommended preset, so the `commit` gate and `stayfixed commit check` no longer fail
+  a commit message that ends in an AI tool's attribution trailer or footer unless the project asks
+  them to. A project that relied on the check sets `attribution_check = true` under
+  `[commit_messages]` in its `stayfixed.toml`.
+- The deny rules `stayfixed setup` writes now name the common env files one by one in place of the
+  `.env*` masks, and `setup` takes the old masks back out of `~/.claude/settings.json`: an env file
+  under any other name, such as `.env.secrets`, is no longer refused to an agent. Run `stayfixed
+  setup` once after upgrading, and add a `Read(...)` deny rule of your own for any such file.
+- The recommended preset's commit types no longer include stayfixed's own `harden` and `guard`: they
+  are now the eleven `@commitlint/config-conventional` lists. A repository that kept the preset's
+  list rather than setting `[commit_messages] types` gets the new one, so `stayfixed assess`'s
+  `commit-types` advice now names a `harden:` or `guard:` commit subject there. To keep them, set
+  `types` under `[commit_messages]` in `stayfixed.toml`.
+- Upgrading from 0.3.x changes these without your acting:
+
+  - `stayfixed doctor`'s `codex-trust` and `harness-link` rows are gone, and `store-debris` is now
+    the `memory` row, so a script reading `doctor --json` by row name finds no row of the old names.
+  - `stayfixed doctor` exits `0` where 0.3.1 exited `1` for a repository with no `stayfixed.toml`, a
+    `stayfixed.toml` a newer stayfixed wrote, and a hook entry claiming the stayfixed marker in a
+    file stayfixed does not write: each is now a warning, not red.
+  - The `bg-cleanup` session guard now runs in every repository, one with no `stayfixed.toml` or
+    already uninstalled included, unless a `[guards] bg_cleanup = false` switches it off: the machine
+    file's, the overlay's, or the repository's, in that order of precedence.
+- What `stayfixed init` writes into a repository is now called its scaffold, in the documentation and
+  in what the commands print. The `footprint` key of the `--json` output of `stayfixed init`,
+  `stayfixed upgrade` and `stayfixed uninstall` is renamed `scaffold`, with no alias, and the report
+  those commands print is headed `scaffold:` where it was `footprint:`; a script reading either
+  reads the new name. The key carries the same report it did: the scaffold pass's, without the
+  write-once files (`stayfixed.toml`, `CLAUDE.md` and the `AGENTS.md` skeleton), which stay under
+  `once` as before.
+- Where no layer sets `[memory] mode`, memory is now the coding agent's own: the new mode `harness`
+  is the default, the preset no longer chooses `local-only`, and stayfixed resolves no store, injects
+  no `standing-rules` or `volatile-notes` bundle and links nothing into a worktree. A repository that
+  relied on the old default and keeps notes under `.stayfixed/local/memory/` sets `mode =
+  "local-only"` under `[memory]` in its `stayfixed.toml`; nothing migrates it. `stayfixed init
+  --questions` offers `harness` as the memory mode's default.
+- Your notes are no longer standing rules until you promote them. Run `stayfixed memory promote
+  --changed` once, after this upgrade, to keep today's notes as standing rules; a note you edit after
+  that is unreviewed again until you promote it.
+- `[personal] reply_language` and `artifact_language` are gone: nothing read them, and `setup` no
+  longer writes them or offers them as plugin options. Delete both lines from your machine file,
+  `~/.config/stayfixed/config.toml`. Until you do, a command that reads it prints one note per key on
+  stderr ("[personal] has a key this stayfixed does not read: … it is ignored"), a session opens with
+  a warning that the machine file could not be used whole, and `stayfixed doctor`'s `preferences` row
+  is a warning. Nothing is refused.
+- `stayfixed attach --trust-remote` is gone, and `attach --check` no longer reports a `mismatch` or
+  `no-origin` state or exits 1 for one: the remote no longer decides the binding. A script that
+  passed the flag must drop it. A checkout attached by an earlier release has no binding id, so its
+  store reads as not attached until `stayfixed attach` runs in it once more.
+- `stayfixed attach` and `detach` changed what a script can rely on, each described in its entry
+  below:
+
+  - `attach` attaches a repository whose `memory.mode` is not `overlay`, where 0.3.1 refused it with
+    exit `2`.
+  - `attach` and `attach --check` refuse a `.claude` that is a symlink on every run, where 0.3.1
+    refused it only when something was granted; and a path `attach` places that the repository
+    tracks, or that a `.gitignore` re-includes with `!`, where 0.3.1 attached it.
+  - `attach` merges no hook entry into `.claude/settings.local.json`; the overlay's hooks arrive in
+    the rendered plugin, and the entries an earlier release merged there are taken back.
+    `attach --check` and `--json` no longer carry `added_hooks`.
+  - `attach` writes nothing into `.gitignore`, and `detach --json` no longer carries
+    `ignore_region_removed`: a `stayfixed:ignore` region an earlier `attach` wrote stays until you
+    remove it.
+- `stayfixed attach` no longer builds the link tree under `paths.memory` in each checkout, no longer
+  makes the harness memory link `~/.claude/projects/<slug>/memory`, and the `SessionStart` step that
+  linked a worktree is gone: in `overlay` mode the harness, and now stayfixed's own `memory` commands
+  and bundles, read the composed store `~/.local/share/stayfixed/stores/<id>/` that
+  `autoMemoryDirectory` in the main checkout's `.claude/settings.local.json` names. `attach` and
+  `detach` act on the main checkout whichever worktree they run from: its settings file, its
+  `.codex/rules/` copies and its ledger, so a worktree needs no step of its own and `detach` has no
+  "another checkout is still attached" case left. A memory group still sitting as a real directory
+  under `paths.memory` no longer refuses `attach`, and `attach --check` no longer reports
+  `real_directories` or exits `1` for one, since nothing reads that directory in `overlay` mode;
+  `attach`'s `--json` loses `links_created` and `links_revoked`, and `detach`'s `links_revoked`,
+  `exclude_block_kept` and `link_tree_kept`. `doctor`'s `attached` row reads the pointer from the
+  main checkout's settings file in place of judging the harness memory path. Neither `attach` nor
+  `detach` removes what an earlier release placed: delete the links under `paths.memory` in each
+  checkout, and `~/.claude/projects/<slug>/memory` for each, by hand, and detach a checkout an
+  earlier release attached from a linked worktree before upgrading, since its ledger is that
+  worktree's. In `overlay` mode the `memory` commands no longer read `--store`, so a script that
+  pointed them at another directory there now reads the composed store; in every other mode
+  `--store` works as before.
+- `stayfixed attach` now takes the credentials out of an `origin` URL before it records it, but it
+  never rewrites the remote an overlay's `projects/<name>/project.toml` already records. A token
+  0.3.1 recorded there from an `https://user:token@host/…` origin stays in that file, and in the
+  overlay's git history, until you remove it: edit the file by hand, and revoke the token if the
+  overlay was ever pushed.
+- `stayfixed attach` takes no `--yes`: what your overlay grants is yours, so `attach` no longer
+  refuses a run that adds allow rules. It proceeds and prints one screen below its line: the binding
+  (the binding id's first eight characters, the project it is recorded under and this checkout's
+  `origin`, with one more line when a re-attach moves the binding to another project), each hook
+  entry, skill and agent the render adds or removes against the last one, and each allow rule it
+  merges; `--json` carries the same lists as `hooks_added`, `hooks_removed`, `skills_added`,
+  `skills_removed`, `agents_added`, `agents_removed` and `allow_added`. A script or skill that passed
+  `attach --yes` now gets exit 2 for an unrecognised argument and must drop the flag. `attach --check
+  --json` no longer carries `widens`.
+- `stayfixed commit strip`, which the commit-message hook runs, now leaves a message's attribution
+  lines in place when your own Claude Code settings (`~/.claude/settings.json`) set
+  `attribution.commit` to text: what your commits carry is then the choice you made in the harness,
+  and the hook prints `kept N attribution line(s)` with that reason. It is all or nothing: every line
+  the strip would have taken is kept, not only the one the setting names. Set empty, or to
+  whitespace alone, the setting says your commits carry nothing, and the hook strips a trailer that
+  arrives anyway, as before; a message with nothing to strip prints `nothing to strip`, which the
+  hook keeps off the terminal, whatever the setting. To have every trailer stripped as in 0.3.1,
+  take `attribution.commit` out of your settings or set it empty.
+- `stayfixed memory trust --in-repo-memory` is gone with nothing in its place: notes committed to a
+  repository — a `local-only` or `in-repo` store — now reach a session with no approval, as the
+  harness delivers the same repository's `CLAUDE.md`, and only as data: the `volatile-notes` bundle
+  carries them inside the delimited region, and the `standing-rules` bundle carries none of them
+  until you promote one with `stayfixed memory promote`, whatever `startup` rank a note claims. A
+  script that ran `memory trust` must drop the call. `memory index` and `memory fit` no longer speak
+  of an approval or carry `trusted` in `--json`. A note holding the region's marker is no longer
+  refused: the region's nonce is drawn again until it is one the note does not hold. The store
+  approvals 0.3.1 recorded in `~/.config/stayfixed/trust.json` are no longer read: `stayfixed trust
+  list` shows none of them, and the first command that records an approval, such as `memory
+  promote`, replaces the file with the new versioned record and drops them. A 0.3.1 reading that
+  record finds no approval in it, and an approval given there rewrites the file in the old shape,
+  which drops every note you promoted: promote them again after you return to this version.
+- `stayfixed overlay create`, `stayfixed overlay init` and `stayfixed overlay publish-template` are
+  gone; `stayfixed setup --overlay` is the one entry for an overlay. `--overlay <path>` naming an
+  existing overlay records it, as before, and now installs its commit-time secret scan too, which a
+  second machine recording its clone of the overlay had to do by hand; naming nothing, or an empty
+  directory you can list and write, it renders the shipped template there with no network call, makes it a git repository on
+  `main`, installs the commit-time secret scan and records it, where `overlay create --local` and
+  `overlay init` used to be run by hand. A mistyped path is therefore rendered at rather than refused,
+  and `setup` says so when the root it records replaces the one the machine configuration held. The
+  note that the commit-time secret scan is not installed names the overlay's path quoted, as the rest
+  of the report does, and so does every note and refusal of `create:` that names `<home>/<name>`.
+  `--overlay create:<owner>/<name>` generates the overlay on GitHub and installs the secret scan, as
+  before. The overlay template repository is
+  published with `uv run python scripts/publish_template.py --owner <account> [--yes]` from a
+  stayfixed checkout, a maintainer's script rather than a command stayfixed ships.
+- `stayfixed setup --overlay` changed what a script or a habit can rely on. `--yes` is gone from
+  `setup`: naming `create:<owner>/<name>` is the request, and a command line that still passes
+  `--yes` is refused by the parser. `setup --overlay` no longer refuses a place for the overlay,
+  another repository's work tree included: where it lives is yours to choose, and `stayfixed
+  doctor`'s `overlay-requires` row warns when another repository's work tree holds it. And
+  `stayfixed attach` no longer runs `pre-commit install` in the overlay: `setup --overlay` installs
+  the commit-time secret scan when it makes or records one, and `doctor`'s `pre-commit` row says
+  when it is missing.
+- `stayfixed setup --settings` is gone: `setup` now writes `~/.claude/settings.json` through the
+  links a dotfiles manager makes, so the file a link leads to gets the rules. A script that passed
+  `--settings` must drop the flag. If you kept stayfixed's `config.toml` or `trust.json` under the
+  password database's home while `HOME` named another directory, move them under `HOME`'s
+  `.config/stayfixed`.
+- `stayfixed setup` no longer installs plugins unasked. `setup --preset recommended` used to install
+  `superpowers` and `context7` on Claude Code on every run; it now installs a plugin only when
+  `--plugin NAME` names it, once per plugin, and `stayfixed init --questions` offers the two the
+  recommended preset names. Run `stayfixed setup --plugin superpowers --plugin context7` to install
+  them as before; nothing
+  already installed is removed. `setup` also no longer overwrites a value in `pluginConfigs` in
+  `~/.claude/settings.json`: a value there, such as one set in Claude Code's plugin-config screen,
+  is kept, and a personal value is copied there only where none is. A personal value changed in the
+  machine file after the first `setup` is changed in `pluginConfigs` by hand too.
+- `stayfixed setup` refuses flags it used to drop, exit `2`, with nothing written:
+
+  - without `--git-hooks`, `--root`, which names the repository `--git-hooks` installs into while
+    machine setup reads no repository; it used to take the flag, read nothing of it and configure the
+    machine. Drop `--root` from a machine setup's command line; `stayfixed setup --git-hooks --root
+    PATH` takes it as before;
+  - without `--git-hooks`, `--uninstall`, naming `--git-hooks`; asking for the commit-message hook to
+    be removed used to configure the machine instead;
+  - with `--git-hooks`, `--overlay`, as it already refused `--preset`, where it used to drop it and
+    install the hook, and `--plugin`, which is new in this release.
+- `stayfixed uninstall` no longer refuses a repository attached to an overlay. 0.3.1 refused one and
+  told you to run `stayfixed detach` first; `uninstall` now runs `stayfixed detach` itself, before
+  its first write, which withdraws the overlay's plugin and the allow rules `attach` placed, and then
+  takes the scaffold back. From a linked worktree it detaches the main checkout, where `attach` now
+  keeps its ledger whichever worktree it ran from. Attached means `attach`'s ledger and the render
+  `attach` keeps outside the repository, which `detach` removes, so a ledger a clone committed
+  detaches nothing and is refused as a file `uninstall` would not remove. A `note:` line says the
+  repository was detached, and the dry run says it would be; a run whose plans refuse detaches
+  nothing and says nothing of detaching. After an `attach` or a `detach` that stopped part-way,
+  leaving the ledger without the render, `uninstall` refuses it the same way: run `stayfixed detach`,
+  which finishes from the ledger, then `uninstall`.
+
+### Added
+
+- A bug entry may carry `regression`, the argv that reproduces the bug, as an inline list of
+  double-quoted items: `regression: ["pytest", "-k", "total and not slow"]`. `stayfixed bugs check`
+  validates it, reporting a malformed list, an empty item or an item holding a control character
+  below U+0020, or DEL, as `unreadable-entry`. `stayfixed bugs renumber` leaves it exactly as written,
+  and names each entry whose `regression` still names the moved identifier, on its line and in
+  `--json`'s new `lists_naming_old`, since its sweep may have renamed the test such an argv selects.
+  `stayfixed bugs new` does not write one yet.
+- A note now counts as yours only once you promote it. `stayfixed memory promote NOTE…` records the
+  digest of each named note's bytes in `trust.json` (kind `reviewed`), and `--changed` does so for
+  every note that is not reviewed. The digest alone decides, so the same bytes count as reviewed in
+  every worktree, after the store moves and under another name. Only a reviewed note flagged `startup` is a standing rule; a note
+  a repository commits, one an agent or the harness's writer wrote, and one edited since it was
+  promoted arrive in the volatile-notes bundle instead, labelled `[unreviewed]` and inside the
+  region that marks them as data, in every memory mode with a store; `stayfixed memory index` ends such a note's
+  line with the same label in a composed store's own `MEMORY.md` on this machine, and never in one a
+  repository commits or the overlay shares. A session hears one line, "N notes are
+  unreviewed", when that set has changed since the last session. `trust list` lists the reviewed
+  notes and `trust revoke reviewed --subject PATH` withdraws one; `memory inventory` reports each
+  note's `reviewed` status and an `unreviewed` total.
+- A session reads two more layers of preferences, between the repository's `stayfixed.toml` and the
+  machine file: the overlay's `common/stayfixed.toml`, for every checkout, and
+  `projects/<name>/stayfixed.toml`, for a checkout this machine binds to `<name>` with `stayfixed
+  attach`. Each may set a personal value, a guard switch, `[memory] mode`, `groups` and
+  `index_extra`, `[stayfixed] profile` and a session budget; the project file wins over the common
+  one and the machine file over both, and a gate's input or a fact about the repository written
+  there is never taken from it. `stayfixed attach`, `attach --check`, `detach` and the `memory`
+  commands read the same two layers, so an overlay that sets `[memory] mode = "overlay"` gets its
+  store built by the next `attach`. `stayfixed doctor`'s new `preferences` row names every value a
+  session resolves, the session budgets among them, with the layer it came from.
+- The adoption, a step of the `init` skill in 0.3.1, is a skill of its own, `adopt`, which `init`
+  offers as its last step and which can be
+  invoked on its own in a later session or in a clone of an adopted repository. Every command it
+  names that runs gates takes `--builtin`, so no command the repository configures runs, unless you
+  said yes in that session: its first step runs `stayfixed assess --builtin`, names every custom
+  gate that run left out, says the command without the flag runs their commands on this machine and
+  waits for your explicit yes; silence, a timeout or an empty answer is a no, and a yes lasts only
+  for that session. A `--builtin` run that prints no summary stops the adoption until its cause is
+  cleared.
+- The machine file (`~/.config/stayfixed/config.toml`) gains two tables of the owner's own:
+  `[guards]`, where `bg_cleanup = false` switches the `bg-cleanup` session guard off on that machine,
+  and `[budgets]`, which holds the four budgets that bound what a session loads
+  (`memory_index_words`, `startup_rules_words`, `volatile_notes_words`, `volatile_ttl_days`). A
+  repository's `stayfixed.toml` may set a `[guards]` default and the same four budgets; the overlay's
+  `stayfixed.toml` files override the repository's, and the machine file's win over both, so
+  `bg_cleanup = true` there switches the guard back on. Every command that loads the
+  project's configuration reads both tables as a session does, so `memory fit`, `memory index` and
+  `memory inventory` measure the budgets a session runs on. An unknown key, an unusable value or a
+  gate's budget there costs that key alone and is said, by a command on stderr and by a session
+  when it starts, never refused, so a key a later release writes stops no older command; only a
+  machine file that does not load is refused by a command. `stayfixed setup` keeps both tables when
+  it rewrites the file.
+- Your overlay's rules now reach a bound checkout's sessions. Keep them as `*.md` files in
+  `common/claude/rules/` and `projects/<name>/claude/rules/`, a project file replacing the common one
+  of its name: a rule with no `paths:` frontmatter is a standing rule, given to every session at its
+  start; one with `paths:` (`paths: ["src/**/*.py"]`, relative to the checkout's root) is given the
+  first time a session reads, edits or writes a file its globs match, once per file in a session,
+  through a `PostToolUse` entry `stayfixed attach` adds to the rendered plugin only when such a rule
+  exists. The project is the one this machine's binding names, never the repository's own name for
+  itself, so an unbound checkout hears no rule.
+- `stayfixed attach` binds a checkout by a random binding id it keeps in the repository's git
+  common directory, which every worktree of the repository shares, and records on this machine what
+  that id is bound to, in `~/.local/share/stayfixed/bindings/`. A clone never carries the id, so a
+  repository that names itself after one of your projects is not bound to it; the id never leaves
+  the machine and is printed only as its first eight characters. A checkout with no `origin`, or one
+  whose `origin` differs from the remote it was bound with, now attaches and keeps its notes: the
+  command and the session-start line say so, naming both remotes, and refuse nothing for it.
+  The overlay's `projects/<name>/project.toml` binds nothing either, so one that cannot be read, a
+  merge's conflict markers among them, no longer stops `attach` or the session-start check: `attach`
+  says where it stopped reading and leaves the file as it is, and `doctor`'s `attached` row warns.
+- `stayfixed attach` delivers the hooks, skills and agents you keep in your overlay to Claude Code as
+  a local plugin. Every run renders them into `~/.local/share/stayfixed/delivery/<id>/`, a
+  marketplace and a plugin named by the checkout's binding id, and installs it with `claude plugin
+  marketplace add … --scope local` and `claude plugin install … --scope local`, run from the main
+  checkout so every worktree gets it; a call that does not succeed fails the attach (exit 1), and the
+  next `attach` installs again; a session runs the plugin from that directory, so an edit in the
+  overlay reaches the next session after the next `attach`, with no reinstall; each render is the
+  overlay as it is, written whole and swapped into place; a copied file keeps its mode, so a skill's
+  script stays executable. `attach` refuses when the main checkout tracks
+  `.claude/settings.local.json`, where the install writes, or its `.gitignore` re-includes it, and
+  in a worktree of a bare repository, which has no main checkout. Codex gets the overlay's rules,
+  copied into `.codex/rules/`, and none of its hooks, skills or agents.
+
+  `stayfixed detach` withdraws the plugin: from the main checkout it runs `claude plugin uninstall
+  overlay-<id>@stayfixed-delivery-<id> --scope local` where that checkout's
+  `.claude/settings.local.json` names the plugin, and `claude plugin marketplace remove
+  stayfixed-delivery-<id>` where it names the marketplace, and removes
+  `~/.local/share/stayfixed/delivery/<id>/`. The binding id and this machine's record of it stay, so
+  a later `attach` binds the same checkout again. The line says when the plugin was withdrawn, and
+  `--json` carries `delivery_removed`. While the settings file still names a `stayfixed-delivery-`
+  marketplace once the calls ran, the detach fails (exit 1), naming the key left, and keeps the
+  exclude block, the ledger and the render, so the file stays hidden; running `detach` again
+  finishes the withdrawal.
+- `stayfixed attach` in `overlay` mode now composes one memory store for the harness under
+  `~/.local/share/stayfixed/stores/<id>/`, named by the binding id: a link to each of the overlay's
+  note groups for the project and one to its `MEMORY.md`. It points Claude Code at it with one key,
+  `autoMemoryDirectory`, written into the main checkout's git-ignored `.claude/settings.local.json`,
+  which every worktree reads, so the harness reads the overlay's notes from every worktree with
+  nothing placed per worktree and no approval to wait for. `--store` is no longer required: without
+  it, the store is the project's own directory in the overlay the machine records, and every remedy
+  stayfixed prints names plain `stayfixed attach`. A `[memory] mode = "overlay"` set only in the
+  overlay's project file applies on the first attach, and a re-attach once the mode is no longer
+  `overlay` takes the key and the store back, as `stayfixed detach` does. `detach` takes the key back
+  and removes the composed store's links and directory, keeping any note the harness wrote there. A
+  session whose composed store is gone hears one line naming it and `stayfixed attach` as the way
+  back. `attach` no longer takes the `autoMemoryDirectory` fallback it wrote when the harness memory
+  link could not be made; the pointer replaces it.
+- `stayfixed bugs regressions` runs the `regression` of every bug entry whose status is `fixed`, each
+  as `stayfixed prove` runs a command, from the project root with `[gates] custom_timeout_seconds` as
+  its bound, and prints one line for each entry with the receipt `prove` would print. It exits 0 when every
+  regression is proved and 1 when one is not, as `prove` does; after a Ctrl-C or a terminating signal
+  ended a run, nothing more starts. `--json` carries each entry's identifier, file, verdict and line,
+  and the runner's own output goes to standard error, so standard output stays one object. It runs
+  as a `[gates.custom]` gate, `run = ["stayfixed", "bugs", "regressions"]` where stayfixed is
+  installed, and in the reusable workflow as a `run` that installs the regressions' runner itself,
+  pinned, before `python3 -P -m stayfixed bugs regressions`; `docs/cli.md` spells both.
+- `stayfixed doctor` has one `memory` row in place of `store-debris`: the active `memory.mode` and the
+  layer that set it (or that none does, and memory is the coding agent's own), the store, which
+  settings file sets the harness's `autoMemoryDirectory` — named as information and never with its
+  value, since a committed `.claude/settings.json` may point the harness elsewhere — and the store's
+  unreviewed notes as a count. Files in the note store that are not notes are counted there and still
+  warn. With no `stayfixed.toml`, `not-initialised` now says memory stays the coding agent's own.
+- `stayfixed init --questions` asks ten questions instead of six, in the order the `init` skill walks
+  them, which `--json` gives as the schema's `required` list: the name and the base branch, then the
+  memory mode, the stack profile, CI, the commit attribution check, the commit types, the files kept
+  out of git, the coding agents and the recommended plugins. `--json` gives each one four lines —
+  what you get, what you give up, what it leaves behind and how to undo it — and the skill offers to
+  take every default before it asks anything. Two answer flags are new on `init --yes`:
+  `--attribution-check` and `--commit-type`. `init --yes` prints a `picked:` list after its reports,
+  before any `note:` line, naming the value it took for each question. The recommended preset's
+  commit types are now the eleven types `@commitlint/config-conventional` lists (`feat`, `fix`,
+  `build`, `chore`, `ci`, `docs`, `perf`, `refactor`, `revert`, `style`, `test`) in place of a list
+  that held stayfixed's own `harden` and `guard`; a project that wants those sets
+  `[commit_messages] types`.
+- `stayfixed prove -- COMMAND` runs a test command as typed and says what its runner's own report
+  proves: `proved` (exit 0), `failed` or `not proven` (1), or `refused` (2). Text the command prints
+  is never counted, and a run of no test, or of skipped tests alone, fails. Adapters ship for
+  pytest, jest, vitest, `node --test` and `go test`, each adding only its report options; each
+  refuses the options under which a runner's green report covers tests that never ran or checked
+  nothing (pytest's `--setup-plan`, the interpreter's `-O`, a snapshot rewrite, and the like) and
+  says `not proven` for a watch mode. `--junit PATH` counts the JUnit report of any other runner,
+  and its receipt says the runner was not verified. The receipt names the realpath of what ran and
+  the untracked test files in the runner's discovery set, and `--json` prints it whole; a `--json`
+  after the `--` is the command's own and is handed to it. `docs/cli.md`, the `stayfixed prove`
+  section, has every rule.
+- `stayfixed setup --approval-boundary` prints what keeps an agent's shell out of the trust record
+  under Claude Code, for you to set, and writes nothing: the `permissions.deny` rule over the
+  record's directory, `sandbox.enabled = true`, and the managed settings that keep a repository from
+  turning the sandbox off. An approval holds against what a repository ships; against the session's
+  own agent the harness's sandbox is the boundary, which stayfixed does not check.
+- `stayfixed trust` lists and withdraws the approvals recorded on the machine, in
+  `~/.config/stayfixed/trust.json`, now a versioned record of each approval with its kind, its
+  subject, the digest approved and when; the one kind this release records is `reviewed`, from
+  `stayfixed memory promote`. `stayfixed trust list` lists every approval, each subject named escaped
+  and bounded, and from `~/` under the home. `stayfixed trust revoke KIND --subject KEY` withdraws
+  that approval and every other of its kind holding the same digest, from any directory, with no
+  terminal, and exits 1 listing what the kind has recorded when nothing matches. A record no release
+  writes, or one a later version wrote, is refused and never overwritten; for a later version's, the
+  refusal says to update stayfixed rather than delete the file.
+
+### Fixed
+
+- A `[ledger] code_roots` entry that no walk takes is no longer dropped without a word.
+  `stayfixed assess` has a `code-roots` probe that names each such entry with its reason in
+  `.stayfixed/assessment.json`: it names the repository root itself (`.`), it is no readable path
+  inside the repository free of links, `..` and `.git` (`../shared`), or it names no directory here
+  (a `lib` that does not exist), unless the preset's default lists it (`src`, `tests`, `scripts`)
+  and another entry is walked: such a missing directory loses no walk. Nothing is refused for it. `stayfixed test hygiene` no longer
+  calls a tree clean when no entry is left to walk: after the uncommitted-change count, or
+  `no uncommitted change`, it says `no [ledger] code_roots entry names a directory here, so no code
+  root was walked`.
+- A `~/.config/stayfixed/config.toml` or `~/.config/stayfixed/trust.json` that a dotfiles manager
+  (stow, chezmoi) links elsewhere is now written through: `stayfixed setup` and every approval,
+  refresh and revocation write the file the link leads to, and the link stays, and a write that fails
+  there names the directory the link leads to. Before, the next write put a regular file in the
+  link's place, so the dotfiles copy kept the old settings and approvals.
+- A bug entry's refusal of an unsupported escape in a frontmatter value, such as `\<ESC>` in a
+  `title`, now prints a character that does not print, an ESC or a line break, escaped rather than
+  raw, so it no longer reaches your terminal as a control sequence.
+- A note file that is a symbolic link is skipped in every memory store: it reaches no session and
+  `stayfixed memory inventory` counts it as `skipped`. A repository could commit such a link to put a
+  file from outside it into every session. A group directory that is a link is still followed.
+- A relative `HOME` now names no home directory, as an empty one does: `setup`, `attach` and `detach`
+  refuse, and no command reads or writes a machine file or a trust record under the directory it
+  happens to run from. Taken as typed at a terminal, `HOME=h` gave every working directory a machine
+  file of its own.
+- An agent can read and edit an env file's template again: `.env.example`, `.env.dist`,
+  `.env.sample` and the rest. The deny rules `stayfixed setup` wrote refused every file whose name
+  began with `.env`, templates included, and an allow rule cannot override a deny rule, so nothing
+  could let a template through. `setup` now denies the common env file names one by one (`.env`,
+  `.env.local`, `.env.*.local`, `.env.dev`, `.env.development`, `.env.prod`, `.env.production`,
+  `.env.stage`, `.env.staging`, `.env.test`) and takes the old `Read(.env*)` and `Read(**/.env*)`
+  masks back out of `~/.claude/settings.json`, so run `stayfixed setup` once after upgrading;
+  `stayfixed doctor`'s new `retired-deny` row says so while a mask is still there. An env file under
+  any other name is no longer refused.
+- Run from an agent's sandboxed shell, which cannot write stayfixed's machine directory or Claude
+  Code's user settings, `stayfixed setup` now exits 2 with a sentence saying a person must run it in
+  their own terminal, outside the agent's sandbox (or, met in their own terminal, that the directory
+  itself refuses writes), where it used to end as `internal error`; a run it stops part-way is
+  finished by the next.
+- The reusable workflow's step that runs a project's own gates now hands them an absolute
+  `PYTHONPATH`, so a `[gates.custom]` command can run `python3 -m stayfixed …` there and reach the
+  workflow's own stayfixed; with the relative path it had, such a command found no stayfixed.
+- `stayfixed attach` no longer prints or records the credentials an `origin` URL can carry: the
+  userinfo of `https://user:token@host/…` is taken out before the origin is shown on the attach
+  screen or in the note naming both remotes, and before it is written into this machine's binding
+  record or the overlay's `projects/<name>/project.toml`. An ssh URL keeps its user and loses only a
+  password.
+- `stayfixed bugs renumber` tells the files it must leave alone, the two it moves between, the index
+  and the entries, by the file and no longer by how the path is spelt. On a filesystem that folds
+  case, such as macOS's default, a ledger directory committed as `docs/Bugs` and configured as
+  `docs/bugs` made the sweep rewrite the `id:` of the void pointer it had just written, so
+  `stayfixed bugs check` then failed with `id-mismatch` and `duplicate-id`.
+- `stayfixed doctor`'s `ignored-env` row no longer warns about an `XDG_CONFIG_HOME` that names
+  `$HOME/.config`, as home-manager exports it, or, with `HOME` unset, the password database home's
+  `.config`: that is the directory stayfixed reads its machine file under, so nothing is lost. Any
+  other value, and any `STAYFIXED_CONFIG`, is said as information, which changes no status, and the
+  row now says that no command honours it, not only the hook path.
+- `stayfixed setup --overlay create:<owner>/<name>` now looks at `<home>/<name>` before it asks
+  GitHub anything: a file there, or a directory holding something that is not an overlay, is refused
+  with nothing written and no repository created, where the clone used to meet it only after `gh repo
+  create` had made a private repository nothing then recorded; an empty directory you can list and
+  write is cloned into, a link there is refused in the same way, and the overlay an earlier run made
+  is left alone. A directory you cannot search, or one holding no overlay that you cannot both list
+  and write, is refused in one sentence, naming that directory. Once `gh repo create` has run, every
+  refusal says the repository may now exist on GitHub and how to record it: clone it to
+  `<home>/<name>`, then run `stayfixed setup --overlay <home>/<name>`. An `--overlay` path beginning
+  with `~` is refused while `HOME` is empty or relative, where it was read against `/` or the working
+  directory.
+- `stayfixed setup` reads an existing Claude Code user settings file past a leading byte-order mark,
+  as Claude Code does, and keeps the mark, where it used to refuse the file.
+
+### Changed
+
+- A `[paths]` value is now at most 1024 characters, the longest path macOS accepts. A longer one is
+  refused by every command, naming its key, and a session puts it back to the preset's: checking a
+  value of tens of thousands of components used to keep a `PreToolUse` hook past its timeout, which
+  let the call through unchecked.
+- A budget is now the value you set, above the preset or below it. A `[budgets]` value above the
+  preset's used to be ignored, so the number in `stayfixed.toml` was silently not the one in force;
+  now the base branch's `stayfixed.toml` may raise any budget, and `stayfixed doctor`'s `budgets` row
+  names each one raised or lowered. A pull request only lowers a budget, a gate's or a session's:
+  `stayfixed gate` refuses a raise against the base branch's value. `stayfixed gate` now judges a key
+  by what it is: a pull request may change a preference such as `[memory] mode` whatever the base
+  enforces, since no gate reads it, and may add to `[ledger] code_roots` and
+  `evidence_boundary_required_for`, while removing an entry from either is refused while a gate
+  enforces.
+- A custom gate that runs past `custom_timeout_seconds`, or is interrupted, now gets SIGTERM first
+  and SIGKILL only once its command has exited or 5 seconds have passed, where it used to get
+  SIGKILL at once. What the command started can end its own children in that grace, so a test
+  runner a gate starts no longer outlives the gate.
+- A session no longer stops on its configuration, and its guards run on the preset and the machine
+  owner's layer whatever the repository holds. A `stayfixed.toml` that does not load, a symbolic link
+  to one, or a broken machine file used to refuse every tool call the agent made; now a tool call is
+  refused only when a guard refuses it. A session reads the `stayfixed.toml` it can: a section or key
+  from a newer stayfixed is ignored and a value it cannot use is put back to the preset's, so the
+  project's other settings still apply. It drops the file whole only when it cannot read it as TOML,
+  or when a key has nothing to stand in for it, such as an unusable `[project] name`, and then it
+  names that key instead of calling it missing, or when it is longer than 256 KiB or holds more
+  settings it cannot use than its length allows (64 for a file of up to 16 KiB, as few as 4 at 256
+  KiB), which read one by one would keep a hook past its timeout. What the session could not use is
+  said once, when it starts, to you and to the agent, with `stayfixed doctor` named for the detail; a
+  tool call says nothing of it. `memory session-context` reads the file the same way, so a key a newer
+  release added no longer empties a session's notes, and a machine file that does not load no longer
+  ends it: the notes not kept in the overlay still arrive.
+- The hook wrapper now runs the `python3` on your `PATH`, if it is 3.11 or newer, and stayfixed runs
+  the `git` on your `PATH` in a hook as it does at a terminal, with your `HOME`. The wrapper asks for
+  `python3` from the project root, so a pyenv, asdf or mise shim answers for the project. A `git`
+  from nix, MacPorts or mise, or a `python3` only in a virtual environment, used to stop every `Bash`
+  call or every hook; now it simply answers. `STAYFIXED_PYTHON_CANDIDATES` is no longer read. A fault
+  of stayfixed's own in a hook — no suitable `python3`, a launcher it cannot read, an internal error,
+  any non-zero exit — now lets the call through with one line on stderr instead of blocking it, and
+  `stayfixed doctor`'s `wrapper` row goes red on that line.
+- The note after a failed pytest run now also follows `py.test` and `poetry run pytest`, and no
+  longer takes `python script.py -m pytest`, which runs `script.py`, for a pytest run.
+- The note after a failed test run reads `uv run` without a list of uv's options: the command starts
+  at the first word naming a test runner stayfixed recognises (`stayfixed prove`'s), so an option uv
+  adds needs no new stayfixed, and a runner named before the real command (`uv run --with pytest
+  echo`, `uv run grep -m pytest x`) is read as the command. The `bg-cleanup` guard no longer reads
+  through `uv run`: a backgrounded `uv run sleep 30`, which 0.3.1 refused, runs with no hint, and an
+  `echo` behind `uv run` is no longer read as an echo by the exit-echo hint.
+- `stayfixed assess`'s `codeowners` probe no longer reimplements GitHub's CODEOWNERS pattern matching.
+  It is now advice, not a warning, given when there is no CODEOWNERS file or when no line that does
+  not start with `#` holds `.github`, so a file whose only rule is `* @owner` gets the advice too.
+  The `codeowners-scope` probe, which matched every workflow against the file under a step budget,
+  is gone.
+- `stayfixed attach` and `stayfixed detach` now honour `--machine` wherever they run, as every other
+  command does, rather than refusing it outside an interactive shell: an agent passed that check
+  through a pseudo-terminal as easily as it passes the flag, so the refusal stopped no one.
+- `stayfixed attach` no longer writes anything into `.gitignore`. The attach ledger,
+  `.stayfixed/local/attach.json`, is now hidden from git by the same block in the repository's own
+  `.git/info/exclude` that hides everything else `attach` places, so an attach leaves `git status`
+  as it found it and changes no file a collaborator gets. Once that block is written, `attach` asks
+  git whether each path it places is ignored and refuses, naming the path, when a `.gitignore`
+  re-includes one with a `!` line. Before writing anything, it also refuses, naming it, any path it
+  places that the repository tracks, in any ASCII case or as the same file as one the repository
+  tracks in that directory, so that a tracked `.CLAUDE/Settings.Local.json`, or on macOS
+  `.claude/ſettings.local.json`, counts where the filesystem folds names; `attach --check` refuses it
+  too.
+  `stayfixed detach` no longer touches `.gitignore` either, and its `--json` no longer reports
+  `ignore_region_removed`: a `stayfixed:ignore` region an earlier `attach` wrote stays until you
+  remove it, and the region `stayfixed init` writes is unaffected.
+- `stayfixed doctor` no longer calls a repository with no `stayfixed.toml` broken. It used to answer
+  one red row, "the plugin's hooks are silent in this repository", and skip everything else; the
+  `not-initialised` row is now a warning that the session guards and `doctor` work without one and
+  that `stayfixed init` adds the rest, every other row is still checked, and the rows that need the
+  project's configuration say there is none. `doctor` reads `stayfixed.toml` the way a session does,
+  so a file a newer stayfixed wrote is a warning naming the first few of the settings that were
+  ignored or put back to the preset's, by key, and counting the rest, and only a file the session
+  cannot use at all is red. A machine file that does not load no longer hides the report: the new
+  `preferences` row is red, naming it, as every command refuses it, and the rows that read the overlay
+  root say they could not read it rather than that none is recorded; one that loads with keys this
+  stayfixed cannot use is a warning naming them. That row, after `budgets`, names the layer each
+  preference and each of the machine owner's settings came from (the preset, the repository, the
+  overlay's common or project file, or the machine file), with its value only where it is a boolean, a number or one of stayfixed's own words.
+- `stayfixed doctor`'s `attached` row reads what an attach delivered: it is red when the render
+  directory under `~/.local/share/stayfixed/delivery/` or its marketplace file is gone, the overlay
+  has moved, a path `attach` placed is tracked or re-included by a `.gitignore`, or a tracked file
+  names the delivery; it warns when the overlay changed since the last attach, the ledger records no
+  install, the launcher the path-scoped rules run through is gone, `origin` moved, or a link in the
+  composed store names a place that is not there. The row is read for every attached repository,
+  whatever its `memory.mode`. `hook-entries` names each entry claiming the stayfixed marker by its
+  file and position, and is red only for one in a file stayfixed writes,
+  `.claude/settings.local.json` or `~/.claude/settings.json`; elsewhere it warns. Skill, command and
+  agent files declaring hooks, and `ignored-env`'s variables, are information that changes no
+  status.
+- `stayfixed memory index` keeps the pointer lines the harness's own memory writer added to
+  `MEMORY.md` for the topic files it left at the top of a store — a `local-only` store an earlier
+  release linked the harness to holds them — where it used to render the groups alone and take
+  every such line out; a line whose topic file is gone is dropped, and the topic files are never
+  written. A configured group whose directory the store does not hold is an empty group: every
+  `memory` command and each session entry reads the store that is there, an empty `local-only` store
+  and one holding only the native writer's files included, where they refused that "none of the
+  configured groups resolved". `stayfixed memory session-context` prints nothing, and exits 0, in a
+  repository whose store's directory does not exist yet, as a `local-only` one before its first note,
+  and in an overlay checkout this machine has not bound, where each session used to open on the
+  resolver's refusal six times; `stayfixed doctor` reports the binding.
+- `stayfixed memory index` no longer writes into notes. A note with no `index:` line is rendered with
+  its `metadata.index` or its description on every run, so an edit to either reaches the index, and a
+  provisional line an earlier release wrote into a note is read as no line. The one line still written
+  into a note is the one the harness's memory writer appended to `MEMORY.md`, harvested so it is not
+  lost. The render now sits between two marker lines in `MEMORY.md`, and only lines outside them are
+  harvested, so the render's own lines are never read back into a note: a second run, after an edit
+  or not, leaves every note as it was. The command's line no longer names
+  notes it gave a provisional line; `--json`'s `provisional` still lists the notes whose line is
+  rendered that way.
+- stayfixed now takes your home directory from `HOME`, as the harness does, at a terminal and
+  everywhere else: the machine file and `trust.json` live under it, where 0.3.1 read `HOME` only at a
+  terminal and the password database's home everywhere else. A devcontainer, a home-manager setup or
+  a scratch `HOME` no longer splits stayfixed from the harness, and `stayfixed doctor`'s
+  `harness-link` row is gone; its `ignored-env` row now only notes, as information, a `HOME` that
+  differs from the password database's. A `~/.claude` or `~/.claude/settings.json` that a dotfiles
+  manager (stow, chezmoi) links elsewhere is written through by `setup` rather than refused.
+
+
 ## 0.3.1 (2026-10-16)
 
 ### Fixed

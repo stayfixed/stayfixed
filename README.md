@@ -124,13 +124,13 @@ through the plugin `attach` renders and are not delivered to Codex.
 
 ## Install
 
-**Released as 0.3.1.** The plugin form below takes that release's tag. `uv tool install
+**Released as 0.6.0.** The plugin form below takes that release's tag. `uv tool install
 stayfixed` names no version, so it installs the newest release on PyPI:
 
 As a Claude Code plugin:
 
 ```
-/plugin marketplace add stayfixed/stayfixed@v0.3.1
+/plugin marketplace add stayfixed/stayfixed@v0.6.0
 /plugin install stayfixed@stayfixed-marketplace
 ```
 
@@ -160,7 +160,7 @@ of them, annotated.
 
 ```toml
 [stayfixed]
-version = "0.3.1"
+version = "0.6.0"
 
 [project]
 name = "widget"          # one lowercase path segment

@@ -10,8 +10,8 @@
       "source": {
         "source": "url",
         "url": "https://github.com/stayfixed/stayfixed-plugin.git",
-        "ref": "v0.3.1",
-        "sha": "98018f228d8699088dbcfa6fd5fdb71b04a8b97e"
+        "ref": "v0.6.0",
+        "sha": "3072ceeab8cd40f08a7943f1a2f0613555df2fe1"
       },
       "description": "A methodology harness for coding agents: bug ledger, working memory whose notes count once reviewed, and fail-closed guards."
     }
