@@ -14,4 +14,6 @@ main checkout's settings file in place of judging the harness memory path. Neith
 `detach` removes what an earlier release placed: delete the links under `paths.memory` in each
 checkout, and `~/.claude/projects/<slug>/memory` for each, by hand, and detach a checkout an
 earlier release attached from a linked worktree before upgrading, since its ledger is that
-worktree's.
+worktree's. In `overlay` mode the `memory` commands no longer read `--store`, so a script that
+pointed them at another directory there now reads the composed store; in every other mode
+`--store` works as before.

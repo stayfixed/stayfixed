@@ -4,7 +4,4 @@ validates it, reporting a malformed list, an empty item or an item holding a con
 below U+0020, or DEL, as `unreadable-entry`. `stayfixed bugs renumber` leaves it exactly as written,
 and names each entry whose `regression` still names the moved identifier, on its line and in
 `--json`'s new `lists_naming_old`, since its sweep may have renamed the test such an argv selects.
-`stayfixed bugs new` does not write one yet, and every other byte the ledger writes and prints is
-unchanged but one: a refusal of an unsupported escape in any frontmatter value, such as
-`\<ESC>` in a `title`, now prints a character that does not print, an ESC or a line break, escaped
-rather than raw.
+`stayfixed bugs new` does not write one yet.

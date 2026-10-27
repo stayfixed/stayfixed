@@ -9,4 +9,5 @@ refused: the region's nonce is drawn again until it is one the note does not hol
 approvals 0.3.1 recorded in `~/.config/stayfixed/trust.json` are no longer read: `stayfixed trust
 list` shows none of them, and the first command that records an approval, such as `memory
 promote`, replaces the file with the new versioned record and drops them. A 0.3.1 reading that
-record finds no approval in it.
+record finds no approval in it, and an approval given there rewrites the file in the old shape,
+which drops every note you promoted: promote them again after you return to this version.
