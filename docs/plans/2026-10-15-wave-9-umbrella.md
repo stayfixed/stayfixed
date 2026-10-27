@@ -146,8 +146,8 @@ the releases are the owner's checkpoints, each cut once its lanes are on `dev`.
 | Release | Cut once these are on `dev` | Then |
 |---|---|---|
 | `0.4.0` | skipped (owner, 2026-10-26): no release was cut before HS4 merged | — |
-| `0.5.0` | RC1, CP1, HS1, HS2, HS3, HS4 | Tasks 1–2 |
-| `0.6.0` | CP2, CP3 | Task 3, then Tasks 4–5 |
+| `0.5.0` | skipped (owner, 2026-10-27): no release was cut before CP2 and CP3 merged | — |
+| `0.6.0` | RC1, CP1, HS1, HS2, HS3, HS4, CP2, CP3 | Tasks 1–3, then Tasks 4–5 |
 
 A lane of a later release that lands first ships in the earlier release cut after it, which is
 harmless with no users; BM and SP touch nothing `scripts/plugin_tree.py` puts in the plugin. A pull
@@ -249,7 +249,7 @@ lane plan cites the ids it takes.
 | RC1 | Capture literals for `bugs new`'s entry, `bugs check` (text and `--json`) and `renumber` before touching the engine, from the tree rather than the `v0.3.0` tag (owner, 2026-10-18) [O-23]; quoted list items for `regression` [P-CP-17]. |
 | CP1 | Done in PR 106: `prove` runs the command as typed, and only the honest-mistake guards remain. The evidence records and their `0.4.0` key are deferred until a report reads them. |
 | CP2 | A closed bug's `regression` argv runs through `prove`, naming the entry, locally with no approval and no `regressions` kind (Design rule), where the project's tests already run, `docs/cli.md` showing the one-line step; `regressions` is a gate name in the existing builtin/enforced vocabulary, not a new key, and is not added to the preset's default `builtin`. Cut: the argv read at the merge base and its fixture [N-23], a regressions step and upload in `check.yml` [F9, P-CP-11], overlay-register regressions, the project key for an unbound checkout [C-39], evidence records of its own, `bugs new --regression`. `gate --base` takes a short name and falls back to the local base. **Amended 2026-10-26 by the owner, on the CP plan's review:** `regressions` is a documented `[gates.custom.regressions]` running `stayfixed bugs regressions`, not a built-in gate name, so ordering, the landed wait and the consent before a clone's commands are the custom gates' own; the short `--base` is cut. |
-| CP3 | The `adopt` skill as the last step of the full `init` walk [O-3d], made by moving `skills/init/references/adoption.md` into `skills/adopt/SKILL.md`, with no new CLI; BR-010, which depends on nothing and may land on its own. |
+| CP3 | The `adopt` skill as the last step of the full `init` walk [O-3d], made by moving the `init` skill's adoption reference into `skills/adopt/SKILL.md`, with no new CLI; BR-010, which depends on nothing and may land on its own. |
 | PF1 | Committed rules files released from the manifest, which `upgrade` owns today. Deferred until a second profile ships rules: profiles as a layered list with detection, the union merge in `resolve` [P-CP-20] and the `profile` rename. Cut: the no-drop ratchet (a profile's checks never fail a gate) and the runner-adapter listing beside a profile. |
 | PF2 | Profile context through `SessionStart` and the path-rule handler, delivered only where the checkout does not track its own copy. |
 | BM | Rewrite the side-lanes plan's stale steps: `scripts/release.py check`; the existing `mutations/repository.toml`; the retired 512-file limit; the existing `tests/test_payload.py`; the final run built with `scripts/plugin_tree.py` [P-CP-22]. Every paid run waits for the owner's yes. The final review's two seats, no lifecycle matrix, mutation entries by item 10 of the contract. |
@@ -322,8 +322,9 @@ read-backs and dry runs, and never calls the pending-deployments API.
 
 ### Task 1: The release check before `0.5.0` (controller, with the owner)
 
-`0.4.0` is skipped (owner, 2026-10-26), so this task runs once, before `0.5.0`; Steps 2 and 3 read
-`0.5.0` for `0.4.0`, and its upgrading section says `0.4.0` was never published.
+`0.4.0` is skipped (owner, 2026-10-26) and `0.5.0` too (owner, 2026-10-27), so this task runs
+once, before `0.6.0`; Steps 2 and 3 read `0.6.0` for `0.4.0`, and its upgrading section says
+`0.4.0` and `0.5.0` were never published.
 
 - [ ] **Step 1:** when RC1, CP1 and HS1 have merged into `dev` and `gh pr checks` read every job
   green on each, run `uv run python scripts/release.py check` on `dev` — `RELEASING.md`'s first
@@ -340,14 +341,16 @@ read-backs and dry runs, and never calls the pending-deployments API.
   on a copy of the owner's overlay and two copies of attached checkouts, under an isolated `HOME`,
   `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL`, never the owner's real
   installation, and pastes what it printed into Findings.
-- [ ] **Step 2:** the owner cuts `0.5.0` by `RELEASING.md`; the upgrading section lists the owner's
+- [ ] **Step 2:** folded into Task 3 with `0.5.0` skipped (owner, 2026-10-27). The owner cuts `0.5.0` by `RELEASING.md`; the upgrading section lists the owner's
   manual steps for an attached checkout and the existing notes (no migration code ships), and the
   spellings that are gone (`memory trust`, `overlay create`, `overlay init`).
 
 ### Task 3: Cut `0.6.0` (controller, with the owner)
 
-- [ ] **Step 1:** when CP2, CP3, PF1 and PF2 have merged, the owner cuts `0.6.0` by `RELEASING.md`;
-  the upgrading section names the `regressions` gate. The installed versions are Task 4's first
+- [ ] **Step 1:** when CP2 and CP3 have merged (PF1 and PF2 are deferred), the owner cuts `0.6.0` by
+  `RELEASING.md`; the upgrading section opens with `0.4.0` and `0.5.0` never published and the
+  owner's manual steps for an attached checkout, in order, carries Task 2 Step 2's items, and names
+  the `regressions` gate. The installed versions are Task 4's first
   observable.
 
 ## Exit
@@ -426,6 +429,36 @@ servers. Where the step needs only a `SessionStart`, it drives one with
 ## Findings
 
 Written by Tasks 1–5 and by each lane's controller when its pull request merges.
+
+### Task 1 Step 1 — the release check before `0.6.0`, 2026-10-27
+
+Run at `dev` = `a0d559b`, after CP3 merged:
+
+```
+$ uv run python scripts/release.py check
+one version everywhere: 0.3.1
+exit=0
+```
+
+The upgrading section was then read against `v0.3.1`, the release a reader upgrades from, and two
+gaps closed in changelog fragments:
+
+- `+memory-trust-gone` described the change from HS1's `trust approve` and `trust list --all`,
+  which never shipped. Measured: a `trust.json` written by `stayfixed==0.3.1`'s `memory trust
+  --in-repo-memory` reads as empty under this tree's `trust list`, `trust revoke memory --subject`
+  that path exits 1 with nothing revoked, and the first `memory promote` replaces the file with a
+  version-1 record. The fragment now says exactly that, as `docs/cli.md` does.
+- No entry said how to move the plugin to the new tag. Measured on Claude Code 2.1.301 under an
+  isolated `CLAUDE_CONFIG_DIR` and `HOME`: `claude plugin marketplace add stayfixed/stayfixed@v0.3.1`
+  over one added at `@v0.3.0` fails ("its source doesn't match its extraKnownMarketplaces entry");
+  `marketplace remove`, `add` at the new tag and `install` installs the new tag's plugin, with its
+  user options unset. `+from-0-3-1` opens the section with that and the owner's other manual
+  steps, in order.
+
+The measurement's `stayfixed==0.3.1` wrote its approval to the password database's home, not the
+isolated `HOME` (0.3.1 behaviour), so it landed in the owner's real `trust.json`; that one entry was
+removed again, the file left byte for byte as 0.3.1 writes it. Task 4's isolated machine runs
+`0.6.0`, which reads `HOME`.
 
 ### Task 2 Step 1 — `attach` on copies of the owner's overlay, 2026-10-26
 
