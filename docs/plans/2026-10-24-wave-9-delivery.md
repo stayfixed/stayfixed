@@ -803,7 +803,7 @@ graph LR
   checks and `uv run python scripts/mutation_oracle.py`; any red stops the task.
 - [ ] **Step 2:** the two seats of item 4, plus a security seat (the diff touches the binding id and
   the exclude ordering); triage; one fix round; one scoped re-review.
-- [ ] **Step 3: D6, with the owner.** Attach the owner's overlay to a copy of one of the owner's
+- [x] **Step 3: D6, with the owner.** (Done 2026-10-28; Findings, "Task 12 Step 3".) Attach the owner's overlay to a copy of one of the owner's
   checkouts under the owner's real configuration, with the owner's yes for each item added; open a
   desktop Code-tab session in a new worktree of it; record whether the standing rules and the
   rendered plugin's context arrived and the dialogs seen. Then `detach`, and remove the copy with the
@@ -1437,3 +1437,42 @@ and the missing mutation entries and tests. Two lanes ran in parallel worktrees
 **Bug ledger** (in the private overlay): BR-018 and BR-039's `--overlay` half are closed by the
 owner after the merge, against the merge commit; their Fix sections were handed over with this
 pull request.
+
+### Task 12 Step 3 — D6, the desktop app's worktree session, 2026-10-28
+
+Run with the owner, each write approved in turn, at `dev` = `49902da` (the CLI run from a worktree
+of it, the plugin rendered from it by `scripts/plugin_tree.py` into a directory marketplace
+`stayfixed-d6`), under the owner's real configuration: a copy of one of the owner's attached
+checkouts (`rsync` without worktrees, venvs and `node_modules`; the five links an earlier release
+placed under its `docs/memory` deleted in the copy), the identity record added to the owner's
+overlay by hand, and in the copy, with `--scope local`, the `stayfixed-d6` plugin installed and the
+user-scope stayfixed and old overlay plugins disabled. `attach --check` then `attach`: binding
+recorded, four hook entries in the rendered plugin, one Codex rule file, `git status` empty,
+`doctor` 0 red (warn: `versions`, `preferences`, `retired-deny`, the three an un-upgraded machine
+carries). The owner then opened a Code-tab session on the copy with a worktree, Auto mode, and sent
+a read-only probe as its first message.
+
+- **The desktop app refuses a repository under a session's scratch space.** The first copy, under
+  `/private/tmp/claude-501/…/scratchpad`, could not be opened ("Claude Desktop could not anchor
+  this repository: its .git resolves under /private/tmp/claude-501, a sandboxed session's scratch
+  space"), and a session started from another session is refused in a repository the app has no
+  session record of. The copy was detached, removed and made again under the owner's home.
+- **The session ran in `<main>/.claude/worktrees/<n>`**, with the main checkout's `.git` as the
+  common directory, and received what `attach` delivers there with no step of its own:
+  `autoMemoryDirectory` named the composed store under `~/.local/share/stayfixed/stores/<id>/`;
+  the stayfixed plugin's `SessionStart` delivered the volatile-notes region, every note labelled
+  `[unreviewed]`, and the line "N notes are unreviewed"; the rendered overlay plugin's
+  `SessionStart` and `UserPromptSubmit` hooks ran; the `stayfixed:*` skills were listed, `adopt`
+  among them; nothing came from the two disabled user-scope plugins.
+- **No standing-rules block arrived**, as designed: no note was promoted on that machine, and only a
+  reviewed note is a standing rule. The upgrading notes' `memory promote --changed` step is what
+  fills it.
+- **No overlay skill arrived**, because the overlay's one skill sat in its root `skills/`, the old
+  layout, which the render does not read; its hooks did.
+- **The app added an install record for the worktree's path** for both local-scope plugins, as D3
+  saw in the terminal. The owner saw no dialog for the session.
+- **Afterwards:** `detach`, `plugin uninstall` and `marketplace remove stayfixed-d6` left no row
+  naming the copy in `installed_plugins.json` or `known_marketplaces.json`, the worktree's rows
+  included; the run's two binding records were removed by hand, since `detach` keeps them by
+  design; the copy and the probe session are gone. The overlay's `git status` matched the one taken
+  before the run but for the identity record, which the owner keeps.
