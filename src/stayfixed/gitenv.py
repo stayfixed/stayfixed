@@ -435,6 +435,16 @@ def without_userinfo(url: str) -> str:
     return f"{scheme}{rest}"
 
 
+def repository_name(url: str) -> str:
+    """The name a remote `url` gives its repository: the last segment of its path, `:` read as the
+    scp form's `/`, lower-cased and with one `.git` taken off. `init` writes it as `[project] name`
+    and `attach` binds a repository with no `stayfixed.toml` under it, so the two derive one name
+    from one remote; each holds it to the name rule itself."""
+    segment = url.rstrip("/").replace(":", "/").rsplit("/", 1)[-1]
+    # Lower-cased first, so `Widget.GIT` loses its suffix as `Widget.git` does.
+    return segment.lower().removesuffix(".git")
+
+
 def origin_remote(root: Path) -> str | None:
     """This checkout's `origin` URL, or `None` when `git` ran and there is no such remote.
 

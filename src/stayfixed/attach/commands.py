@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stayfixed.areas import SubParsers
-from stayfixed.command import ATTACH_CHECK_HELP, command_owner, common_flags
+from stayfixed.command import ATTACH_CHECK_HELP, command_owner, common_flags, grammar
+from stayfixed.config.schema import NAME_RULE, PROJECT_NAME
 from stayfixed.printed import clipped, quoted
 from stayfixed.result import Result
 
@@ -35,13 +36,16 @@ def run_attach(args: argparse.Namespace) -> Result:
 
     root, store, machine = _target(args)
     if args.check:
-        return check(root, store=store, machine=machine, owner=command_owner(machine))
+        return check(
+            root, store=store, machine=machine, owner=command_owner(machine), project=args.project
+        )
     attached = attach(
         root,
         store=store,
         machine=machine,
         runner=subprocess_runner(),
         owner=command_owner(machine),
+        project=args.project,
     )
     data = {
         "settings_written": attached.settings_written,
@@ -146,6 +150,14 @@ def register(groups: SubParsers) -> None:
         store=True,
     )
     attach.add_argument("--check", action="store_true", help=ATTACH_CHECK_HELP)
+    # Held to `[project] name`'s rule, as `init --name` is, before anything runs: the name becomes
+    # a directory under the overlay's `projects/`, and the refusal states the rule, never the value.
+    attach.add_argument(
+        "--project",
+        type=grammar(PROJECT_NAME, f"not {NAME_RULE}"),
+        default=None,
+        help="the overlay project to attach a repository with no stayfixed.toml to",
+    )
     attach.set_defaults(func=run_attach)
 
     # `--machine` is taken as every project command takes it (docs/cli.md, "Shared flags"), and
