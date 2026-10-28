@@ -159,7 +159,7 @@ def test_a_bound_checkout_whose_origin_moved_hears_one_line_naming_both_urls(
 
 def test_the_session_start_line_names_the_attach_command_every_remedy_names() -> None:
     # One spelling of `stayfixed attach` serves the session-start line and every row of
-    # `attached` and `hook-entries`, so the line is pinned as bytes here: built from the shared
+    # `attached`, so the line is pinned as bytes here: built from the shared
     # constant, a change to it would otherwise reach the session unread. It names no `--store`:
     # the store is derived, and the placeholder spelling an agent ran as written exited 2. No
     # mutation: a changed spelling on either side reddens one of the two lines.

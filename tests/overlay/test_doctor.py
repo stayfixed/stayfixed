@@ -173,9 +173,8 @@ def test_an_overlay_that_moved_is_not_reported_as_one_never_recorded(tmp_path: P
     is where the notes live, and a recorded root that is gone breaks the store too.
 
     The sentences come from `_overlay_absent` so the two rows cannot drift -- `overlay-requires`'
-    arm was a byte-for-byte copy of `pre-commit`'s, which is how it inherited the defect -- and
-    `PLUGIN_ROOT_REMEDY`'s rule, "one constant because both rows must say the same thing", is the
-    one being read onto this pair.
+    arm was a byte-for-byte copy of `pre-commit`'s, which is how it inherited the defect: two
+    rows that must say the same thing say it from one constant.
 
     Mutation: `mutations/`'s "the two overlay rows call a moved overlay an unrecorded one".
     """

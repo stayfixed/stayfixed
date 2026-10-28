@@ -66,9 +66,3 @@ OVERLAY_FILES = (
 )
 
 CAPABILITY_FILES = CAPABILITY_NAMES
-
-# The memory README an earlier release shipped, `_README.md` now: `memory.notes.walk` reads every
-# `*.md` in a note store as a note and skips a name that starts with `_`. The files a release no
-# longer ships are listed in `overlay.template`, beside the digests that say a copy of each is
-# stayfixed's; this one is named here as well because it has a successor.
-RETIRED_MEMORY_README = f"{COMMON_MEMORY}/README.md"

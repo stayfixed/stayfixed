@@ -744,86 +744,6 @@ reddens = [
   "tests/overlay/test_create.py::test_the_publishers_template_is_used_when_the_owner_has_none",
 ]
 
-# Retiring the template's `attach` skill and the rules README left `skills/attach/`, `skills/` and
-# `common/rules/` behind, empty.
-[[mutation]]
-name = "overlay upgrade leaves the directories a retirement empties"
-file = "src/stayfixed/overlay/upgrade.py"
-before = "                    fsops.rmdir_parents_within(root, target)"
-after = "                    pass"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_retiring_a_file_removes_the_directories_it_leaves_empty",
-]
-
-# A removal whose file was already gone unlinks nothing, and the directories above it held no file
-# of stayfixed's: a person may have made them, so they are not this run's to empty.
-[[mutation]]
-name = "overlay upgrade prunes above a file that was not there"
-file = "src/stayfixed/overlay/upgrade.py"
-before = "        present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]"
-after = "        present = [a.target for a in planned.actions if unlinks(a)]"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left",
-]
-
-# An overlay a template generated carries no ledger, so the bytes a release shipped are the only
-# evidence that its copy of a retired file is stayfixed's, and `common/rules/README.md` was one
-# file in 0.1.x and another in 0.2.0: each copy needs its own digest. A recorded copy is removed by
-# its record, so only the unrecorded 0.2.0 cases redden.
-[[mutation]]
-name = "the rules README 0.2.0 shipped is kept where no ledger records it"
-file = "src/stayfixed/overlay/template.py"
-before = '"62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",'
-after = ""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[rules-readme-v0.2.0-no-ledger]",
-]
-
-[[mutation]]
-name = "the rules README 0.1.x shipped is kept where no ledger records it"
-file = "src/stayfixed/overlay/template.py"
-before = '"926060a042a6ab26f407fbe7fe84bf30771d8c279fdbce49848f051d710443d9",'
-after = ""
-reddens = [
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[rules-readme-v0.1-no-ledger]",
-]
-
-# With no digest held for it, an unrecorded copy of the template's `attach` skill is no file of
-# stayfixed's at all: neither removed nor named.
-[[mutation]]
-name = "the attach skill a release shipped is kept where no ledger records it"
-file = "src/stayfixed/overlay/template.py"
-before = '        frozenset({"845e67006aa4303a2c69d1601c987f58ca28acf806f2e89f272b63ae8bb572c9"}),'
-after = "        frozenset(),"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[attach-skill-no-ledger]",
-  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-no-ledger]",
-]
-
-# The hooks file the overlay fired while it was a plugin, which nothing reads now: with no digest
-# held for it, a generated overlay's unedited copy stayed for good, and an edited one went unnamed.
-[[mutation]]
-name = "the plugin hooks file a release shipped is kept where no ledger records it"
-file = "src/stayfixed/overlay/template.py"
-before = '        frozenset({"78922a784ee78e9e50587e93628cd3b9d4dfbe49087adc4514e6781cea38cbb9"}),'
-after = "        frozenset(),"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_each_released_copy_of_a_retired_file_is_removed[plugin-hooks-no-ledger]",
-  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[plugin-hooks-no-ledger]",
-]
-
-# A kept copy of the template's `attach` skill is named with the skill that replaces it, so the
-# owner knows the copy is safe to delete.
-[[mutation]]
-name = "a kept attach skill is not told the plugin's own replaces it"
-file = "src/stayfixed/overlay/template.py"
-before = """        "the plugin's own `attach` skill replaces it; delete this copy once you no longer need """"
-after = """        "delete this copy once you no longer need """"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-recorded]",
-  "tests/overlay/test_upgrade.py::test_an_edited_retired_file_is_kept_and_named[attach-skill-no-ledger]",
-]
-
 # `git init -b` arrived in git 2.28; an older `git` refused it and the `--local` overlay was left
 # without a repository.
 [[mutation]]
@@ -1307,15 +1227,6 @@ file = "src/stayfixed/setup/commands.py"
 before = "        rules = record_deny_rules(record)\n    except OSError as exc:"
 after = "        rules = record_deny_rules(record)\n    except LookupError as exc:"
 reddens = ["tests/setup/test_approval_boundary.py::test_a_looping_machine_directory_is_refused_by_name"]
-
-# `setup` takes the deny masks an earlier preset wrote back out of the user settings file, or a
-# machine that ran an older `setup` keeps refusing `.env.example` after an upgrade.
-[[mutation]]
-name = "setup leaves the retired deny rules in place"
-file = "src/stayfixed/setup/run.py"
-before = "    existing_deny = [r for r in existing_deny if r not in retired]"
-after = "    existing_deny = list(existing_deny)"
-reddens = ["tests/setup/test_setup.py::test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules"]
 
 # A tree is an overlay exactly when its identity record parses, so a render writes the record last
 # and a render cut short before it leaves no tree a later `setup --overlay` records. The mutation

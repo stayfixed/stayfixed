@@ -169,11 +169,8 @@ promote`](#stayfixed-memory-promote-note----changed), of kind `reviewed`, one pe
 
 **The record** is the machine's one record of approvals, of every kind. It is versioned: a JSON
 object holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
-`approved_at`. The flat map `0.3.x` wrote, a store's path to its digest, approved whole stores,
-which nothing asks about any more, so it is read as holding no approval and the first write
-replaces it; a `0.3.x` reading a version-1 record finds no approval in it. Every write replaces the whole file in one atomic step, and no lock
-is taken: two commands writing at once each replace it whole, the last one wins, and neither leaves
-it torn.
+`approved_at`. Every write replaces the whole file in one atomic step, and no lock is taken: two
+commands writing at once each replace it whole, the last one wins, and neither leaves it torn.
 
 **What an approval holds against.** Repository bytes: stayfixed never writes `trust.json` from
 what a repository holds, and a clone, a pull or a pull request does not reach it, since it lies
@@ -189,14 +186,14 @@ Code loads the first as instructions and can load the second, through an import 
 instructions setting (read in the documentation, not measured). [SECURITY.md](../SECURITY.md)
 lists an agent with an unsandboxed shell as out of scope.
 
-Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
-map — not JSON, not UTF-8, a later version, a `version` that is neither `1` nor later (`0`, `"1"`,
-`true`), an `approvals` with no `version`, or a version-1 record that is not whole: a key besides
-`version` and `approvals`, an approval that is not an object of four text fields, or one approval
-named twice. It holds every project's approval on the machine, so nothing will overwrite a file
-it could not read — repair or delete it; for a record of a later version, which a later stayfixed
-wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
-release's approvals.
+Exits `2` if `trust.json` exists and is not a record this stayfixed reads — not JSON, not UTF-8, a
+later version, no `version`, a `version` that is neither `1` nor later (`0`, `"1"`, `true`), or a
+version-1 record that is not whole: a key besides `version` and `approvals`, an approval that is not
+an object of four text fields, or one approval named twice. Nothing will overwrite a file it
+could not read: one that does not parse may hold every project's approval, so repair or delete it;
+repair any other that holds approvals you want to keep, or delete it to start a new record; for a record of a later version, which a later
+stayfixed wrote and is met after a downgrade, update stayfixed instead, since deleting it would
+destroy that release's approvals.
 
 **Reads** the machine's trust record.
 
@@ -461,8 +458,8 @@ anything below it starts, which is why its shebang must stay a protected shell.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
 never executed by the harness at all, so no code of ours runs and the hooks are silent. The
-wrapper cannot defend its own mode, so `stayfixed doctor` is what catches it: the `files` row goes
-**red** on a cleared bit and hands you the `chmod +x`. Run it after anything that rewrites the
+wrapper cannot defend its own mode, so `stayfixed doctor` is what catches it: the `wrapper` row
+goes **red** on a cleared bit, and under a root the environment named hands you the `chmod +x`. Run it after anything that rewrites the
 plugin directory.
 
 **What a session hears about the overlay it is bound to: `overlay-status`.** Beside the two that
@@ -1266,7 +1263,7 @@ A row names no finding: `assess` lists them as items.
 | `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
 | `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
-| `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file, and the probe has no grant to vouch for one with |
+| `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
 | `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line that does not start with `#` holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
@@ -2268,8 +2265,7 @@ the file was written. An overlay is where your own rules live, so a silent overw
 destroy the only copy of something. An overlay `setup --overlay create:` generated has no
 `.stayfixed/manifest.json` (the template repository carries none), and an identity record you
 added by hand has no entry in one, so neither is recorded as stayfixed's: a file there that differs
-from this release's is skipped as `exists and stayfixed did not write it`, and only the retired
-files below are removed by the bytes a release shipped.
+from this release's is skipped as `exists and stayfixed did not write it`.
 
 **Two files are always listed, however their hashes compare.**
 `common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries
@@ -2284,31 +2280,11 @@ file is empty, both held by a test. `--dry-run` first is how you read them befor
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.stayfixed/manifest.json`. It also **removes** four files a release no longer ships:
-`common/memory/README.md`, which is `_README.md` now because the note reader reads every other `.md`
-there as a note; `skills/attach/SKILL.md`, the template's own copy of the `attach` skill, which the
-plugin's own replaces, since it covers detaching and a moved remote as well;
-`common/rules/README.md`, the README of a directory nothing read; and `hooks/hooks.json`, the hooks
-file the overlay fired while it was a plugin of its own. It does so only when a file holds
-what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, in an overlay with
-no manifest (one generated from a template, since `scripts/publish_template.py` leaves it out), a file a
-release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
-skill and the rules README, and any release up to 0.3.1 for the hooks file. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
-nothing is removed, and its record is dropped. An unrecorded one that is gone is not listed at all,
-nor counted as unchanged, so a run after the removal, or on an overlay that never had the file,
-does not name it. Any other copy may hold your own words, so it is
-listed as `skip_modified` with the way out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
-template's, so delete your copy once you no longer need your edits; a standing rule is a note with
-`metadata.startup`, so move your rules into such notes and delete the README; `stayfixed attach`
-renders the hook entries in `common/claude/hooks.json`, so move yours there and delete the hooks
-file. Until then each run
-lists the copy again. Each directory above a file it removed then goes once that leaves it empty,
-up to the first that still holds anything and never the overlay root: `skills/attach/` and
-`skills/`, `common/rules/`, and `hooks/`. A directory that is a symbolic link is left, and so is one above a
-file that was already gone when the run began. Exits `0`; `1` when the report
-carries a REFUSED section, because nothing would be written while one of those stands; `2` when
-`--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
-by the containment walk.
+`.stayfixed/manifest.json`. A file an earlier release shipped and this one does not, such as
+`common/memory/README.md` or `hooks/hooks.json`, is not planned at all: delete it by hand. Exits
+`0`; `1` when the report carries a REFUSED section, because nothing would be written while one of
+those stands; `2` when `--root` is not an overlay, when the manifest itself cannot be trusted, or
+when a write is refused by the containment walk.
 
 ---
 
@@ -2483,8 +2459,8 @@ Code reads from every worktree, and — in the overlay — `projects/<name>/proj
 records no remote, this project's note directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the store's index link never dangles and `memory index --check` passes right after
-a first attach in an overlay this release rendered, and in an older one once `overlay upgrade` has
-run on it, because it removes the `common/memory/README.md` 0.1.x shipped unless it was edited).
+a first attach in an overlay this release rendered, and in an older one once its owner has deleted
+by hand the `common/memory/README.md` 0.1.x shipped, which the note reader reads as a note).
 It runs no program in the overlay: its commit-time secret scan is `setup --overlay`'s, which makes
 or records the overlay, and where that scan is missing `doctor`'s `pre-commit` row says it is not
 installed. The ledger is the only record
@@ -2743,14 +2719,11 @@ Configures this machine from a preset, `recommended` unless `--preset` names ano
 machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
 values in `<home>/.claude/settings.json`, and each plugin `--plugin` names, one install per plugin
 per configured harness. Without `--plugin` no plugin is installed and no plugin command runs. That file is read as Claude Code reads it, past a leading byte-order mark,
-which a rewrite keeps. The deny rules are merged in beside the owner's own, with one removal: a
-rule an earlier preset wrote and this one retired (its `[deny] retired`) is taken out where it
-stands verbatim. `recommended` retired the masks `Read(.env*)` and `Read(**/.env*)`, which also
-refused the templates a project commits (`.env.example`, `.env.dist` and the rest), for the env
-files by name: `.env`, `.env.local`, `.env.*.local`, `.env.dev`, `.env.development`, `.env.prod`,
-`.env.production`, `.env.stage`, `.env.staging` and `.env.test`, each as `Read(**/<name>)`. An env
-file under another name stays readable; `stayfixed doctor`'s `retired-deny` row reports a retired
-rule still in the file. `--home` and `--machine` default to the home directory and to
+which a rewrite keeps. The deny rules are merged in beside the owner's own, and none is removed.
+`recommended` denies the env files by name: `.env`, `.env.local`, `.env.*.local`, `.env.dev`,
+`.env.development`, `.env.prod`, `.env.production`, `.env.stage`, `.env.staging` and `.env.test`,
+each as `Read(**/<name>)`, so the templates a project commits (`.env.example`, `.env.dist` and the
+rest) stay readable. An env file under another name stays readable too. `--home` and `--machine` default to the home directory and to
 `~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
@@ -3038,10 +3011,10 @@ which name a write this run does not make; `1` for a `HOME` that is empty with n
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Seventeen checks over one installation. It **reports and never repairs**: every finding
+Fourteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own twelve first, then the five about the
+The rows come in a fixed order: the installation's own nine first, then the five about the
 private layer — the binding's (`attached`), memory's (`bundles`, `memory`) and the
 private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -3084,16 +3057,13 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 |---|---|---|
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and memory stays the coding agent's own, and that `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
-| `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported, and under a root the environment named, where `wrapper` skips, no row reports a missing or edited launcher | `hooks/run-hook.sh` |
-| `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | how many hook entries the settings files hold, with no claim about who wrote them, and every settings file it could not read or check | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
+| `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr or cannot be run; under a root the environment named, which it never runs, red when the wrapper is not executable and a skip otherwise; a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of; under a named root, `hooks/run-hook.sh`'s mode |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each personal value, guard switch, preference and session budget a session resolves, with the layer its value came from — the preset, the repository, the overlay's common file (`overlay common`), its file for the project this checkout is bound to (`overlay project`) or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; then, as information that never changes the row's status, every note reading the overlay's layers gave — no overlay recorded, a file not there or not loading, a key it cannot use or may not set; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the overlay's two `stayfixed.toml` files, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | as information, never a status: `STAYFIXED_CONFIG` set, or `XDG_CONFIG_HOME` set to anything but the `.config` of the home every command reads under (`HOME`, or the password database's where `HOME` is unset), and not honoured by any command; and a `HOME` that is not the home the password database records for this user, since stayfixed follows `HOME` | the environment, the password database |
-| `retired-deny` | whether `~/.claude/settings.json` still holds a deny rule an earlier `stayfixed setup` wrote and the machine's preset retired (its `[deny] retired`), such as `Read(.env*)`, which refuses `.env.example` too; matched by exact string, as `setup` removes them, and named in the preset's words | `~/.claude/settings.json`, the preset |
 | `attached` | the overlay binding, what it delivers, and, where `memory.mode` is `overlay`, the `autoMemoryDirectory` pointer at the composed store, read alike from every checkout (the states are below the table) | the main checkout's `.stayfixed/local/attach.json` and `.claude/settings.local.json`, `~/.local/share/stayfixed/delivery/<id>/`, `~/.local/share/stayfixed/stores/<id>/`, the overlay's executable parts, `git` on the paths `attach` placed |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `memory` | the memory a session gets: the active `memory.mode` and the layer that set it (or that none does, and memory is the coding agent's own), the store, which settings file sets the harness's `autoMemoryDirectory` — the checkout's `.claude/settings.local.json`, the main checkout's, the committed `.claude/settings.json` or `~/.claude/settings.json`, the first that holds it, named as information and never with its value, since a committed file may point the harness elsewhere — and the store's unreviewed notes as a count; a warning only for files in the note store that are not notes, counted (at most 500,000 entries) | the resolution `preferences` reads, the note store, the machine's trust record, those settings files |
@@ -3142,7 +3112,7 @@ the harness's to decide, and this row does not read that file.
 | missing | no `autoMemoryDirectory` | `warn` | `attach`, which writes it |
 | unreadable | a file that cannot be read as one JSON object | `warn` | make it one JSON object, then `attach` |
 
-**Ten of the seventeen have a `skip` arm — twenty-one arms between them, every one on a state of
+**Eight of the fourteen have a `skip` arm — nineteen arms between them, every one on a state of
 this machine or this repository.** A `skip` is **not** a finding and never reaches the exit code, so
 read the detail — each one says which measurement it is missing. No row skips for want of a build
 that can answer it: `codex-hooks`, the one that did, left the report, and what holds on Codex is the
@@ -3153,8 +3123,8 @@ code here: while no released tag matches the stayfixed running there is no commi
 `init` records nothing and the row skips on a correct installation; once a release exists, a
 repository `init` set up carries a ref and the row answers.
 
-The ten that skip on a state are `files` and `wrapper`, when there is no plugin root this
-process can vouch for; `attached`, when this machine records no overlay to check the ledger
+The eight that skip on a state are `wrapper`, when there is no plugin root this process can
+vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
 — two different arms with two different sentences, because a machine that recorded an overlay
@@ -3172,8 +3142,8 @@ machine binds whose main checkout has no `stayfixed.toml` is the one exception f
 for the note store `memory` reads: both are judged on the configuration `attach` acted on there,
 the preset's under the overlay's layers for the project the binding record names.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty-one arms carry a remedy:
-the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
+**A `skip` does not mean there is nothing to do.** Six of the nineteen arms carry a remedy:
+the plugin-root skip, `wrapper`'s named-root skip, `attached`'s no-overlay and
 could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
@@ -3183,20 +3153,19 @@ four with no project configuration, whose remedy is
 `preferences`', red on the same file. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
 nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
-itself worth acting on. Those seven report something wrong that no other
+itself worth acting on. Those six report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. Of the
-other fourteen, eleven report a measurement that is simply unavailable — no store, no overlay,
+other thirteen, ten report a measurement that is simply unavailable — no store, no overlay,
 no overlay requirement, no harness data root, no `[ci] ref` or no
 project configuration — and no command in that row's gift changes it, and three report a machine
 file another row is red about, with the command that clears it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
-this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
-and every hook entry on this machine silent. Both carry a remedy: run `stayfixed doctor` from the
-plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the
-plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
-run it.
+this process can find no plugin root at all, `wrapper` skips — no red, and every hook entry on
+this machine silent. It carries a remedy: run `stayfixed doctor` from the plugin's own launcher,
+so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the plugin is installed,
+which lets `wrapper` read the wrapper's executable bit even though it still will not run it.
 
 **Nothing configured is not broken.** `doctor` reads the configuration the way a session does
 ([`stayfixed hook <event>`](#stayfixed-hook-event)), so every row is asked whatever `--root`
@@ -3210,9 +3179,9 @@ names `stayfixed docs check`, which prints the loader's own message.
 
 **What is printed, and what is not. There is one exception, and it is bounded.** Counts,
 statuses, file paths this project chose and stayfixed's own vocabulary print freely; a
-repository-authored string does not. `[stayfixed] version`, `[ci] ref`, a note's filename, a hook's
-command text, the marker id an entry claims, every field of the hook sink's diagnostics log and the
-reason the store would not resolve are all read and none is quoted back — `stayfixed doctor
+repository-authored string does not. `[stayfixed] version`, `[ci] ref`, a note's filename, every
+field of the hook sink's diagnostics log and the reason the store would not resolve are all read
+and none is quoted back — `stayfixed doctor
 --json` is relayed to a model verbatim by the `doctor` skill, so a byte a repository wrote reaching
 this report is a byte reaching the model outside `trust.wrap`. The exception is the name of a
 `stayfixed.toml` key that `not-initialised` says was ignored or put back to the preset's, which is
@@ -3220,31 +3189,10 @@ what the owner needs to find it: at most three names, one outside the path gramm
 one inside it clipped at 120 characters, then a count of the rest, so the row stays short however
 many keys the file holds and however long their names are.
 
-`hook-entries` is where that bites, because its job is to read every entry. It counts them and
-names settings files by their paths, never an entry by anything it holds. It says nothing of who
-wrote an entry: no stayfixed writes one carrying the marker, so a marker is the file's word alone,
-and whoever can plant one can write the file. A settings file that exists and cannot be read as
-hook entries is reported by path as `warn`, never skipped: this is the one check whose whole
-purpose is that nobody's entries go unlisted, so "all accounted for" must never mean "could not
-look". One that is valid JSON nested deeper than Python's parser follows is reported by path as a
-`warn` too: a harness may still read it, as Claude Code does, so the hooks in it may run, and
-nothing here can check them. A number longer than Python converts to an integer is read as its
-text, and the entries beside it are counted as usual. So is a file that opens with a UTF-8 byte-order mark, and one whose `hooks` section holds,
-beside valid entries, a value that is not a list where an event's list goes, a group that is not an
-object, a group whose `hooks` is not a list, or an entry that is not an object: Claude Code 2.1.288
-still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are counted
-like any other. Where such a misplaced value is itself an object or a list, which could hold a
-command, the file is also reported as one that could not be read, since that shape was not
-measured, and so is an entry object where a group goes: whether a harness runs a command there is
-not known. Only Claude Code's settings files are read this way: `.codex/hooks.json`, which no measurement covers,
-is read as strictly as the merge that rewrites it.
-
-`diagnostics` is the same ruling in the other direction, and is why that row counts rather than
-quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
-is found through `${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block
-reaches — so this command never establishes that. Refusing a marker id that a grammar bounds and
-a cap limits, while printing an unbounded free-text `error` from a file of unknown provenance,
-would not be a policy. The row reports how many records are logged and how many sessions were
+`diagnostics` follows the same ruling, and is why that row counts rather than quotes. Its three
+fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log is found through
+`${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block reaches — so this
+command never establishes that. The row reports how many records are logged and how many sessions were
 seen, and the remedy names the file by its variable; you open it yourself. A record is a hook
 failure, an answer the output cap cut, or a session that ran without some of its configuration
 (`config-fallback`), and the count does not tell them apart: which one a line is lies in its
@@ -3254,8 +3202,8 @@ failure, an answer the output cap cut, or a session that ran without some of its
 `hooks/run-hook.sh` only under the root this stayfixed derived from its own module path. With a
 wheel installation there is no such root — which is what `uv tool install` gives, and what
 `cli-path`'s own remedy suggests — and `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT` may then name one:
-that root's wrapper is still read by `files`, for its executable bit, and `wrapper` reports
-`skip` saying why. A report that ran a script the inspected repository could commit, and then
+that root's wrapper is still read by `wrapper`, for its executable bit, red without it and
+otherwise a `skip` saying why. A report that ran a script the inspected repository could commit, and then
 called the result green, would be worse than one that says it could not vouch for it.
 
 **Writes** nothing. Exits `0`, or `1` when any check is red.

@@ -416,73 +416,6 @@ reddens = [
   "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-tracked-file-matching-an-ignore-pattern]",
 ]
 
-# `common/memory/README.md` became `_README.md`, and `overlay upgrade` created the new name beside
-# the old one, which the note reader went on reading as a note: `memory index --check` failed in
-# every attached project. Where the ledger records the file, its digest is what vouches for it.
-[[mutation]]
-name = "a retired overlay file the ledger records is kept"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = present is not None and digest(present) == record.sha256"
-after = "        ours = False"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_memory_readme_a_release_shipped_is_removed[recorded]",
-]
-
-# An overlay generated from a template carries no ledger, so the bytes a release shipped are the
-# only evidence that its copy of a retired file is stayfixed's.
-[[mutation]]
-name = "a retired overlay file holding the shipped bytes is kept"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = digest(current) in template.shipped"
-after = "        ours = False"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_memory_readme_a_release_shipped_is_removed[no-ledger]",
-]
-
-# The other side of the same line: with no ledger, a copy that is not the shipped bytes may hold
-# the owner's own words, and nothing else holds them.
-[[mutation]]
-name = "a retired overlay file with no ledger is removed whatever it holds"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = digest(current) in template.shipped"
-after = "        ours = True"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
-]
-
-# A kept copy of the retired README is still read as a note, so the report names the way out.
-[[mutation]]
-name = "a kept retired overlay file is named without its way out"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    if template.remedy:"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[recorded]",
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
-]
-
-# A retired file that is not there has nothing to remove: an overlay without one plans no action
-# for it, so a run on a fresh or already-cleared overlay reports nothing to do.
-[[mutation]]
-name = "a retired overlay file that is absent is planned for removal"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        # removed is \"unchanged\", and counted it, and a fresh overlay that never had it the same.\n        return\n    if location is Location.LOCAL:"
-after = "        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return\n    if location is Location.LOCAL:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
-]
-
-# Nor is it reported: a retired file that is gone and unrecorded, listed among the unchanged, told
-# the owner on every later run that the file the release notes say was removed is unchanged.
-[[mutation]]
-name = "a retired file that is gone and unrecorded is reported unchanged"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,"
-after = "        unchanged.append(template.id)"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
-]
-
 # git ends a line at `\n` alone. Read as ending at a lone `\r` too, an exclude file whose last line
 # was `/zz\r` counted as ended, the block's begin marker was glued onto it, and `zz` showed in
 # `git status` while the repository was attached.
@@ -527,16 +460,25 @@ reddens = [
 
 # `owned_ids` answers ids and events, which no number is part of, so it reads every integer as its
 # text. Read with the interpreter's limit, a committed settings file holding a number past that
-# limit was refused, and `hook-entries` read it as one nothing could account for rather than
-# counting the entries in it.
+# limit was refused rather than read for the ids in it.
 [[mutation]]
-name = "the settings engine reads a number past the parser's reach in the document doctor walks"
+name = "the settings engine refuses a number past the parser's reach in a document it reads for ids"
 file = "src/stayfixed/scaffold/entries.py"
 before = "    return settings_object(document, numbers=str)"
 after = "    return settings_object(document)"
 reddens = [
   "tests/scaffold/test_entries.py::test_a_number_past_the_parsers_reach_is_read_for_ids_and_refused_by_a_merge",
-  "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
+]
+
+# A retired file that is gone and unrecorded, listed among the unchanged, told the owner on every
+# later run that a file no longer there was unchanged.
+[[mutation]]
+name = "a retired file that is gone and unrecorded is reported unchanged"
+file = "src/stayfixed/scaffold/engine.py"
+before = "        # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,"
+after = "        unchanged.append(template.id)"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_retired_artifact_gone_and_unrecorded_is_neither_planned_nor_unchanged",
 ]
 
 # A retired artifact whose file was already gone read as unchanged and kept its record for good:
@@ -551,7 +493,6 @@ after = """        if False:
 reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
-  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[directory-there]",
   "tests/project/test_upgrade.py::test_switching_ci_off_after_deleting_the_workflow_drops_its_record",
 ]
 
@@ -567,11 +508,11 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
 ]
 
-# The entries a harness runs out of a settings file, for `doctor`'s `hook-entries`: Claude Code
+# The entries a harness runs out of a settings file, for `assess`'s `foreign-hooks`: Claude Code
 # 2.1.288 (measured on macOS, 2026-10-05) still ran the valid hooks of a file whose `hooks` section
 # held a scalar where an event's list, a group, a group's `hooks` or an entry belongs. Read with
-# the engine's strict walk, one such scalar made the file one the row was blind to, a warning, and
-# the entry beside it went uncounted. `_admitted` states the rule once, for every place.
+# the engine's strict walk, one such scalar made the file one the probe could not look at, and the
+# entry beside it went unnamed. `_admitted` states the rule once, for every place.
 [[mutation]]
 name = "the live-entry walk refuses a scalar where a list or an object belongs"
 file = "src/stayfixed/scaffold/entries.py"
@@ -587,14 +528,14 @@ after = """
     raise EntriesError("not the kind this place holds")
 """
 reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[event-not-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[group-not-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[group-hooks-not-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[entry-not-an-object]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[scalar-event]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[group-not-an-object]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[group-hooks-not-a-list]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[entry-not-an-object]",
 ]
 
 # A container in one of those places was not measured, and may hold a command a harness runs: the
-# walk keeps it, so the row still names the file as one it could not account for.
+# walk keeps it, so the probe still names the file as one it could not look at.
 [[mutation]]
 name = "the live-entry walk skips a container without saying so"
 file = "src/stayfixed/scaffold/entries.py"
@@ -607,22 +548,51 @@ after = """
         pass
 """
 reddens = [
-  "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[event-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[group-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[entry-a-list]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[event-an-object]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[group-a-list]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[hooks-an-object]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[entry-a-list]",
+]
+
+# Each level asks `_admitted`, which keeps what it skips: a level that asked `isinstance` alone
+# would skip a container there and say nothing of it.
+[[mutation]]
+name = "the live-entry walk skips a container where a group goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "            if not _admitted(group, dict, skipped):"
+after = "            if not isinstance(group, dict):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[group-a-list]",
+]
+
+[[mutation]]
+name = "the live-entry walk skips a container where a group's hooks list goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "            if not _admitted(entries, list, skipped):"
+after = "            if not isinstance(entries, list):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[hooks-an-object]",
+]
+
+[[mutation]]
+name = "the live-entry walk skips a container where an entry goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "                if _admitted(entry, dict, skipped):"
+after = "                if isinstance(entry, dict):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[entry-a-list]",
 ]
 
 # Not measured, and read conservatively: an object where a group goes that carries an entry's
-# `command` or `type` and no `hooks` list is kept with the skipped parts, so the row names the file
-# as one it could not account for.
+# `command` or `type` and no `hooks` list is kept with the skipped parts, so the probe names the
+# file as one it could not look at.
 [[mutation]]
 name = "the live-entry walk reads an entry where a group goes as no entry"
 file = "src/stayfixed/scaffold/entries.py"
 before = '            if "command" in group or "type" in group:'
 after = "            if False:"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[entry-where-a-group-goes]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[entry-where-a-group-goes]",
 ]
 
 # In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
@@ -648,12 +618,12 @@ reddens = [
 # In the block led by `mutations/`'s "the live-entry walk refuses a scalar where a list or an object
 # belongs": a file a harness was measured running is read past a leading byte-order mark too.
 [[mutation]]
-name = "hook-entries is blind to a settings file opening with a byte-order mark"
+name = "the lenient walk is blind to a settings file opening with a byte-order mark"
 file = "src/stayfixed/scaffold/entries.py"
 before = 'return live_entries(lenient_settings(document))'
 after = 'return live_entries(document)'
 reddens = [
-  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[byte-order-mark]",
 ]
 
 # An artifact the engine cannot read is named relative to the project, its reason in words: the

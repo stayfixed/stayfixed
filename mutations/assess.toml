@@ -1367,17 +1367,17 @@ reddens = [
   "tests/assess/test_tracked.py::test_a_symlink_below_the_top_that_no_checkout_has_names_the_link[out-through-a-link-beside-the-project]",
 ]
 
-# `foreign-hooks` reads settings files by the walk `doctor`'s `hook-entries` reads them with, so a
-# file Claude Code runs partly malformed is one both count, and a part the walk skipped that could
-# hold a command is one both say they could not read.
+# `foreign-hooks` reads Claude Code's settings files by the lenient walk, so a file Claude Code runs
+# partly malformed is one it names, and a part the walk skipped that could hold a command is one it
+# says it could not look at.
 [[mutation]]
 name = "the foreign-hook probe reads every settings file strictly"
 file = "src/stayfixed/assess/probes.py"
 before = "            walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)"
 after = "            walked = judged_entries(text, lenient=False)"
 reddens = [
-  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[byte-order-mark]",
-  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it[scalar-event]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[byte-order-mark]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[scalar-event]",
 ]
 
 [[mutation]]
@@ -1401,7 +1401,7 @@ after = """
             unread.append(relative)
 """
 reddens = [
-  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[event-an-object]",
 ]
 
 [[mutation]]
@@ -1410,24 +1410,8 @@ file = "src/stayfixed/assess/probes.py"
 before = "            walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)"
 after = "            walked = judged_entries(text, lenient=True)"
 reddens = [
-  "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[byte-order-mark]",
-  "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it[scalar-event]",
-]
-
-# stayfixed writes no hook entry into a committed settings file, and the probe has no grant to
-# compare one with, so an entry there claiming stayfixed's marker is the repository's word alone:
-# read as stayfixed's, any entry of any `type` with any id passed unlisted.
-[[mutation]]
-name = "the foreign-hook probe takes a committed entry's word that it is stayfixed's"
-file = "src/stayfixed/assess/probes.py"
-before = """        if walked.entries:
-            found.append(relative)"""
-after = """        from stayfixed.scaffold import marker_id
-
-        if any(marker_id(placed.command) is None for _, placed in walked.entries):
-            found.append(relative)"""
-reddens = [
-  "tests/assess/test_probes.py::test_a_hook_entry_claiming_stayfixed_s_marker_in_a_committed_file_is_still_foreign",
+  "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_strictly[byte-order-mark]",
+  "tests/assess/test_probes.py::test_codexs_hook_file_is_read_by_the_probe_strictly[scalar-event]",
 ]
 
 [[mutation]]

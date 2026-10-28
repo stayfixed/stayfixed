@@ -147,7 +147,3 @@ global = [
   "Read(**/.env.staging)",
   "Read(**/.env.test)",
 ]
-# What earlier presets wrote under `global`, which `stayfixed setup` takes back out of the user
-# settings file when it finds it there, and `stayfixed doctor`'s `retired-deny` row reports while
-# it is still there: the mask is what refused the templates.
-retired = ["Read(.env*)", "Read(**/.env*)"]

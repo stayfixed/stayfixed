@@ -611,3 +611,55 @@ Written by each wave's controller when its pull request merges: the head sha, th
   untouched, as the plan says.
 - **Merged dev `17e5c26` (#137, #129):** `mutations/doctor.toml` had a conflict, resolved by keeping
   dev's `src/stayfixed/doctor/model.py` entries.
+
+### Wave D — CL9, #139, branch `cleanup/back-compat`, code head `ecb5ac1`
+
+- **Stacking:** stacked on Wave C; after #134, #136 and #138 merged, `dev` came in at `9d6ebe0`.
+- **Pre-flight:** both of the owner's machines hold a version-1 `trust.json`. This Mac's
+  `~/.claude/settings.json` holds no retired deny rule.
+- **Net vs `dev`, before this block:** 50 files, +477/−2463 (src +114/−613, tests +215/−1309, mutations +99/−440,
+  docs +49/−101). The oracle went from 2516 to 2500, all caught.
+- **Lifecycle matrix:** `[deny] retired` is preset-only (no `deny` section in the schema), so no
+  layer cell applies. `setup` leaves the two rules in place, and the fragment says to delete them by
+  hand.
+- **Kept against the plan's text:** the `no-version` case, which already expected the refusal.
+- **First review: two Importants from the correctness seat.**
+  - `docs/cli.md`'s `attach` paragraph still said `overlay upgrade` removes the 0.1.x memory README.
+  - The engine's gone-and-unrecorded arm had lost its only test. A project-side test was added and
+    its entry was re-declared.
+- **First review: one Important from the refuse/delete seat, ruled.** The overlay pruning had no
+  shipped input left, so it was deleted with `fsops.rmdir_parents_within`.
+- **Fixes:** `6f2f54b`, `c521685`. The re-review found every fix addressed.
+- **The plan's final review and the lane's review, the owner's rulings, one more round:**
+  - Task 9 (S1, 136-F1): `files` folded into `wrapper` (`b487b6b`). Under a root the environment
+    names, `wrapper` is red for a wrapper without `+x` and says whose root it read.
+  - 138-F1: the `hook-entries` row is deleted (`ea8c133`). It counted entries, named none, and said
+    "all accounted for" to a clone's committed `curl … | sh`. `assess`'s `foreign-hooks` names
+    committed entries file by file. `src/stayfixed/doctor/entries.py` went, and so did `Placed`,
+    whose only reader was the row. `doctor` now reports 14 rows.
+  - 139-F7: a test that an upgrade of a fresh overlay plans nothing (`23547ea`).
+  - 139-F3: `NOT_A_RECORD` is one wording true for every non-record (`a42d057`, `5219b0a`,
+    `ecb5ac1`).
+- **Scoped re-review of that round: three Importants, four Minors, all fixed in one round.**
+  - The lenient walk's group, entry and `hooks` levels had lost every test; they are held again
+    through the `foreign-hooks` probe, with three mutation entries (`3f4564d`).
+  - A row-count pin that still said fifteen.
+  - The plugin-root ordering, which only `files` read, is deleted.
+  - Text that still spoke for the deleted rows, which a read-only theater audit also found
+    (`5219b0a`, `ab5e5a3`).
+- **Deferred:**
+  - the `'at no recorded time'` fallback;
+  - the undeclared `ours=False` direction;
+  - the byte literal;
+  - the duplicate flat-map test;
+  - 139-F2, F4–F6, F8, F9 and F11.
+- **Filed:** BR-045 in the overlay ledger. An overlay that recorded a formerly retired file keeps
+  that manifest record. It is inert.
+- **For a later cut:** two read-only audits ran beside this round.
+  - Of the eight back-compat sites the Scope leaves out, three branches can go:
+    - `src/stayfixed/attach/write.py`'s withdrawal of hook entries ≤0.3.1 merged;
+    - its `detach` in a bare repository's worktree;
+    - `src/stayfixed/memory/index.py`'s provisional line.
+    The other five are still reached by 0.6.x.
+  - A theater audit of `doctor` and `assess` names about 1,900 more lines, the `diagnostics`,
+    `budgets` and `ignored-env` rows and the `foreign-workflows` probe among them.

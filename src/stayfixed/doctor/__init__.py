@@ -15,7 +15,7 @@ pins it.
 
 **Two of the core's rows read something the environment named, and neither trusts it.** `wrapper`
 executes only the plugin root this process derived from its own module path, because a root a
-variable named is a script a repository can choose (`checks.plugin_root`); `diagnostics` reads
+variable named is a script a repository can choose (`checks.NAMED_ROOTS`); `diagnostics` reads
 the sink's log through `${CLAUDE_PLUGIN_DATA}` and prints a count and not one byte of it,
 because nothing here can establish who wrote that file (`checks._diagnostics`).
 

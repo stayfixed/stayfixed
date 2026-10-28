@@ -29,54 +29,11 @@ from functools import partial
 from pathlib import Path
 
 from stayfixed.errors import Failure
-from stayfixed.overlay.layout import COMMON_CLAUDE, OVERLAY_FILES, RETIRED_MEMORY_README
+from stayfixed.overlay.layout import OVERLAY_FILES
 from stayfixed.scaffold import Kind, Template
 from stayfixed.templates import tree
 
 OVERLAY = "overlay"
-
-# Every file an earlier release shipped and this one does not whose bytes owe nothing to the owner,
-# which `overlay upgrade` removes where it still holds what stayfixed wrote: the sha256 of each copy
-# a release shipped there, and the way out for a copy kept because it holds other bytes. An overlay
-# generated from a template carries no ledger (`scripts/publish_template.py` strips it), so these
-# digests are the only evidence that such an overlay's copy is stayfixed's to remove. The plugin
-# manifests the overlay carried until it stopped being a plugin are not here: each was renamed
-# after its owner, so no digest a release shipped says a copy is stayfixed's, and the upgrading
-# note tells the owner to delete them.
-#
-# The memory README is the same bytes in 0.1.0 and 0.1.1. The template's own `attach` skill, a
-# subset of the plugin's, which also covers detaching and a moved remote, is the same bytes in
-# 0.1.0, 0.1.1 and 0.2.0. The README of `common/rules/`, a directory nothing read, is one file in
-# 0.1.x and another in 0.2.0, which said so. The hooks file the overlay fired as a plugin is the
-# same bytes from 0.1.0 to 0.3.1. `tests/overlay/test_upgrade.py` holds each copy whole, and
-# `tests/overlay/test_template.py` holds that none of these is a file the template ships.
-_RETIRED = {
-    RETIRED_MEMORY_README: (
-        frozenset({"407236dd35a9c1810465b8460271379fc54036b76d4bf64c0f1947eef0fe7322"}),
-        "rename it to `_README.md`, or the note reader reads it as a note",
-    ),
-    "skills/attach/SKILL.md": (
-        frozenset({"845e67006aa4303a2c69d1601c987f58ca28acf806f2e89f272b63ae8bb572c9"}),
-        "the plugin's own `attach` skill replaces it; delete this copy once you no longer need "
-        "your edits",
-    ),
-    "common/rules/README.md": (
-        frozenset(
-            {
-                "926060a042a6ab26f407fbe7fe84bf30771d8c279fdbce49848f051d710443d9",
-                "62b01f752ee77c3c8fb5fcc0b78b14907a3b98072ff3c9b7e76f6b792e7c065b",
-            }
-        ),
-        "nothing read this directory; a standing rule is a note with `metadata.startup`, so move "
-        "your rules into such notes and delete this copy",
-    ),
-    "hooks/hooks.json": (
-        frozenset({"78922a784ee78e9e50587e93628cd3b9d4dfbe49087adc4514e6781cea38cbb9"}),
-        "the overlay is no plugin any more and nothing reads this file; `stayfixed attach` "
-        f"renders the hook entries in `{COMMON_CLAUDE}/hooks.json`, so move yours there and "
-        "delete this copy",
-    ),
-}
 
 
 def template_root() -> Path:
@@ -120,27 +77,4 @@ def templates() -> list[Template]:
             render=partial(_render, root / relative),
         )
         for relative in OVERLAY_FILES
-    ]
-
-
-def retired() -> list[Template]:
-    """One retired whole-file `Template` per file `_RETIRED` names.
-
-    The engine removes such a file only when its bytes are stayfixed's: the digest the manifest
-    records, or, with no record, one `_RETIRED` holds for what a release shipped. Any other copy
-    is kept and named with its way out, since it may hold the owner's own words. `render` is
-    never called for a retired file.
-    """
-    return [
-        Template(
-            id=relative,
-            kind=Kind.TEMPLATE,
-            target=relative,
-            source=f"{OVERLAY}/{relative}",
-            render=str,
-            retired=True,
-            shipped=shipped,
-            remedy=remedy,
-        )
-        for relative, (shipped, remedy) in _RETIRED.items()
     ]

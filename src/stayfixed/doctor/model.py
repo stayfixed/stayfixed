@@ -1,7 +1,7 @@
 """What a `doctor` row is made of, and what an area hands the report to add rows of its own.
 
 The vocabulary lives here rather than in `checks.py` because two kinds of module speak it: the
-core's checks in `checks.py` and `entries.py`, and an area's own `doctor.py`, which
+core's checks in `checks.py`, and an area's own `doctor.py`, which
 `registry.contributions` discovers by name and which reaches this module through `doctor/api.py`.
 `checks.py` is the core's checks and the run; this module is the shapes they share and the one
 answer every area reads alike, the overlay root (`Context.overlay_root`), so it imports nothing of
@@ -118,9 +118,9 @@ class Context:
     config: Config | None
     plugin_root: Path | None = None
     # The plugin root this process can vouch for, which is the only one anything here executes.
-    # `plugin_root` may be a root the environment named; this is `None` unless self-derivation
-    # answered. Two fields and not a flag, because the check that runs the wrapper should not be
-    # able to reach the other answer at all.
+    # `plugin_root` is the root the environment named, if any; this is `None` unless
+    # self-derivation answered. Two fields and not a flag, because the check that runs the wrapper
+    # should not be able to reach the other answer at all.
     own_root: Path | None = None
     # Keyword-only and required: a report built without the session would have no owner's layer
     # to name and no way to tell a repository with no `stayfixed.toml` from one that fell back.

@@ -590,8 +590,8 @@ def _plan_retired(
             actions.append(Action(Verb.REMOVE, template.id, target, None, ALREADY_GONE, record))
             return
         # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,
-        # it told the owner every run after its removal that the file the release notes say was
-        # removed is "unchanged", and counted it, and a fresh overlay that never had it the same.
+        # it told the owner every run after its removal that the file was "unchanged", and
+        # counted it.
         return
     if location is Location.LOCAL:
         # No manifest record exists for a local artifact, so it is judged by `ours_locally`: the
@@ -602,20 +602,13 @@ def _plan_retired(
         why = CHANGED_LOCALLY if digests.records(template.id, target) else NOT_OURS_LOCALLY
         kept, stamped = f"retired, {why}", None
     elif record is None:
-        # No record: a file written before the ledger, or one in a tree generated from a copy
-        # that carries none. Only the bytes a release shipped there show that it is stayfixed's,
-        # and a template that names none leaves the file alone.
-        if not template.shipped:
-            unchanged.append(template.id)
-            return
-        ours = digest(current) in template.shipped
-        kept, stamped = "retired, and not the bytes a release shipped there", None
+        # No record: nothing shows that the file is stayfixed's, so it is left alone.
+        unchanged.append(template.id)
+        return
     else:
         present = _present_stamp(template, current)
         ours = present is not None and digest(present) == record.sha256
         kept, stamped = "retired and hand-edited", record
-    if template.remedy:
-        kept = f"{kept}; {template.remedy}"
     # `force` reaches a retired artifact the user edited and has decided to remove anyway: the
     # one file a removal's `--force PATH` names. For a region what goes is still the region and
     # never the file around it: forcing overrides the hand-edit verdict, not the payload.
