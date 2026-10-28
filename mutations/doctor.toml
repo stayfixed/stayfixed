@@ -1,5 +1,5 @@
 # The doctor group: the report on an installation — the core's checks and the run that asks
-# them, the rows the areas contribute, and `hook-entries` with its walk and frontmatter reader.
+# them, the rows the areas contribute, and `hook-entries` with its walk of the settings files.
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
@@ -609,7 +609,8 @@ reddens = [
 ]
 
 # The other half: a file this process may not read is this machine's state, which git cannot
-# commit and a harness running as the same user cannot read either, so it stays a warning.
+# commit and a harness running as the same user cannot read either, so it is one the walk is
+# blind to, never one nothing here can check.
 [[mutation]]
 name = "hook-entries reads every settings file it cannot read as one it cannot check"
 file = "src/stayfixed/doctor/entries.py"
@@ -623,9 +624,8 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
 ]
 
-# One byte that is not UTF-8 in a settings file is no part of any entry: the marker and the commands
-# it marks are ASCII. Refused, it made the file one the walk is blind to, and a forged entry in it
-# lost its red to a warning and an exit of 0.
+# One byte that is not UTF-8 in a settings file moves no entry. Refused, it made the file one the
+# walk is blind to, and the entries in it went uncounted.
 [[mutation]]
 name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
 file = "src/stayfixed/doctor/entries.py"
