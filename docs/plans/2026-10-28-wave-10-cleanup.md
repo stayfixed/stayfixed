@@ -174,7 +174,7 @@ row or check reports any more. The section is written from the diff, not from th
 - **No old spelling stays.** A removed command, flag or key is gone with no alias (d3 as amended).
 - **Commits** follow `CONTRIBUTING.md`'s conventional style: `refactor(doctor): …`, `ci: …`,
   `refactor(release): …`, `refactor(trust): …`. Each pull request has one towncrier fragment in
-  `changelog.d/`: type `removed`, or `upgrading` where a user-visible behaviour goes.
+  `changelog.d/`: type `change` (the repository has no `removed` type), or `upgrading` where a user-visible behaviour goes.
 - `docs/plans/*` and `CHANGELOG.md` are history and are not edited.
 
 ## Review focus
@@ -294,7 +294,7 @@ that pins it.
   Expected: PASS. Then run `uv run python scripts/mutation_oracle.py --file src/stayfixed/doctor/checks.py`.
   If the oracle takes no such flag, run it whole. Expected: no survivor and no missing `reddens`.
 - [ ] **Step 5: Commit:** `refactor(doctor): the files row checks the executable bit only`. Then add
-  the fragment `changelog.d/+release-record.removed.md`. It names the removed record and command, and
+  the fragment `changelog.d/+release-record.change.md`. It names the removed record and command, and
   what `doctor files` no longer reports.
 
 **Before the push (Wave A):** the full suite, the 3.13 run, the oracle whole, and the static checks.
@@ -343,7 +343,7 @@ including that the `wrapper` row still reports a missing or unreadable launcher.
 - [ ] **Step 4: Run and watch it pass.** Run `uv run pytest -q tests/test_check_workflow.py tests/test_workflow_yaml.py`.
   Expected: PASS.
 - [ ] **Step 5: Commit:** `ci: pass the reusable workflow's timeout-minutes through unbounded`.
-  Then add the fragment `changelog.d/+timeout-bound.removed.md`.
+  Then add the fragment `changelog.d/+timeout-bound.change.md`.
 
 **Before the push (Wave B):** as for Wave A. Then open the pull request.
 
@@ -433,7 +433,7 @@ including that the `wrapper` row still reports a missing or unreadable launcher.
 - [ ] **Step 4: Run and watch it pass.** Run `uv run pytest -q tests/doctor tests/attach/test_doctor.py`.
   Expected: PASS.
 - [ ] **Step 5: Commit:** `refactor(doctor): hook-entries no longer judges where a marked entry sits`.
-  Then add the fragment `changelog.d/+frontmatter-walk.removed.md`, covering both tasks.
+  Then add the fragment `changelog.d/+frontmatter-walk.change.md`, covering both tasks.
 
 **Before the push (Wave C):** as for Wave A. Then open the pull request.
 
