@@ -2711,14 +2711,11 @@ Configures this machine from a preset, `recommended` unless `--preset` names ano
 machine configuration file's `[personal]` and `[machine]` tables, the deny rules and personal
 values in `<home>/.claude/settings.json`, and each plugin `--plugin` names, one install per plugin
 per configured harness. Without `--plugin` no plugin is installed and no plugin command runs. That file is read as Claude Code reads it, past a leading byte-order mark,
-which a rewrite keeps. The deny rules are merged in beside the owner's own, with one removal: a
-rule an earlier preset wrote and this one retired (its `[deny] retired`) is taken out where it
-stands verbatim. `recommended` retired the masks `Read(.env*)` and `Read(**/.env*)`, which also
-refused the templates a project commits (`.env.example`, `.env.dist` and the rest), for the env
-files by name: `.env`, `.env.local`, `.env.*.local`, `.env.dev`, `.env.development`, `.env.prod`,
-`.env.production`, `.env.stage`, `.env.staging` and `.env.test`, each as `Read(**/<name>)`. An env
-file under another name stays readable; `stayfixed doctor`'s `retired-deny` row reports a retired
-rule still in the file. `--home` and `--machine` default to the home directory and to
+which a rewrite keeps. The deny rules are merged in beside the owner's own, and none is removed.
+`recommended` denies the env files by name: `.env`, `.env.local`, `.env.*.local`, `.env.dev`,
+`.env.development`, `.env.prod`, `.env.production`, `.env.stage`, `.env.staging` and `.env.test`,
+each as `Read(**/<name>)`, so the templates a project commits (`.env.example`, `.env.dist` and the
+rest) stay readable. An env file under another name stays readable too. `--home` and `--machine` default to the home directory and to
 `~/.config/stayfixed/config.toml` — the file every reader reads, and not whatever
 `XDG_CONFIG_HOME` or `STAYFIXED_CONFIG` names, because a machine file half the installation
 cannot find is not a machine file. Both flags exist so this command can be pointed at a
@@ -3006,10 +3003,10 @@ which name a write this run does not make; `1` for a `HOME` that is empty with n
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Seventeen checks over one installation. It **reports and never repairs**: every finding
+Sixteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own twelve first, then the five about the
+The rows come in a fixed order: the installation's own eleven first, then the five about the
 private layer — the binding's (`attached`), memory's (`bundles`, `memory`) and the
 private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -3061,7 +3058,6 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `ci-ref` | whether `[ci] ref` is the commit of a released stayfixed tag (or the `v1` alias: a warning, as mutable, once a `1.x` release creates it, and red until then), and whether the rendered workflow pins the same ref — under `[ci] mode = "reusable"`, a workflow that is not there at all is a warning and never a green row, and so are a path that is there and is not a regular file and a file past the 256 KiB bound on the read | `git ls-remote --exit-code` over the public repository's tags, bounded at 30 seconds; *.github/workflows/stayfixed.yml*, read as a regular file and to a bound |
 | `diagnostics` | how many reasons the hook sink recorded — a count, never a line of the file | `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl` |
 | `ignored-env` | as information, never a status: `STAYFIXED_CONFIG` set, or `XDG_CONFIG_HOME` set to anything but the `.config` of the home every command reads under (`HOME`, or the password database's where `HOME` is unset), and not honoured by any command; and a `HOME` that is not the home the password database records for this user, since stayfixed follows `HOME` | the environment, the password database |
-| `retired-deny` | whether `~/.claude/settings.json` still holds a deny rule an earlier `stayfixed setup` wrote and the machine's preset retired (its `[deny] retired`), such as `Read(.env*)`, which refuses `.env.example` too; matched by exact string, as `setup` removes them, and named in the preset's words | `~/.claude/settings.json`, the preset |
 | `attached` | the overlay binding, what it delivers, and, where `memory.mode` is `overlay`, the `autoMemoryDirectory` pointer at the composed store, read alike from every checkout (the states are below the table) | the main checkout's `.stayfixed/local/attach.json` and `.claude/settings.local.json`, `~/.local/share/stayfixed/delivery/<id>/`, `~/.local/share/stayfixed/stores/<id>/`, the overlay's executable parts, `git` on the paths `attach` placed |
 | `bundles` | a bundle that does not fit its slots, and one whose part reaches the cap | the note store |
 | `memory` | the memory a session gets: the active `memory.mode` and the layer that set it (or that none does, and memory is the coding agent's own), the store, which settings file sets the harness's `autoMemoryDirectory` — the checkout's `.claude/settings.local.json`, the main checkout's, the committed `.claude/settings.json` or `~/.claude/settings.json`, the first that holds it, named as information and never with its value, since a committed file may point the harness elsewhere — and the store's unreviewed notes as a count; a warning only for files in the note store that are not notes, counted (at most 500,000 entries) | the resolution `preferences` reads, the note store, the machine's trust record, those settings files |
@@ -3110,7 +3106,7 @@ the harness's to decide, and this row does not read that file.
 | missing | no `autoMemoryDirectory` | `warn` | `attach`, which writes it |
 | unreadable | a file that cannot be read as one JSON object | `warn` | make it one JSON object, then `attach` |
 
-**Ten of the seventeen have a `skip` arm — twenty-one arms between them, every one on a state of
+**Nine of the sixteen have a `skip` arm — twenty arms between them, every one on a state of
 this machine or this repository.** A `skip` is **not** a finding and never reaches the exit code, so
 read the detail — each one says which measurement it is missing. No row skips for want of a build
 that can answer it: `codex-hooks`, the one that did, left the report, and what holds on Codex is the
@@ -3121,7 +3117,7 @@ code here: while no released tag matches the stayfixed running there is no commi
 `init` records nothing and the row skips on a correct installation; once a release exists, a
 repository `init` set up carries a ref and the row answers.
 
-The ten that skip on a state are `files` and `wrapper`, when there is no plugin root this
+The nine that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
@@ -3137,7 +3133,7 @@ And four rows read the project configuration and skip, in one sentence, when the
 read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached` and
 `bundles`. `memory` reads the resolution a session reads and answers without one.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty-one arms carry a remedy:
+**A `skip` does not mean there is nothing to do.** Seven of the twenty arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
 could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
@@ -3151,7 +3147,7 @@ nothing though `attached` names `stayfixed setup --overlay` there. It is whether
 itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. Of the
-other fourteen, eleven report a measurement that is simply unavailable — no store, no overlay,
+other thirteen, ten report a measurement that is simply unavailable — no store, no overlay,
 no overlay requirement, no harness data root, no `[ci] ref` or no
 project configuration — and no command in that row's gift changes it, and three report a machine
 file another row is red about, with the command that clears it.

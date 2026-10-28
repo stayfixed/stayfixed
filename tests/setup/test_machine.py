@@ -134,7 +134,11 @@ def test_the_preset_denies_reading_env_files_by_value() -> None:
     # One spelling per name: a bare name matches at any depth in Claude Code's rules, so
     # `Read(.env)` beside `Read(**/.env)` was a second line saying the same thing.
     assert deny["global"] == [f"Read(**/{n})" for n in names]
-    assert deny["retired"] == ["Read(.env*)", "Read(**/.env*)"]
+
+
+def test_the_preset_has_no_retired_deny_rules() -> None:
+    # `setup` takes nothing back out of the user settings file, so the preset names nothing for it.
+    assert set(load_preset("recommended")["deny"]) == {"global"}
 
 
 @pytest.mark.parametrize(

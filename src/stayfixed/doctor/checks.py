@@ -81,7 +81,7 @@ from stayfixed.config.session import (
     cause,
     session_config,
 )
-from stayfixed.doctor.entries import USER_SETTINGS, hook_entries
+from stayfixed.doctor.entries import hook_entries
 from stayfixed.doctor.model import (
     OK,
     RED,
@@ -97,7 +97,7 @@ from stayfixed.doctor.model import (
 from stayfixed.doctor.registry import contributions
 from stayfixed.findings import listed
 from stayfixed.grammar import PATH_VALUE
-from stayfixed.harnesses import CANONICAL, CLAUDE, HARNESSES, lenient_settings
+from stayfixed.harnesses import CANONICAL, CLAUDE, HARNESSES
 from stayfixed.hooks.api import (
     DIAGNOSTICS,
     DIAGNOSTICS_MAX_BYTES,
@@ -105,8 +105,6 @@ from stayfixed.hooks.api import (
     MARKERS,
     data_root,
 )
-from stayfixed.jsonobject import json_object
-from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
 from stayfixed.release.api import is_released, released
 from stayfixed.runner import Runner
@@ -958,56 +956,6 @@ def _ignored_env(context: Context) -> Row:
     return Row(OK, detail)
 
 
-# How the user settings file is named in the `retired-deny` row, as `hook-entries` names it.
-_SETTINGS_LABEL = f"~/{USER_SETTINGS}"
-# Formatted with the owner's preset, a name `load_preset` has just read, so one stayfixed ships.
-RETIRED_DENY_REMEDY = "run `stayfixed setup --preset {preset}`, which takes them out"
-
-
-def _retired_deny(context: Context) -> Row:
-    """Whether the user settings file still holds a deny rule the owner's preset retired.
-
-    `setup` takes such a rule back out (the preset's `[deny] retired`), but only when it runs, and
-    upgrading stayfixed does not run it: a machine an older `setup` configured kept `Read(.env*)`,
-    which refuses `.env.example` too, with nothing saying so. Matched by exact string, as `setup`
-    removes them, so a rule the owner wrote in other words is never named here. The rules printed
-    are the preset's own strings, never the file's.
-    """
-    home = context.home if context.home is not None else owner_home()
-    if home is None:
-        return Row(SKIP, f"no home directory to read {_SETTINGS_LABEL} under")
-    preset = context.session.owner.preset
-    retired = load_preset(preset).get("deny", {}).get("retired", [])
-    path = home / USER_SETTINGS
-    try:
-        if not fsops.names_regular_file(path):
-            return Row(OK, f"no {_SETTINGS_LABEL}, so no retired deny rule in it")
-        text = lenient_settings(fsops.read_regular_bytes(path).decode("utf-8", errors="replace"))
-        document = json_object(text, _SETTINGS_LABEL, error=ValueError) if text.strip() else {}
-    except (OSError, ValueError):
-        return Row(
-            WARN,
-            f"{_SETTINGS_LABEL} could not be read, so whether it holds a retired deny rule is not "
-            "known",
-            f"make {_SETTINGS_LABEL} a readable JSON object, or {RETIRED_DENY_REMEDY}".format(
-                preset=preset
-            ),
-        )
-    permissions = document.get("permissions")
-    deny = permissions.get("deny") if isinstance(permissions, dict) else None
-    held = {r for r in deny if isinstance(r, str)} if isinstance(deny, list) else set()
-    found = [rule for rule in retired if isinstance(rule, str) and rule in held]
-    if not found:
-        return Row(OK, f"no deny rule the `{preset}` preset retired is in {_SETTINGS_LABEL}")
-    return Row(
-        WARN,
-        f"{len(found)} deny rule(s) an earlier `stayfixed setup` wrote and the `{preset}` preset "
-        f"retired are still in {_SETTINGS_LABEL}, refusing files the preset no longer refuses: "
-        + ", ".join(f"`{rule}`" for rule in found),
-        RETIRED_DENY_REMEDY.format(preset=preset),
-    )
-
-
 # The core's checks, in the order the `doctor` table in `docs/cli.md` lists them, ahead of every
 # row an area contributes. The list is the report's order and the core's only registry: a check
 # added here needs no other edit, and a check missing from it is a check nothing runs. An area adds
@@ -1024,7 +972,6 @@ CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("ci-ref", configured(_ci_ref)),
     ("diagnostics", _diagnostics),
     ("ignored-env", _ignored_env),
-    ("retired-deny", _retired_deny),
 )
 
 

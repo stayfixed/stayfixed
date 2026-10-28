@@ -1308,15 +1308,6 @@ before = "        rules = record_deny_rules(record)\n    except OSError as exc:"
 after = "        rules = record_deny_rules(record)\n    except LookupError as exc:"
 reddens = ["tests/setup/test_approval_boundary.py::test_a_looping_machine_directory_is_refused_by_name"]
 
-# `setup` takes the deny masks an earlier preset wrote back out of the user settings file, or a
-# machine that ran an older `setup` keeps refusing `.env.example` after an upgrade.
-[[mutation]]
-name = "setup leaves the retired deny rules in place"
-file = "src/stayfixed/setup/run.py"
-before = "    existing_deny = [r for r in existing_deny if r not in retired]"
-after = "    existing_deny = list(existing_deny)"
-reddens = ["tests/setup/test_setup.py::test_setup_takes_the_retired_env_masks_back_out_and_keeps_the_owners_rules"]
-
 # A tree is an overlay exactly when its identity record parses, so a render writes the record last
 # and a render cut short before it leaves no tree a later `setup --overlay` records. The mutation
 # puts the record first again, where a full disk part-way left it behind with half a tree.

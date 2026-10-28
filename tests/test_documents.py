@@ -249,6 +249,8 @@ _NUMBER_WORDS = {
     "twelve": 12,
     "thirteen": 13,
     "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
     "seventeen": 17,
     "eighteen": 18,
     "nineteen": 19,
@@ -877,11 +879,11 @@ def test_the_plan_rule_count_is_the_number_of_rules_plan_check_emits() -> None:
     assert _NUMBER_WORDS.get(match.group(1).lower()) == len(codes), (match.group(1), sorted(codes))
 
 
-# The `doctor` check table: seventeen rows, each spelling a check name, and the one
+# The `doctor` check table: sixteen rows, each spelling a check name, and the one
 # code-restating table in this document the branch that built this binding mechanism did not
 # bind. `tests/doctor/test_checks.py` pins each name as a literal exactly once *inside* the module
 # that registers it — `checks.py` or an area's `doctor.py` — so the document's copy is a *second*
-# spelling of each of the seventeen — one that
+# spelling of each of the sixteen — one that
 # guard cannot see, and a renamed check would leave this page green and wrong. That the unbound
 # ones drift is not a hypothesis: `len(OVERLAY_FILES)` was sixteen while four comments one
 # directory over still said fourteen.
@@ -928,7 +930,7 @@ def test_every_document_counts_the_rows_the_report_has() -> None:
     # The count was written in five places and held in none: a row added to the report left four
     # documents and the smoke workflow saying the old number. Mutation (`mutations/`'s "the
     # reference counts the doctor rows it had before retired-deny"): `docs/cli.md` says
-    # eighteen.
+    # seventeen.
     from stayfixed.doctor.checks import CHECKS
     from stayfixed.doctor.registry import contributions
 
