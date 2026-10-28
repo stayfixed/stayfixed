@@ -15,7 +15,7 @@ reddens = [
 ]
 
 # Which plugin root `doctor` trusts, first half. This ordering no longer decides what is *executed*
-# -- `_wrapper` takes `own_root` and nothing else -- so what it pins now is which wrapper `files`
+# -- `_wrapper` takes `own_root` and nothing else -- so what it pins now is which wrapper `wrapper`
 # reads its mode from. A plugin's own and one a repository committed are different files with
 # different meanings, and the row would otherwise report on the wrong one.
 [[mutation]]
@@ -42,16 +42,15 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
 ]
 
-# The other half of the same containment: `files` keeps reading the wrapper's mode, because that
-# needs only a path -- and must say whose root it measured, so nobody reads "executable" off a
-# repository-planted file as a clean bill of health for the installation.
+# The other half of the same containment: under a named root `wrapper` still reads the wrapper's
+# mode, because that needs only a path, and a wrapper without `+x` is red there, never a skip.
 [[mutation]]
-name = "doctor reports on a named plugin root's files without saying whose they are"
+name = "a named root's wrapper without its executable bit is a skip"
 file = "src/stayfixed/doctor/checks.py"
-before = '    whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT'
-after = '    whose = ""'
+before = "        if not os.access(wrapper, os.X_OK):"
+after = "        if False:"
 reddens = [
-  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
+  "tests/doctor/test_checks.py::test_a_named_root_wrapper_without_its_executable_bit_is_red_and_with_it_a_skip",
 ]
 
 # The same check's other half, and the one a green report hides. Three arms used to swallow — an
@@ -355,18 +354,18 @@ reddens = [
 ]
 
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
-# and the report says so as two `skip` rows under a skill instruction reading "a skip is not a
+# and the report says so as a `skip` row under a skill instruction reading "a skip is not a
 # fault". An empty remedy there is the report's loudest finding rendered as its quietest.
 [[mutation]]
-name = "the plugin-root skips go back to an empty remedy"
+name = "the plugin-root skip goes back to an empty remedy"
 file = "src/stayfixed/doctor/checks.py"
 before = '''PLUGIN_ROOT_REMEDY = (
     f"{RUN_FROM_OWN_ROOT}, or set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which "
-    "lets `files` read the wrapper without making it runnable here"
+    "lets `wrapper` read the wrapper's executable bit without running it"
 )'''
 after = 'PLUGIN_ROOT_REMEDY = ""'
 reddens = [
-  "tests/doctor/test_checks.py::test_the_two_plugin_root_skips_both_carry_a_remedy",
+  "tests/doctor/test_checks.py::test_the_plugin_root_skip_carries_a_remedy",
 ]
 
 # The named-root skip carried a hand copy of the remedy's first half, and the copy had already
@@ -401,7 +400,7 @@ reddens = [
 name = "a doctor check spells its own name again"
 file = "src/stayfixed/doctor/checks.py"
 before = 'WRAPPER = "hooks/run-hook.sh"'
-after = "WRAPPER = \"hooks/run-hook.sh\"\n_STRAY = \"files\""
+after = "WRAPPER = \"hooks/run-hook.sh\"\n_STRAY = \"wrapper\""
 reddens = [
   "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
 ]

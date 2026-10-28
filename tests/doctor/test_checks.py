@@ -355,13 +355,12 @@ def test_a_configuration_holding_a_number_past_the_parser_does_not_load(tmp_path
     assert (row.status, row.detail) == (RED, cause(FALLBACK_WARNING))
 
 
-# The report's sixteen names in the report's order, written out rather than read back from the
+# The report's fifteen names in the report's order, written out rather than read back from the
 # registry: the core's own checks, then each delivery area's in area-name order — `attach`,
 # `memory`, `overlay`. `docs/cli.md`'s table is held to the same order.
 REPORT = (
     "not-initialised",
     "versions",
-    "files",
     "wrapper",
     "hook-entries",
     "budgets",
@@ -380,7 +379,7 @@ REPORT = (
 
 def test_every_check_has_one_row_in_one_report(tmp_path: Path) -> None:
     # Moving a check into its area must not cost it its row, nor give it a second one: the
-    # sixteen are the same sixteen, once each. A literal tuple and not the registry read back,
+    # fifteen are the same fifteen, once each. A literal tuple and not the registry read back,
     # so a check that dropped out of both the core and the areas reddens here. Mutation (oracle):
     # `mutations/`'s "doctor drops the checks an area contributes" -> the five delivery rows are
     # missing. The fixture is an initialised project with nothing else to look at -- no overlay,
@@ -545,7 +544,7 @@ def test_ci_ref_skips_where_no_ci_ref_is_recorded(tmp_path: Path) -> None:
 
 
 def _planted_plugin(base: Path, *, executable: bool = True) -> Path:
-    """A plugin root carrying the wrapper, the one file `files` reads."""
+    """A plugin root carrying the wrapper, the one file `wrapper` reads."""
     plugin = base / "plugin"
     wrapper = plugin / "hooks" / "run-hook.sh"
     wrapper.parent.mkdir(parents=True)
@@ -554,39 +553,37 @@ def _planted_plugin(base: Path, *, executable: bool = True) -> Path:
     return plugin
 
 
-def test_files_is_ok_for_an_executable_wrapper_with_no_release_record(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # The row measures the executable bit and nothing else, so a plugin carrying no record of
-    # its files is not a measurement the row is missing.
-    monkeypatch.setattr(checks, "_own_root", lambda: None)
-    plugin = _planted_plugin(tmp_path)
-    env = _env(tmp_path, CLAUDE_PLUGIN_ROOT=str(plugin))
-    check = _by_name(_checks(tmp_path, _initialised(tmp_path), env=env), "files")
-    assert check.status == OK, check
-    assert "hooks/run-hook.sh" in check.detail
-
-
-def test_a_wrapper_that_lost_its_executable_bit_is_red(
+def test_a_named_root_wrapper_without_its_executable_bit_is_red_and_with_it_a_skip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A wrapper without `+x` exits 126, which Claude Code reads as a non-blocking error —
-    # permission.
+    # permission. Under a root the environment named, `wrapper` runs nothing, so the bit is the
+    # one thing it can read there; with the bit, it is still the skip it was.
     #
     # `_own_root` is stood down because the suite runs from a checkout, which *is* a plugin
-    # root with a healthy wrapper in it, and that root now outranks the named variable. Reached
-    # for by name rather than worked around: the variable is the only way to point `doctor` at
-    # a planted root, and the case below is what makes the ordering itself an assertion.
+    # root with a healthy wrapper in it, and that root outranks the named variable.
+    # Mutation: `mutations/`'s "a named root's wrapper without its executable bit is a skip".
     monkeypatch.setattr(checks, "_own_root", lambda: None)
+    root = _initialised(tmp_path)
     plugin = _planted_plugin(tmp_path, executable=False)
-    check = _by_name(
-        _checks(
-            tmp_path, _initialised(tmp_path), env=_env(tmp_path, CLAUDE_PLUGIN_ROOT=str(plugin))
-        ),
-        "files",
-    )
-    assert check.status == "red"
-    assert "executable" in check.detail
+    env = _env(tmp_path, CLAUDE_PLUGIN_ROOT=str(plugin))
+    check = _by_name(_checks(tmp_path, root, env=env), "wrapper")
+    assert check.status == RED, check
+    assert check.remedy == f"chmod +x {plugin / 'hooks' / 'run-hook.sh'}"
+    (plugin / "hooks" / "run-hook.sh").chmod(0o755)
+    assert _by_name(_checks(tmp_path, root, env=env), "wrapper").status == SKIP
+
+
+def test_an_own_root_wrapper_without_its_executable_bit_could_not_be_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Under the root this process derived, the wrapper is run, and one without `+x` is refused
+    # by the kernel: the row is red, saying it could not be run.
+    plugin = _planted_plugin(tmp_path, executable=False)
+    monkeypatch.setattr(checks, "_own_root", lambda: plugin)
+    check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
+    assert check.status == RED, check
+    assert "could not be run" in check.detail
 
 
 def test_a_named_plugin_root_never_outranks_the_one_this_stayfixed_is_part_of(
@@ -643,10 +640,6 @@ def test_a_plugin_root_the_environment_named_is_read_and_never_executed(
     # Its remedy is the first half of the no-root skips' remedy, taken from the same constant: a
     # hand copy of it had already drifted from the original by a comma.
     assert _by_name(rows, "wrapper").remedy == checks.RUN_FROM_OWN_ROOT
-    # The file-presence half stays — that needs only the path — and says whose root it measured,
-    # so `executable` is never read as a clean bill of health for the installation.
-    assert _by_name(rows, "files").status == "ok"
-    assert checks.NAMED_ROOT_CAVEAT in _by_name(rows, "files").detail
 
 
 def _planted_log(tmp_path: Path, records: list[dict[str, object]]) -> Path:
@@ -1406,24 +1399,24 @@ def test_hook_entries_says_nothing_of_skill_frontmatter(tmp_path: Path) -> None:
     assert row == before
 
 
-def test_the_two_plugin_root_skips_both_carry_a_remedy(tmp_path: Path) -> None:
+def test_the_plugin_root_skip_carries_a_remedy(tmp_path: Path) -> None:
     # The quietest way this installation can be broken: no plugin root found at all means no
-    # hook entry on this machine reaches stayfixed, and `doctor` reports it as two `skip` rows —
+    # hook entry on this machine reaches stayfixed, and `doctor` reports it as a `skip` row —
     # under a skill instruction reading "A `skip` is not a fault ... Say so rather than treating
-    # it as red". Both rows shipped an **empty** remedy, so the report said nothing a reader
-    # could act on about the loudest fault it can meet.
+    # it as red". It shipped an **empty** remedy, so the report said nothing a reader could act
+    # on about the loudest fault it can meet.
     #
     # `Context` directly and not `run_checks`, because the state is "this process derived no
     # root and the environment named none" and building it is one line here. The assertion is on
     # the remedy being non-empty and on it being the shared constant, not on its wording: the
     # wording is prose, the presence is the guarantee.
     #
-    # Mutation: `mutations/`'s "the plugin-root skips go back to an empty remedy".
+    # Mutation: `mutations/`'s "the plugin-root skip goes back to an empty remedy".
     context = _context(tmp_path, load(_initialised(tmp_path), machine=_machine(tmp_path)))
     assert context.plugin_root is None and context.own_root is None
-    for check in (checks._files(context), checks._wrapper(context)):
-        assert check.status == SKIP, check
-        assert check.remedy == checks.PLUGIN_ROOT_REMEDY, check
+    check = checks._wrapper(context)
+    assert check.status == SKIP, check
+    assert check.remedy == checks.PLUGIN_ROOT_REMEDY, check
     assert checks.PLUGIN_ROOT_REMEDY.strip(), "an empty constant satisfies the equality above"
 
 
@@ -1484,13 +1477,13 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
     # times, and the registry spelled the name an eighth time. A row that disagreed with its
     # key was one typo away and nothing would have said so. Now a check
     # returns a `Row` and `_guarded` stamps the registry's name, so each name is a string
-    # literal exactly once in the modules that hold it: the core's eleven in `CHECKS`, counted
+    # literal exactly once in the modules that hold it: the core's ten in `CHECKS`, counted
     # over every module that defines one of `CHECKS`' checks, and each area's in its own
     # `doctor.py`, in the `Contribution` its `register()` returns. The core's modules are read off
     # where the checks are defined rather than listed, so a check split into a module of its own
     # is scanned without an edit here.
     #
-    # Mutation (declared): a stray `_STRAY = "files"` beside `WRAPPER` -> "files" is counted
+    # Mutation (declared): a stray `_STRAY = "wrapper"` beside `WRAPPER` -> "wrapper" is counted
     # twice and this reddens naming it; `mutations/`'s "a stray hook-entries name in the module
     # that defines the check" is the same stray in `doctor/entries.py`. Measured by hand for an
     # area: a stray `_STRAY = "bundles"` beside `NEARLY_FULL` in `memory/doctor.py` reddens naming
@@ -1511,7 +1504,7 @@ def test_every_registry_name_is_spelled_exactly_once_in_the_module() -> None:
         return {name: literals.count(name) for name in names}
 
     names = [name for name, _ in module.CHECKS]
-    assert len(names) == 11
+    assert len(names) == 10
     core = [module, *{sys.modules[check.__module__] for _, check in module.CHECKS} - {module}]
     # `hook-entries` is defined outside `checks.py`, so the walk reads more than the registry.
     assert "stayfixed.doctor.entries" in [each.__name__ for each in core]

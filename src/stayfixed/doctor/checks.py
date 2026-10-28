@@ -133,14 +133,10 @@ WRAPPER_TIMEOUT_SECONDS = 30
 # `doctor`, and the report's other `git` calls go through `gitenv`'s five seconds. The shipped
 # file that must change with it: none — nothing about it is a project's to tune.
 CI_REF_TIMEOUT_SECONDS = 30
-# Said by `files` about a wrapper it measured under a root the environment named, so nobody
-# reads "executable" as "this installation is sound". The sentence is a constant because both
-# of that check's rows carry it and a change to one must change the other.
-# The remedy both plugin-root skips carry. Two quiet `skip` rows are what a machine with no
-# findable plugin root looks like from here, and a `skip` with an empty remedy is what
-# `skills/doctor/SKILL.md` tells the model not to treat as red — so the two together said
-# nothing about the loudest fault `doctor` can meet. One constant because both rows must say
-# the same thing, and because the two halves of it are not interchangeable: only the first
+# The remedy of the plugin-root skip. A quiet `skip` row is what a machine with no findable
+# plugin root looks like from here, and a `skip` with an empty remedy is what
+# `skills/doctor/SKILL.md` tells the model not to treat as red — so it said nothing about the
+# loudest fault `doctor` can meet. The two halves of it are not interchangeable: only the first
 # gives a root `wrapper` will execute, which is why `wrapper`'s skip for a root the environment
 # names carries that first half alone, and takes it from here rather than from a copy.
 RUN_FROM_OWN_ROOT = (
@@ -148,10 +144,7 @@ RUN_FROM_OWN_ROOT = (
 )
 PLUGIN_ROOT_REMEDY = (
     f"{RUN_FROM_OWN_ROOT}, or set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which "
-    "lets `files` read the wrapper without making it runnable here"
-)
-NAMED_ROOT_CAVEAT = (
-    "; this is the plugin root the environment names, whose files are read here and run nowhere"
+    "lets `wrapper` read the wrapper's executable bit without running it"
 )
 # Why `diagnostics` prints a count and no content. One constant because the reason is the row's
 # whole substance, and a change that starts quoting the file has to delete this sentence to do it.
@@ -202,9 +195,9 @@ def plugin_root(env: Mapping[str, str]) -> Path | None:
     """Where `hooks/run-hook.sh` is on this machine, or `None` when it cannot be found.
 
     **This answer says where the file is. It does not say that the file may be run.** The two
-    checks that read it want different things: `files` reads the wrapper's mode, which needs
-    only the path, while `wrapper` *executes* it, which needs to know who chose the path. So
-    `Context` carries both this and `own_root`, and the executing check takes the second.
+    readings of it want different things: the wrapper's mode needs only the path, while
+    executing it needs to know who chose the path. So `Context` carries both this and
+    `own_root`, and `wrapper` executes only out of the second.
 
     **This stayfixed's own root first, and the named variable only after it.** A plugin-root
     variable is the same class of input as `STAYFIXED_CONFIG`, which `config/machine.py` does not
@@ -345,32 +338,6 @@ def _versions(context: Context) -> Row:
     )
 
 
-def _files(context: Context) -> Row:
-    """The bit that decides whether the wrapper can run: a wrapper without `+x` exits 126, and
-    Claude Code reads every non-2 exit as a non-blocking error, which is permission."""
-    root = context.plugin_root
-    if root is None:
-        return Row(
-            SKIP,
-            "the plugin root is not readable from here, so its hook wrapper cannot be checked "
-            "— and if nothing else finds it either, every hook entry on this machine is silent",
-            PLUGIN_ROOT_REMEDY,
-        )
-    # Said in the row rather than left to the reader, because the two roots answer different
-    # questions. A root the environment named is read here and run nowhere, so "executable"
-    # from this row is a statement about a file, never a clean bill of health for a plugin.
-    whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT
-    wrapper = root / WRAPPER
-    if not os.access(wrapper, os.X_OK):
-        return Row(
-            RED,
-            f"{WRAPPER} is not executable, so every hook entry exits 126 and the harness reads "
-            f"that as a non-blocking error{whose}",
-            f"chmod +x {wrapper}",
-        )
-    return Row(OK, f"{WRAPPER} is executable{whose}")
-
-
 def _wrapper(context: Context) -> Row:
     """Execute the wrapper once, and report the fault it printed.
 
@@ -393,7 +360,7 @@ def _wrapper(context: Context) -> Row:
     root to lie outside the project root is the weaker containment: it needs both sides resolved to
     survive a committed symlink, and it still admits a second attacker-controlled checkout on the
     same machine. A `skip` that names what it could not vouch for is the honest answer for a root
-    this process did not choose, and `files` still reads the file.
+    this process did not choose, and the wrapper's executable bit is still read there.
     """
     # `own_root` and not `plugin_root`, on one line, so the whole rule is the single thing a
     # mutation flips: what is launched here is a root this process derived, never one a
@@ -406,6 +373,16 @@ def _wrapper(context: Context) -> Row:
                 "the plugin root is not readable from here, so there is nothing to run and "
                 "nothing here can say whether a hook entry would reach stayfixed at all",
                 PLUGIN_ROOT_REMEDY,
+            )
+        # The bit needs only the path: a wrapper without `+x` exits 126, and Claude Code reads
+        # every non-2 exit as a non-blocking error, which is permission.
+        wrapper = context.plugin_root / WRAPPER
+        if not os.access(wrapper, os.X_OK):
+            return Row(
+                RED,
+                f"{WRAPPER} is not executable, so every hook entry exits 126 and the harness "
+                "reads that as a non-blocking error",
+                f"chmod +x {wrapper}",
             )
         return Row(
             SKIP,
@@ -963,7 +940,6 @@ def _ignored_env(context: Context) -> Row:
 CHECKS: tuple[tuple[str, Callable[[Context], Row]], ...] = (
     ("not-initialised", _not_initialised),
     ("versions", _versions),
-    ("files", _files),
     ("wrapper", _wrapper),
     ("hook-entries", hook_entries),
     ("budgets", configured(_budgets)),

@@ -457,8 +457,8 @@ anything below it starts, which is why its shebang must stay a protected shell.
 
 **The one row this does not cover.** A `run-hook.sh` whose executable bit has been cleared is
 never executed by the harness at all, so no code of ours runs and the hooks are silent. The
-wrapper cannot defend its own mode, so `stayfixed doctor` is what catches it: the `files` row goes
-**red** on a cleared bit and hands you the `chmod +x`. Run it after anything that rewrites the
+wrapper cannot defend its own mode, so `stayfixed doctor` is what catches it: the `wrapper` row
+goes **red** on a cleared bit, and under a root the environment named hands you the `chmod +x`. Run it after anything that rewrites the
 plugin directory.
 
 **What a session hears about the overlay it is bound to: `overlay-status`.** Beside the two that
@@ -3010,10 +3010,10 @@ which name a write this run does not make; `1` for a `HOME` that is empty with n
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Sixteen checks over one installation. It **reports and never repairs**: every finding
+Fifteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own eleven first, then the five about the
+The rows come in a fixed order: the installation's own ten first, then the five about the
 private layer — the binding's (`attached`), memory's (`bundles`, `memory`) and the
 private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -3056,8 +3056,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 |---|---|---|
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and memory stays the coding agent's own, and that `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
-| `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported, and under a root the environment named, where `wrapper` skips, no row reports a missing or edited launcher | `hooks/run-hook.sh` |
-| `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
+| `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr or cannot be run; under a root the environment named, which it never runs, red when the wrapper is not executable and a skip otherwise; a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of; under a named root, `hooks/run-hook.sh`'s mode |
 | `hook-entries` | how many hook entries the settings files hold, with no claim about who wrote them, and every settings file it could not read or check | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each personal value, guard switch, preference and session budget a session resolves, with the layer its value came from — the preset, the repository, the overlay's common file (`overlay common`), its file for the project this checkout is bound to (`overlay project`) or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; then, as information that never changes the row's status, every note reading the overlay's layers gave — no overlay recorded, a file not there or not loading, a key it cannot use or may not set; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the overlay's two `stayfixed.toml` files, the machine file |
@@ -3113,7 +3112,7 @@ the harness's to decide, and this row does not read that file.
 | missing | no `autoMemoryDirectory` | `warn` | `attach`, which writes it |
 | unreadable | a file that cannot be read as one JSON object | `warn` | make it one JSON object, then `attach` |
 
-**Nine of the sixteen have a `skip` arm — twenty arms between them, every one on a state of
+**Eight of the fifteen have a `skip` arm — nineteen arms between them, every one on a state of
 this machine or this repository.** A `skip` is **not** a finding and never reaches the exit code, so
 read the detail — each one says which measurement it is missing. No row skips for want of a build
 that can answer it: `codex-hooks`, the one that did, left the report, and what holds on Codex is the
@@ -3124,8 +3123,8 @@ code here: while no released tag matches the stayfixed running there is no commi
 `init` records nothing and the row skips on a correct installation; once a release exists, a
 repository `init` set up carries a ref and the row answers.
 
-The nine that skip on a state are `files` and `wrapper`, when there is no plugin root this
-process can vouch for; `attached`, when this machine records no overlay to check the ledger
+The eight that skip on a state are `wrapper`, when there is no plugin root this process can
+vouch for; `attached`, when this machine records no overlay to check the ledger
 against, or the overlay could not be asked at all; `pre-commit` and `overlay-requires`, when
 no overlay root is recorded on this machine **or** when the root it records is not a directory
 — two different arms with two different sentences, because a machine that recorded an overlay
@@ -3143,8 +3142,8 @@ machine binds whose main checkout has no `stayfixed.toml` is the one exception f
 for the note store `memory` reads: both are judged on the configuration `attach` acted on there,
 the preset's under the overlay's layers for the project the binding record names.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty arms carry a remedy:
-the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
+**A `skip` does not mean there is nothing to do.** Six of the nineteen arms carry a remedy:
+the plugin-root skip, `wrapper`'s named-root skip, `attached`'s no-overlay and
 could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
@@ -3154,7 +3153,7 @@ four with no project configuration, whose remedy is
 `preferences`', red on the same file. Nor
 is it whether another row names a command that changes the state: `pre-commit`'s arm carries
 nothing though `attached` names `stayfixed setup --overlay` there. It is whether the skip is
-itself worth acting on. Those seven report something wrong that no other
+itself worth acting on. Those six report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. Of the
 other thirteen, ten report a measurement that is simply unavailable — no store, no overlay,
@@ -3163,11 +3162,10 @@ project configuration — and no command in that row's gift changes it, and thre
 file another row is red about, with the command that clears it.
 
 **The one to read first is the plugin root**, because it is the quietest and the worst. When
-this process can find no plugin root at all, `files` and `wrapper` both skip — two rows, no red,
-and every hook entry on this machine silent. Both carry a remedy: run `stayfixed doctor` from the
-plugin's own launcher, so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the
-plugin is installed, which lets `files` read the wrapper even though `wrapper` still will not
-run it.
+this process can find no plugin root at all, `wrapper` skips — no red, and every hook entry on
+this machine silent. It carries a remedy: run `stayfixed doctor` from the plugin's own launcher,
+so its root answers for itself, or set `CLAUDE_PLUGIN_ROOT` to where the plugin is installed,
+which lets `wrapper` read the wrapper's executable bit even though it still will not run it.
 
 **Nothing configured is not broken.** `doctor` reads the configuration the way a session does
 ([`stayfixed hook <event>`](#stayfixed-hook-event)), so every row is asked whatever `--root`
@@ -3225,8 +3223,8 @@ failure, an answer the output cap cut, or a session that ran without some of its
 `hooks/run-hook.sh` only under the root this stayfixed derived from its own module path. With a
 wheel installation there is no such root — which is what `uv tool install` gives, and what
 `cli-path`'s own remedy suggests — and `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT` may then name one:
-that root's wrapper is still read by `files`, for its executable bit, and `wrapper` reports
-`skip` saying why. A report that ran a script the inspected repository could commit, and then
+that root's wrapper is still read by `wrapper`, for its executable bit, red without it and
+otherwise a `skip` saying why. A report that ran a script the inspected repository could commit, and then
 called the result green, would be worse than one that says it could not vouch for it.
 
 **Writes** nothing. Exits `0`, or `1` when any check is red.

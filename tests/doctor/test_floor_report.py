@@ -69,7 +69,7 @@ def test_no_stayfixed_toml_is_a_warning_and_no_row_is_red(tmp_path: Path) -> Non
 
 @pytest.mark.parametrize(
     "name",
-    ["versions", "files", "wrapper", "cli-path", "diagnostics", "ignored-env", "preferences"],
+    ["versions", "wrapper", "cli-path", "diagnostics", "ignored-env", "preferences"],
 )
 def test_rows_that_need_no_configuration_run_without_one(tmp_path: Path, name: str) -> None:
     # Each answered "there is no stayfixed.toml to check against" whatever it asks. Not skipped

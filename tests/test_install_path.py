@@ -193,7 +193,7 @@ def _cli(walk: Walkthrough, *argv: str) -> subprocess.CompletedProcess[str]:
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The sixteen rows, read back out of what `doctor --json` printed on the launcher's
+    """The fifteen rows, read back out of what `doctor --json` printed on the launcher's
     stdout."""
     done = _cli(
         walk,
@@ -208,7 +208,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 16, rows
+    assert len(rows) == 15, rows
     return rows
 
 
@@ -527,13 +527,10 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # Green meaning: no `red`, and the only `skip` is `ci-ref`, which skips on a state this
     # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
     # released tag matches the stayfixed running here for `init` to have pinned.
-    # `files` is not among them: this walk runs against the checkout, whose wrapper is
-    # executable.
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []
     assert [row["name"] for row in rows if row["status"] == SKIP] == ["ci-ref"]
-    assert next(row for row in rows if row["name"] == "files")["status"] == OK
 
 
 # What `docs/cli.md` says `stayfixed doctor` launches on a green attached installation *besides*
