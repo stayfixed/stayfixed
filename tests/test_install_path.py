@@ -539,51 +539,8 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # Written as a number rather than as a set of argv lists so the failure reads as "the count
 # moved", which is the claim.
 #
-# Five and not four since the binding's and the note store's rows moved into their own areas:
-# each area resolves the note store for its own rows, once per report, and in overlay mode a
-# resolution asks `git` for the checkout's `origin`. So `attached` and the store's two rows ask
-# it once each, where one shared context used to ask it once for all three.
-#
-# Six and not five since the hook-entries row asked git's index which files below the root a
-# nested `.claude/skills` held, in place of walking the whole tree.
-#
-# Seven and not six since the `attached` row asks git which checkout owns this one wherever its
-# answer turns on the owning checkout's store or `paths.memory` — every shape of the harness memory
-# path but a dangling link and a real directory with no fallback recorded — and not only beside a
-# link: the gate it asks is the owning checkout's, which `attach` asks, so a linked worktree reads
-# one machine state as the main checkout does.
-#
-# Eight and not seven since the binding is the id in the git common directory: each note-store
-# resolution asks git for the common directory where it asked for the `origin`, and the `attached`
-# row asks for both, the `origin` for the note it may print beside the state.
-#
-# Nine and not eight since a session's preferences resolve over the overlay's project file, read
-# only for the project the binding record names: the report reads the configuration as a session
-# does, so it asks git for the common directory once more, where the binding id is kept.
-#
-# Fourteen and not nine since the `attached` row reads the delivery — the binding id, whether a
-# placed path is tracked (`git ls-files`) or ignored (`git check-ignore`), and whether a tracked
-# file names the delivery (`git grep`) — and since this case runs under the walkthrough's `HOME`,
-# where the binding record is. Under the suite's own `HOME` the row found no record, read the
-# checkout as unbound and warned, and asked nothing a bound checkout's rows ask, so the nine it
-# counted were not a green installation's.
-#
-# Thirteen and not fourteen since `attach` points the harness at the composed store: the row reads
-# the pointer, which asks git for the common directory where the binding id is kept, and no longer
-# asks which checkout owns this one to judge the harness memory path the harness does not read.
-#
-# Twelve and not thirteen since the harness memory path is gone and the `attached` row reads the
-# pointer from the main checkout's settings file: the main checkout is named once, by the first
-# record of `git worktree list`, and the pointer is compared with the composed store of the id the
-# row has already read, so the common directory is not asked for it again.
-#
-# Fourteen and not twelve since the `memory` row names the settings file that sets the harness's
-# `autoMemoryDirectory`: it asks whether this checkout is a registered worktree (its common and its
-# own git directory) to read the main checkout's settings file, which a linked worktree reads too.
-#
-# Thirteen and not fourteen since the hook-entries row no longer walked for skills, commands and
-# agents, whose walk asked git's index for the nested skills directories; deleting the row, which
-# asked git nothing by then, moved nothing.
+# Thirteen: the wrapper probe and the twelve `git` questions the `attached`, note-store, `memory`
+# and `preferences` rows ask of a bound checkout, as `docs/cli.md`'s doctor section lists them.
 DOCTOR_LAUNCHES = 13
 
 

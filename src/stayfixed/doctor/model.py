@@ -1,7 +1,7 @@
 """What a `doctor` row is made of, and what an area hands the report to add rows of its own.
 
 The vocabulary lives here rather than in `checks.py` because two kinds of module speak it: the
-core's checks in `checks.py` and `entries.py`, and an area's own `doctor.py`, which
+core's checks in `checks.py`, and an area's own `doctor.py`, which
 `registry.contributions` discovers by name and which reaches this module through `doctor/api.py`.
 `checks.py` is the core's checks and the run; this module is the shapes they share and the one
 answer every area reads alike, the overlay root (`Context.overlay_root`), so it imports nothing of

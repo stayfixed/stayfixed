@@ -3179,9 +3179,9 @@ names `stayfixed docs check`, which prints the loader's own message.
 
 **What is printed, and what is not. There is one exception, and it is bounded.** Counts,
 statuses, file paths this project chose and stayfixed's own vocabulary print freely; a
-repository-authored string does not. `[stayfixed] version`, `[ci] ref`, a note's filename, a hook's
-command text, the marker id an entry claims, every field of the hook sink's diagnostics log and the
-reason the store would not resolve are all read and none is quoted back — `stayfixed doctor
+repository-authored string does not. `[stayfixed] version`, `[ci] ref`, a note's filename, every
+field of the hook sink's diagnostics log and the reason the store would not resolve are all read
+and none is quoted back — `stayfixed doctor
 --json` is relayed to a model verbatim by the `doctor` skill, so a byte a repository wrote reaching
 this report is a byte reaching the model outside `trust.wrap`. The exception is the name of a
 `stayfixed.toml` key that `not-initialised` says was ignored or put back to the preset's, which is
@@ -3189,11 +3189,10 @@ what the owner needs to find it: at most three names, one outside the path gramm
 one inside it clipped at 120 characters, then a count of the rest, so the row stays short however
 many keys the file holds and however long their names are.
 
-`diagnostics` follows the same ruling, and is why that row counts rather than quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
-is found through `${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block
-reaches — so this command never establishes that. Refusing a marker id that a grammar bounds and
-a cap limits, while printing an unbounded free-text `error` from a file of unknown provenance,
-would not be a policy. The row reports how many records are logged and how many sessions were
+`diagnostics` follows the same ruling, and is why that row counts rather than quotes. Its three
+fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log is found through
+`${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block reaches — so this
+command never establishes that. The row reports how many records are logged and how many sessions were
 seen, and the remedy names the file by its variable; you open it yourself. A record is a hook
 failure, an answer the output cap cut, or a session that ran without some of its configuration
 (`config-fallback`), and the count does not tell them apart: which one a line is lies in its
