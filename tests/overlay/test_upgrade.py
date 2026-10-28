@@ -126,6 +126,12 @@ def test_the_two_permission_files_are_asked_about_even_when_unchanged(tmp_path: 
     assert set(decisions) == {"common/claude/permissions.json", "common/claude/hooks.json"}
 
 
+def test_an_upgrade_of_a_fresh_overlay_plans_nothing(tmp_path: Path) -> None:
+    # The overlay this release renders is what this release would upgrade it to, so the first
+    # upgrade after a render has nothing to do; the case below relies on that.
+    assert upgrade(_an_overlay(tmp_path), dry_run=True).plan.actions == ()
+
+
 def test_a_dry_run_writes_nothing_where_a_real_run_would(tmp_path: Path) -> None:
     # Non-vacuous on purpose: on a freshly created overlay the plan carries no action, so a dry
     # run and a real run both write nothing and `if not dry_run:` could be deleted unnoticed.
