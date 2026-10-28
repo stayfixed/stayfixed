@@ -31,8 +31,8 @@ concurrency:
 
 jobs:
   # What a change reaches: `ci.yml`'s job of the same name, byte for byte, which says why. Neither
-  # leg below has anything of its own to judge in a change to `docs/` alone, which ships in no
-  # plugin tree, so on one both legs start, skip every step and report.
+  # leg below has anything of its own to judge in a change to documents or Python comments alone,
+  # so on one both legs start, skip every step and report.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -43,17 +43,14 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
-      - name: Whether the change reaches outside docs
+      - name: Whether the change reaches code
         id: scope
         env:
           EVENT: ${{ github.event_name }}
         run: |
           code=true
           if [ "$EVENT" = pull_request ]; then
-            changed="$(git diff --no-renames --name-only HEAD^1 HEAD)"
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^docs/'; then
-              code=false
-            fi
+            code="$(python3 -I scripts/ci_scope.py HEAD^1 HEAD)"
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
