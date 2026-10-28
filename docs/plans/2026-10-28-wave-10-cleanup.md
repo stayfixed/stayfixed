@@ -582,3 +582,32 @@ Written by each wave's controller when its pull request merges: the head sha, th
   had kept them. Minors 134-F2 and F3 are deferred.
 - **Outside scope, for the owner's design-rule pass:** `check.yml`'s `base:` disagreement refusal
   and its `path:` character refusal rest on the caller-file anchor.
+
+### Wave C — CL8, #138, branch `cleanup/frontmatter-walk`, code head `c32b4ce`
+
+- **Stacking:** by the owner's ruling, this wave is stacked on Wave A.
+- **Net vs Wave A's head:** 22 files, +470/−4676 (src +99/−1298, tests +72/−1459, mutations
+  +279/−1810, docs +20/−109). The oracle went from 2649 to 2515 after the merges.
+- **Departures:** a cascade into `src/stayfixed/scaffold/entries.py` (`Walked.places`, `hidden` and the positions
+  lost their only reader). `_UNCHECKED` is now a warning everywhere. `hook-entries` can no longer be
+  red. `DOCTOR_LAUNCHES` is 13 and `LAUNCHES_FLOOR` is 70.
+- **Security scan:** an automated scan called the removal a security regression. The refuse/delete
+  seat refuted it: the adversary leaves the marker off, and the anchor is Claude Code's project
+  trust.
+- **Ruling (Important, against the plan's first Task 5 Interfaces):** the stayfixed/foreign split is
+  deleted. No current release writes a `# stayfixed:` marker, so "counted as stayfixed's" vouched
+  for a forged entry. The fix is `b22c4b9`, which also fixed the stale "red / walk / position"
+  prose. The re-review found every fix addressed. The plan's final review (B1) reached the same
+  direction independently, and Task 5 was amended to it.
+- **The lane's review (138-F1), the owner's ruling:** what is left of `hook-entries` is one total
+  across the settings files that names no file and says "all accounted for" for any entry that
+  parses, so a clone's committed `curl … | sh` reads as reassurance; `assess`'s `foreign-hooks`
+  already names committed entries file by file. The row is deleted in Wave D, so `doctor`'s count
+  changes once. That deletion carries 138-F2 (the deleted test of a count above one), F5–F7 (the
+  row's docs, the `foreign-hooks` text that still speaks of `doctor`, and `skills/doctor/SKILL.md`'s
+  "every hook entry with its provenance"), and the orphaned `COMMITTED` and `_settings_entries`.
+- **Deferred:** 138-F3, F4, F8 and F9 where Wave D's deletion does not reach them.
+- **For the owner:** `src/stayfixed/assess/probes.py`'s `foreign-hooks` docstring is now stale. The file is
+  untouched, as the plan says.
+- **Merged dev `17e5c26` (#137, #129):** `mutations/doctor.toml` had a conflict, resolved by keeping
+  dev's `src/stayfixed/doctor/model.py` entries.
