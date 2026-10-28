@@ -252,5 +252,4 @@ def test_a_machine_with_an_overlay_and_no_stayfixed_toml_is_red_about_nothing(
     machine = _recorded_overlay(tmp_path, ">=99.0.0")
     report = run_checks_for(tmp_path, root, machine=machine)
     assert row(report, "overlay-requires").status == WARN
-    assert row(report, "hook-entries").status != RED, row(report, "hook-entries")
     assert not [check.name for check in report if check.status == RED]

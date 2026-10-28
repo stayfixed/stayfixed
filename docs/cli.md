@@ -1262,7 +1262,7 @@ A row names no finding: `assess` lists them as items.
 | `todo-markers` | tracked files under `[ledger] code_roots` | advice | 1 | a `TODO`, `FIXME` or `XXX` word; `where` names files |
 | `tracked-env` | the git index | warning | — | a tracked file named `.env` or `.env.<x>`, except `.example`, `.sample` and `.template` |
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
-| `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file, and the probe has no grant to vouch for one with |
+| `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
 | `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line that does not start with `#` holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
@@ -3010,10 +3010,10 @@ which name a write this run does not make; `1` for a `HOME` that is empty with n
 
 ## `stayfixed doctor [--json] [--root PATH] [--home PATH] [--machine PATH]`
 
-Fifteen checks over one installation. It **reports and never repairs**: every finding
+Fourteen checks over one installation. It **reports and never repairs**: every finding
 carries the command that would fix it, and not one of them is run for you. Nothing is written.
 
-The rows come in a fixed order: the installation's own ten first, then the five about the
+The rows come in a fixed order: the installation's own nine first, then the five about the
 private layer — the binding's (`attached`), memory's (`bundles`, `memory`) and the
 private overlay's (`pre-commit`, `overlay-requires`). Match a row by its `name`, never by its
 position.
@@ -3057,7 +3057,6 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and memory stays the coding agent's own, and that `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr or cannot be run; under a root the environment named, which it never runs, red when the wrapper is not executable and a skip otherwise; a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of; under a named root, `hooks/run-hook.sh`'s mode |
-| `hook-entries` | how many hook entries the settings files hold, with no claim about who wrote them, and every settings file it could not read or check | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each personal value, guard switch, preference and session budget a session resolves, with the layer its value came from — the preset, the repository, the overlay's common file (`overlay common`), its file for the project this checkout is bound to (`overlay project`) or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; then, as information that never changes the row's status, every note reading the overlay's layers gave — no overlay recorded, a file not there or not loading, a key it cannot use or may not set; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the overlay's two `stayfixed.toml` files, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -3189,27 +3188,7 @@ what the owner needs to find it: at most three names, one outside the path gramm
 one inside it clipped at 120 characters, then a count of the rest, so the row stays short however
 many keys the file holds and however long their names are.
 
-`hook-entries` is where that bites, because its job is to read every entry. It counts them and
-names settings files by their paths, never an entry by anything it holds. It says nothing of who
-wrote an entry: no stayfixed writes one carrying the marker, so a marker is the file's word alone,
-and whoever can plant one can write the file. A settings file that exists and cannot be read as
-hook entries is reported by path as `warn`, never skipped: this is the one check whose whole
-purpose is that nobody's entries go unlisted, so "all accounted for" must never mean "could not
-look". One that is valid JSON nested deeper than Python's parser follows is reported by path as a
-`warn` too: a harness may still read it, as Claude Code does, so the hooks in it may run, and
-nothing here can check them. A number longer than Python converts to an integer is read as its
-text, and the entries beside it are counted as usual. So is a file that opens with a UTF-8 byte-order mark, and one whose `hooks` section holds,
-beside valid entries, a value that is not a list where an event's list goes, a group that is not an
-object, a group whose `hooks` is not a list, or an entry that is not an object: Claude Code 2.1.288
-still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are counted
-like any other. Where such a misplaced value is itself an object or a list, which could hold a
-command, the file is also reported as one that could not be read, since that shape was not
-measured, and so is an entry object where a group goes: whether a harness runs a command there is
-not known. Only Claude Code's settings files are read this way: `.codex/hooks.json`, which no measurement covers,
-is read as strictly as the merge that rewrites it.
-
-`diagnostics` is the same ruling in the other direction, and is why that row counts rather than
-quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
+`diagnostics` follows the same ruling, and is why that row counts rather than quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log
 is found through `${CLAUDE_PLUGIN_DATA}` — the same environment class a committed `env` block
 reaches — so this command never establishes that. Refusing a marker id that a grammar bounds and
 a cap limits, while printing an unbounded free-text `error` from a file of unknown provenance,

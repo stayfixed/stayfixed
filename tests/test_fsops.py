@@ -525,9 +525,8 @@ def test_no_module_but_fsops_says_an_error_by_its_strerror() -> None:
 def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_callers(
     tmp_path: Path,
 ) -> None:
-    # The probe `doctor`'s `hook-entries` walk and `attach`'s ledger reader share: a path that
-    # names no file is `False` for both, and a path neither can ask about is raised, because one
-    # calls it a file it is blind to and the other an unreadable ledger.
+    # The probe `attach`'s ledger reader asks: a path that names no file is `False`, and a path it
+    # cannot ask about is raised, because the reader calls it an unreadable ledger.
     regular = tmp_path / "regular"
     regular.write_text("{}", encoding="utf-8")
     assert fsops.names_regular_file(regular) is True
@@ -535,9 +534,9 @@ def test_a_path_names_a_regular_file_or_no_file_and_any_other_fault_is_the_calle
     (tmp_path / "to-regular").symlink_to(regular)
     assert fsops.names_regular_file(tmp_path / "to-regular") is True
     # Names no file: nothing there, a dangling link, a loop, a component that is not a directory,
-    # and something that is not a regular file. Mutations (oracle): `mutations/`'s "hook-entries
-    # is blind to a settings path that names no file" -> the first four raise; "hook-entries reads
-    # a settings path that is no regular file" -> the directory answers `True`.
+    # and something that is not a regular file. Mutations (oracle): `mutations/`'s "the
+    # regular-file probe is blind to a path that names no file" -> the first four raise; "the
+    # regular-file probe reads a path that is no regular file" -> the directory answers `True`.
     (tmp_path / "dangling").symlink_to(tmp_path / "nothing-here")
     (tmp_path / "loop").symlink_to(tmp_path / "loop")
     (tmp_path / "directory").mkdir()

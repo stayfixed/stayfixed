@@ -921,7 +921,7 @@ reddens = [
 
 # The attach ledger is a file a clone can commit, and its readers catch the reader's own `Failure`
 # and `Refusal`. A shape `attach` never writes that raised anything else reached `doctor`'s guard,
-# and `attached` and `hook-entries` read red, "this check could not run", on a file the repository
+# and `attached` read red, "this check could not run", on a file the repository
 # chose: a `store` holding a NUL, which `Path.resolve` meets with `ValueError`, one holding a
 # character no path can spell, which it meets with `UnicodeEncodeError`, and a list field holding a
 # number, which iterating it meets with `TypeError`.
@@ -1182,8 +1182,7 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_doctor_cannot_ask_about_leaves_the_attached_row_its_own_answer[its-directory]",
 ]
 
-# `attached` asks whether there is a ledger the way `hook-entries` does, through the one reading
-# `register()` shares between them. Asked with `is_file()`, a ledger behind a link to a name longer
+# `attached` asks whether there is a ledger through the reading `register()` creates. Asked with `is_file()`, a ledger behind a link to a name longer
 # than a file name may be raised on Python 3.11 to 3.13, and `_guarded`'s warning stood in for the
 # row; on 3.14 the row said the ledger does not exist.
 [[mutation]]
@@ -1547,8 +1546,8 @@ reddens = [
   "tests/hooks/test_floor.py::test_project_handlers_speak_on_a_file_and_stay_silent_without_one[overlay_status]",
 ]
 
-# With no project configuration the `attached` row skips in the core's words, and the claims
-# `hook-entries` asks answer what `common/` grants, since a binding needs the project's name.
+# With no project configuration the `attached` row skips in the core's words, since a binding
+# needs the project's name.
 [[mutation]]
 name = "the attached row reads a configuration that is not there"
 file = "src/stayfixed/attach/doctor.py"

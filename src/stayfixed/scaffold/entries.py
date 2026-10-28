@@ -211,44 +211,23 @@ def owned_ids(document: str) -> dict[str, str]:
     }
 
 
-@dataclass(frozen=True)
-class Placed:
-    """One hook entry where a harness reads it, by its command: the marker is read off it, and it
-    is the one field `doctor` and `assess` read. Never printed: a command is bytes a repository
-    chose."""
-
-    command: str
-
-
-def placed_entries(document: str) -> list[Placed]:
-    """Every hook entry in the document, in document order, **one element per entry**: what
-    `doctor` counts.
-
-    One per entry and not one per readable command, and never keyed by id: two entries sharing
-    one id are two entries. So an entry whose `command` is absent, or is neither a string nor an
-    integer, is still one and contributes `""`; an integer, which the walk reads as its text,
-    contributes that text. Either is one `marker_id` reads as unmarked — which it certainly is.
-    Refuses what `owned_ids` refuses, read by the same walk.
+def entry_count(document: str) -> int:
+    """How many hook entries the document holds, **one per entry**, never keyed by id: two
+    entries sharing one id are two, and an entry with no readable command is one too. Refuses
+    what `owned_ids` refuses, read by the same walk.
     """
-    return [_placed(entry) for _, _, entry in _read_entries(document)]
-
-
-def _placed(entry: dict[str, Any]) -> Placed:
-    """One entry as `Placed` holds it, for every walk, so `placed_entries` and `live_entries`
-    read an entry in the same terms."""
-    command = entry.get("command")
-    return Placed(command if isinstance(command, str) else "")
+    return sum(1 for _ in _read_entries(document))
 
 
 @dataclass(frozen=True)
 class Walked:
     """What a walk for live hook entries read out of a settings document.
 
-    `entries` holds each entry it read, in document order. `partly` is whether it skipped a part
-    that could hold a command.
+    `entries` is how many entries it read. `partly` is whether it skipped a part that could hold
+    a command.
     """
 
-    entries: tuple[Placed, ...]
+    entries: int
     partly: bool
 
 
@@ -268,18 +247,18 @@ def _admitted(value: object, kind: type, skipped: list[object]) -> bool:
 
 
 def live_entries(document: str) -> Walked:
-    """Every hook entry a harness runs out of the document, as `placed_entries` places it.
+    """How many hook entries a harness runs out of the document, counted as `entry_count` counts.
 
-    `placed_entries` reads as strictly as `apply_entries` writes, because a merge must not rewrite
+    `entry_count` reads as strictly as `apply_entries` writes, because a merge must not rewrite
     a shape it cannot read; that is the wrong question for which entries are live. What is
     skipped is `_admitted`'s rule. One shape more is set aside without a measurement: an object
     where a group goes that carries a `command` or a `type`, as an entry does, and no `hooks` list
     -- a reader may run it as an entry, so it is kept with the skipped parts. Refuses what
-    `placed_entries` refuses above the events -- a document that is not a JSON object, and a
+    `entry_count` refuses above the events -- a document that is not a JSON object, and a
     `hooks` that is not an object -- which was not measured either.
     """
     raw = _entry_document(document)
-    found: list[Placed] = []
+    found = 0
     skipped: list[object] = []
     for groups in _hooks_table(raw).values():
         if not _admitted(groups, list, skipped):
@@ -294,8 +273,8 @@ def live_entries(document: str) -> Walked:
                 continue
             for entry in entries:
                 if _admitted(entry, dict, skipped):
-                    found.append(_placed(entry))
-    return Walked(tuple(found), bool(skipped))
+                    found += 1
+    return Walked(found, bool(skipped))
 
 
 def judged_entries(document: str, *, lenient: bool) -> Walked:
@@ -303,14 +282,12 @@ def judged_entries(document: str, *, lenient: bool) -> Walked:
 
     `lenient` for a file a harness was measured running partly malformed (`harnesses.
     LENIENT_SETTINGS`): `live_entries`, past a leading byte-order mark. Otherwise the strict
-    `placed_entries`, which refuses every shape the merge would, so it skips nothing. One
-    spelling, for `doctor`'s `hook-entries` and `assess`'s `foreign-hooks`, so the two never
-    give two answers about one file; and, strict, for `attach --check`'s reading of the settings
-    file `attach` merges into, which must refuse what the merge refuses.
+    `entry_count`, which refuses every shape the merge would, so it skips nothing. `assess`'s
+    `foreign-hooks` reads by it.
     """
     if lenient:
         return live_entries(lenient_settings(document))
-    return Walked(tuple(placed_entries(document)), partly=False)
+    return Walked(entry_count(document), partly=False)
 
 
 def owned(document: str) -> str:

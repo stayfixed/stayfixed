@@ -2076,8 +2076,7 @@ reddens = [
 
 # A document nested past what `json.loads` follows raises `RecursionError` on every supported
 # Python, and every caller of the shared reader catches its refusal and nothing else: the settings
-# engine's (`doctor`'s `hook-entries` read "this check could not run" and `attach` ended in an
-# internal error), `attach`'s reader of the settings file it merges into, and its reader of the
+# engine's (`attach` ended in an internal error), `attach`'s reader of the settings file it merges into, and its reader of the
 # ledger it wrote (`doctor` warns and `attach` and `detach` fail before they write), each on a file
 # a clone can commit. One line serves all three readers, so one entry names a test of each.
 [[mutation]]
@@ -2095,7 +2094,6 @@ after = """
 """
 reddens = [
   "tests/scaffold/test_entries.py::test_a_document_nested_past_the_parsers_reach_refuses_as_one_past_a_limit",
-  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.json]",
   "tests/attach/test_write.py::test_a_settings_file_nested_past_the_parsers_reach_is_refused",
   "tests/attach/test_doctor.py::test_a_committed_ledger_of_a_shape_attach_never_writes_reads_as_unreadable[nested]",
   "tests/attach/test_write.py::test_a_ledger_nested_past_the_parsers_reach_is_a_failure_and_never_an_internal_error",
@@ -2105,8 +2103,7 @@ reddens = [
 # The same document holding an integer literal longer than the interpreter converts: `json.loads`
 # raises a plain `ValueError`, which is neither of the two errors above. Each reader refuses it as
 # it refuses the nesting — a committed ledger holding one read red, "this check could not run", in
-# `doctor`'s `attached` and `hook-entries` rows — and `owned_ids` reads the number as its text,
-# below, so `doctor` never meets it in a settings file.
+# `doctor`'s `attached` row — and `owned_ids` reads the number as its text, below.
 [[mutation]]
 name = "the JSON object reader lets a number past the parser's reach raise"
 file = "src/stayfixed/jsonobject.py"
@@ -2408,36 +2405,32 @@ reddens = [
 ]
 
 # `fsops.names_regular_file` is the one place a path that names no file is told from one that cannot
-# be asked about, for `hook-entries`' walk over settings files and for `attach`'s ledger reader, so
-# one entry per decision proves it for both. A path a clone can commit that names no file -- nothing
-# there, a dangling link, a loop -- is skipped by the walk and is no ledger to the reader: there is
-# nothing there for a harness to read either. Neither reader may call it one it cannot read.
+# be asked about, for `attach`'s ledger reader. A path a clone can commit that names no file --
+# nothing there, a dangling link, a loop -- is no ledger to the reader, and the reader may not call
+# it one it cannot read.
 [[mutation]]
-name = "hook-entries is blind to a settings path that names no file"
+name = "the regular-file probe is blind to a path that names no file"
 file = "src/stayfixed/fsops.py"
 before = "        if exc.errno in NAMES_NO_FILE:"
 after = "        if False:"
 reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-dangling-link]",
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-link-loop]",
   "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-dangling-link]",
   "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-link-loop]",
 ]
 
 # Something other than a regular file -- a directory -- names no file to read, whichever reader asks.
 [[mutation]]
-name = "hook-entries reads a settings path that is no regular file"
+name = "the regular-file probe reads a path that is no regular file"
 file = "src/stayfixed/fsops.py"
 before = "    return stat.S_ISREG(mode)"
 after = "    return True"
 reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_path_that_names_no_file_is_skipped_as_before[a-directory]",
   "tests/attach/test_doctor.py::test_a_ledger_path_that_names_no_file_is_no_ledger_as_before[a-directory]",
 ]
 
 # Any other fault is the caller's to classify, and the probe raises it rather than answering for
 # the caller: read as no file, a symbolic link to a name longer than a file name may be hides a
-# settings file from `hook-entries` and a ledger from `attached`.
+# ledger from `attached`.
 [[mutation]]
 name = "the regular-file probe reads a path it cannot ask about as no file"
 file = "src/stayfixed/fsops.py"

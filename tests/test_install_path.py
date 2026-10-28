@@ -193,7 +193,7 @@ def _cli(walk: Walkthrough, *argv: str) -> subprocess.CompletedProcess[str]:
 
 
 def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, str]]:
-    """The fifteen rows, read back out of what `doctor --json` printed on the launcher's
+    """The fourteen rows, read back out of what `doctor --json` printed on the launcher's
     stdout."""
     done = _cli(
         walk,
@@ -208,7 +208,7 @@ def _doctor(walk: Walkthrough, *, root: Path | None = None) -> list[dict[str, st
     )
     assert done.stdout, done.stderr
     rows: list[dict[str, str]] = json.loads(done.stdout)["checks"]
-    assert len(rows) == 15, rows
+    assert len(rows) == 14, rows
     return rows
 
 
@@ -544,8 +544,8 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # resolution asks `git` for the checkout's `origin`. So `attached` and the store's two rows ask
 # it once each, where one shared context used to ask it once for all three.
 #
-# Six and not five since `hook-entries` asks git's index which files below the root a nested
-# `.claude/skills` holds, in place of walking the whole tree.
+# Six and not five since the hook-entries row asked git's index which files below the root a
+# nested `.claude/skills` held, in place of walking the whole tree.
 #
 # Seven and not six since the `attached` row asks git which checkout owns this one wherever its
 # answer turns on the owning checkout's store or `paths.memory` — every shape of the harness memory
@@ -581,8 +581,9 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # `autoMemoryDirectory`: it asks whether this checkout is a registered worktree (its common and its
 # own git directory) to read the main checkout's settings file, which a linked worktree reads too.
 #
-# Thirteen and not fourteen since `hook-entries` no longer walks for skills, commands and agents,
-# whose walk asked git's index for the nested skills directories.
+# Thirteen and not fourteen since the hook-entries row no longer walked for skills, commands and
+# agents, whose walk asked git's index for the nested skills directories; deleting the row, which
+# asked git nothing by then, moved nothing.
 DOCTOR_LAUNCHES = 13
 
 
