@@ -1132,7 +1132,12 @@ def _withdraw_plugin(
     each where `held` says that checkout's settings file names it; then read the file again and
     stop with `STILL_NAMED` while a name under either key names a `stayfixed-delivery-`
     marketplace, which needs no id. The file decides, never the exit codes: what must hold before
-    the exclude block goes is that the file names no delivery."""
+    the exclude block goes is that the file names no delivery.
+
+    The calls leave the two keys behind, emptied. A file holding those and nothing else is one the
+    delivery alone filled, and it goes here: kept, it is the trace `git status` shows once the
+    exclude block is gone, in a checkout no global exclude hides it in. A file holding anything
+    more stays as it is."""
     if id is not None:
         plugin = f"{plugin_name(id)}@{marketplace_name(id)}"
         if plugin in held[ENABLED_PLUGINS]:
@@ -1143,6 +1148,12 @@ def _withdraw_plugin(
     left = [key for key, names in named if any(MARKETPLACE_PREFIX in name for name in names)]
     if left:
         raise Failure(STILL_NAMED.format(keys=", ".join(f"`{key}`" for key in left)))
+    document = settings_document(local_document(main))
+    if document and all(
+        key in (ENABLED_PLUGINS, KNOWN_MARKETPLACES) and value == {}
+        for key, value in document.items()
+    ):
+        fsops.remove_within(main, LOCAL_SETTINGS)
 
 
 def _remove_render(directory: Path) -> None:

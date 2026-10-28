@@ -119,12 +119,6 @@ def _installed(root: Path, store: Path, machine: Path) -> None:
     attach(root, store=store, machine=machine, runner=runner)
 
 
-def _plugin_keys(root: Path) -> list[str]:
-    """Every key of the settings file's two plugin maps, the entries that name the binding id."""
-    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
-    return [*document.get("enabledPlugins", {}), *document.get("extraKnownMarketplaces", {})]
-
-
 def test_detach_withdraws_the_rendered_plugin_and_keeps_the_binding(tmp_path: Path) -> None:
     # The plugin runs from its render directory in place, so the directory goes and Claude Code is
     # told to forget the plugin and its marketplace, each once, from the main checkout whose
@@ -156,7 +150,7 @@ def test_detach_withdraws_the_rendered_plugin_and_keeps_the_binding(tmp_path: Pa
         ),
         (["claude", "plugin", "marketplace", "remove", f"stayfixed-delivery-{id}"], root.resolve()),
     ]
-    assert _plugin_keys(root) == []
+    assert not (root / SETTINGS).exists()
     assert binding.read_id(root) == id
     found = binding.bound_project(root)
     assert found is not None and found.project == "p"
@@ -178,8 +172,38 @@ def test_detach_with_the_render_directory_gone_still_asks_claude_code_to_forget_
     runner = Recorder(on_call=claude_code(root))
     _detach(root, runner)
     assert [argv[2] for argv in runner.calls] == ["uninstall", "marketplace"]
-    assert _plugin_keys(root) == [] and not _exclude_block(root)
-    assert git(root, "status", "--porcelain", "-uall").strip() == "?? .claude/settings.local.json"
+    assert not (root / SETTINGS).exists() and not _exclude_block(root)
+    assert git(root, "status", "--porcelain", "-uall").strip() == ""
+
+
+def test_a_round_trip_through_claude_codes_calls_leaves_the_checkout_as_it_was(
+    tmp_path: Path,
+) -> None:
+    # Claude Code's two calls leave `enabledPlugins` and `extraKnownMarketplaces` behind, emptied,
+    # in the settings file `attach` made. Kept, that file was the one trace `git status` showed
+    # once the exclude block went, in a checkout no global exclude hides it in. Mutation (oracle):
+    # `mutations/`'s "detach keeps the settings file Claude Code's calls emptied".
+    root, store, machine = _bound(tmp_path)
+    before = snapshot(root)
+    _installed(root, store, machine)
+    assert_snapshot_changed(root, before)
+    _detach(root, Recorder(on_call=claude_code(root)))
+    assert_snapshot_unchanged(root, before)
+    assert git(root, "status", "--porcelain", "-uall").strip() == ""
+
+
+def test_a_settings_file_holding_anything_besides_the_emptied_maps_stays(tmp_path: Path) -> None:
+    # A key of the owner's own, written beside the plugin's entries while attached, keeps the
+    # file: only what Claude Code's calls leave goes. Mutation (oracle): `mutations/`'s "detach
+    # removes a settings file whatever it holds".
+    root, store, machine = _bound(tmp_path)
+    _installed(root, store, machine)
+    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    document["model"] = "opus"
+    (root / SETTINGS).write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    _detach(root, Recorder(on_call=claude_code(root)))
+    kept = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
+    assert kept == {"enabledPlugins": {}, "extraKnownMarketplaces": {}, "model": "opus"}
 
 
 def test_a_ledger_naming_another_directory_deletes_nothing_outside_the_delivery_directory(
