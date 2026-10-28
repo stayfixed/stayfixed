@@ -221,22 +221,21 @@ class Placed:
 
 
 def placed_entries(document: str) -> list[Placed]:
-    """Every hook entry in the document where it is, in document order, **one element per entry**
-    — `doctor`'s provenance.
+    """Every hook entry in the document, in document order, **one element per entry**: what
+    `doctor` counts.
 
     One per entry and not one per readable command, and never keyed by id: two entries sharing
-    one id are two entries, and the report counts each. So an entry
-    whose `command` is absent, or is neither a string nor an integer, still occupies its place and
-    contributes `""`; an integer, which the walk reads as its text, contributes that text. Either
-    is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
-    refuses, read by the same walk.
+    one id are two entries. So an entry whose `command` is absent, or is neither a string nor an
+    integer, is still one and contributes `""`; an integer, which the walk reads as its text,
+    contributes that text. Either is one `marker_id` reads as unmarked — which it certainly is.
+    Refuses what `owned_ids` refuses, read by the same walk.
     """
     return [_placed(entry) for _, _, entry in _read_entries(document)]
 
 
 def _placed(entry: dict[str, Any]) -> Placed:
-    """One entry as `Placed` holds it: one place for every walk, so `placed_entries` and
-    `live_entries` read an entry in the same terms."""
+    """One entry as `Placed` holds it, for every walk, so `placed_entries` and `live_entries`
+    read an entry in the same terms."""
     command = entry.get("command")
     return Placed(command if isinstance(command, str) else "")
 

@@ -3035,7 +3035,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported, and under a root the environment named, where `wrapper` skips, no row reports a missing or edited launcher | `hooks/run-hook.sh` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance: one that claims the stayfixed marker is counted as stayfixed's in whichever file it sits, and where it sits is not judged | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
+| `hook-entries` | how many hook entries the settings files hold, with no claim about who wrote them, and every settings file it could not read or check | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each personal value, guard switch, preference and session budget a session resolves, with the layer its value came from — the preset, the repository, the overlay's common file (`overlay common`), its file for the project this checkout is bound to (`overlay project`) or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; then, as information that never changes the row's status, every note reading the overlay's layers gave — no overlay recorded, a file not there or not loading, a key it cannot use or may not set; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the overlay's two `stayfixed.toml` files, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -3165,11 +3165,10 @@ what the owner needs to find it: at most three names, one outside the path gramm
 one inside it clipped at 120 characters, then a count of the rest, so the row stays short however
 many keys the file holds and however long their names are.
 
-`hook-entries` is where that bites, because its job is to count every entry with its
-provenance. It counts entries, never ids, so two entries claiming one id are two, and it names
-settings files by their paths, never an entry by anything it holds. An entry claiming the marker
-is counted as stayfixed's in whichever file it sits; where it sits is not judged, since whoever can
-plant one in a settings file can write the file. A settings file that exists and cannot be read as
+`hook-entries` is where that bites, because its job is to read every entry. It counts them and
+names settings files by their paths, never an entry by anything it holds. It says nothing of who
+wrote an entry: no stayfixed writes one carrying the marker, so a marker is the file's word alone,
+and whoever can plant one can write the file. A settings file that exists and cannot be read as
 hook entries is reported by path as `warn`, never skipped: this is the one check whose whole
 purpose is that nobody's entries go unlisted, so "all accounted for" must never mean "could not
 look". One that is valid JSON nested deeper than Python's parser follows is reported by path as a

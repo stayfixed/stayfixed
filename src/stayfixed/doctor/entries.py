@@ -1,4 +1,4 @@
-"""The `hook-entries` row: every hook entry in every settings file, with its provenance.
+"""The `hook-entries` row: how many hook entries every settings file holds.
 
 A core check, listed in `checks.CHECKS` and asked through the run's guard like the others. The walk
 over the settings files and the sentences each kind of finding is told in are one unit that no
@@ -19,7 +19,7 @@ from stayfixed.errors import Refusal
 from stayfixed.findings import listed
 from stayfixed.fsops import names_regular_file, read_regular_bytes
 from stayfixed.harnesses import CLAUDE, HARNESSES, LENIENT_SETTINGS
-from stayfixed.scaffold import ParserLimitError, judged_entries, marker_id
+from stayfixed.scaffold import ParserLimitError, judged_entries
 
 # Every file a hook entry can be installed into, as a path relative to a root: each harness's
 # committed settings files and the ones it keeps out of git, read off the harness registry, so a
@@ -98,11 +98,10 @@ def _gathered(found: Sequence[tuple[_Kind, str]]) -> list[_Finding]:
     return gathered
 
 
-def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
-    """How many entries claim the marker, how many are foreign, and every finding about them."""
+def _classify(context: Context) -> tuple[int, list[_Finding]]:
+    """How many entries the settings files hold, and every finding about them."""
     found: list[tuple[_Kind, str]] = []
-    claimed = 0
-    foreign = 0
+    counted = 0
     walked = [(context.root, relative, relative) for relative in SETTINGS_FILES]
     if context.home is not None:
         walked.append((context.home, USER_SETTINGS, _MACHINE_LABEL))
@@ -119,11 +118,11 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
         if not regular:
             continue
         try:
-            # Replaced rather than refused: the marker and every command it marks are ASCII, so a
-            # byte that is not UTF-8 elsewhere in the file changes no entry's verdict. Read by
-            # `fsops`' one bounded reader, which every reader of a committed file goes through,
-            # here at the regular-file cap, so a file that never ends, or one swapped for a device
-            # after the question above, is one this walk cannot read.
+            # Replaced rather than refused: a byte that is not UTF-8 moves no entry, and the count
+            # is all this walk reads out of the file. Read by `fsops`' one bounded reader, which
+            # every reader of a committed file goes through, here at the regular-file cap, so a
+            # file that never ends, or one swapped for a device after the question above, is one
+            # this walk cannot read.
             document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
             found.append((_BLIND, label))
@@ -141,19 +140,15 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
             continue
         if read.partly:
             found.append((_BLIND, label))
-        for placed in read.entries:
-            if marker_id(placed.command) is None:
-                foreign += 1
-            else:
-                claimed += 1
-    return claimed, foreign, _gathered(found)
+        counted += len(read.entries)
+    return counted, _gathered(found)
 
 
-def _told(claimed: int, foreign: int, findings: Sequence[_Finding]) -> Row:
+def _told(counted: int, findings: Sequence[_Finding]) -> Row:
     """The row for `findings`: every finding's part, in order, after the count; a warning where
     there is any, and "all accounted for" where there is none; and the remedy of every finding at
     the highest step among them, each said once."""
-    parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
+    parts = [f"{counted} hook entr(ies)"]
     parts.extend(finding.kind.tell(finding.wheres) for finding in findings)
     status: Status = WARN if findings else OK
     if status == OK:
@@ -164,17 +159,8 @@ def _told(claimed: int, foreign: int, findings: Sequence[_Finding]) -> Row:
 
 
 def hook_entries(context: Context) -> Row:
-    """Every entry in every settings file, counted by provenance.
-
-    **An entry claiming the stayfixed marker is counted as stayfixed's, wherever it sits.** Where
-    it sits is not judged: the files are this machine's or the repository's, and whoever can plant
-    a marked entry in one can write the file. An entry with no marker is foreign, and every merge
-    this project ships leaves it alone.
-
-    **Entries are counted, never keys.** `scaffold.judged_entries` answers one element per entry,
-    in document order, so N entries sharing one id are N entries and one id under two events is
-    two. The count comes from `marker_id`, the predicate `owned_ids` is built on and the one
-    `attach.write` keys its ledger with.
+    """How many hook entries every settings file holds, with no claim about who wrote them: no
+    stayfixed writes a marked entry, so a marker in one is the file's word alone.
 
     **A file this walk could not read is `blind`, never silently absent.** An `OSError` on the
     read, a document that will not parse or is not an object, a `hooks` that is not an object, and
@@ -193,8 +179,8 @@ def hook_entries(context: Context) -> Row:
     which may hold a command, leaves the file `blind` as well as counting the entries beside it.
 
     **A byte that is not UTF-8 does not make a file `blind`.** The file is decoded with each such
-    byte replaced, because the marker and the commands it marks are ASCII, so the entries in it
-    are counted as they would be without the byte. In Claude Code's settings files a UTF-8
+    byte replaced, which leaves every entry where it was, so the entries in it are counted as they
+    would be without the byte. In Claude Code's settings files a UTF-8
     byte-order mark ahead of the document is read past: `json.loads` refuses it, and Claude Code
     runs the hooks of such a file (`harnesses.LENIENT_SETTINGS`), so it is no reason to be
     `blind` there. In any other file it still is.

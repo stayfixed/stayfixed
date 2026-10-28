@@ -178,9 +178,9 @@ def utf_8_name(name: str) -> bool:
 # a directory, a symbolic link loop. `Path.is_file()` answers `False` for these, raises most other
 # faults up to Python 3.13 and answers `False` for any from 3.14, and neither will do for a path a
 # clone can commit. A symbolic link to a name longer than a file name may be raises `ENAMETOOLONG`:
-# raised past a caller's catch, it costs a `doctor` row its verdict, so an entry nothing vouches for
-# loses its red beside it; answered `False`, it skips a file that is there. So `stat` is asked,
-# these three are no file, and any other fault is a file the caller cannot read.
+# raised past a caller's catch, it costs a `doctor` row its verdict; answered `False`, it skips a
+# file that is there. So `stat` is asked, these three are no file, and any other fault is a file
+# the caller cannot read.
 NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
 
 

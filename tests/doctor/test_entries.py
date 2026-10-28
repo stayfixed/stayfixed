@@ -1,4 +1,4 @@
-"""`hook-entries`, the core row that lists every hook entry with its provenance:
+"""`hook-entries`, the core row that counts the hook entries in every settings file:
 `stayfixed.doctor.entries`. The row's verdicts over a whole report are
 `tests/doctor/test_checks.py`'s; these cases hold what the module states of itself.
 """
