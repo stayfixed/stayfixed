@@ -33,8 +33,10 @@ from pathlib import Path
 
 from tests.test_neutral import ROOT, tracked_files
 
-# What is never walked. Everything else git tracks is.
-EXEMPT = ("docs/plans", "tests/test_public_anchors.py")
+# What is never walked. Everything else git tracks is. The listing icon is the repository's one
+# binary (`tests/test_neutral.py`'s `UNDECODABLE`): an image cites nothing, and is named here
+# rather than skipped as undecodable, so no other file can leave the walk that way.
+EXEMPT = (".claude-plugin/icon.png", "docs/plans", "tests/test_public_anchors.py")
 
 # Where the plans' bookkeeping arms do not apply: a document may talk about a task or a round in
 # its own sense, and a fixture is a document a test reads, whatever tree it sits in.
@@ -155,9 +157,8 @@ def gated_files() -> list[Path]:
 def scan(root: Path, paths: Iterable[Path]) -> list[str]:
     """Every citation in the files, as `path:line: arm 'text'`, the path relative to `root`."""
     hits: list[str] = []
-    # No `UnicodeDecodeError` handler: the repository ships no binary (`tests/test_neutral.py`
-    # holds that at zero), and a walk that skipped what it could not read would go green by
-    # reading nothing.
+    # No `UnicodeDecodeError` handler: the repository's one binary is exempt by name (`EXEMPT`),
+    # and a walk that skipped what it could not read would go green by reading nothing.
     for path in paths:
         relative = path.relative_to(root).as_posix()
         text = path.read_text(encoding="utf-8")
