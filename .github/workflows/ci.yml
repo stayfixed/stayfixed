@@ -20,24 +20,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # What a change reaches, read once for every job below. A pull request that changes nothing
-  # outside `docs/` runs the suite on one leg, `ubuntu-latest` with 3.13, and skips the rest: the
-  # documents ship in no artifact and no plugin tree (`scripts/plugin_tree.py`'s `PLUGIN_PATHS`),
-  # yet tests read them — `docs/cli.md` is held to the parser, and every tracked file to the
-  # neutrality and anchor guards — so one leg of the suite still runs, and the other legs, the
-  # oracle, the real runners and the plugin validator have nothing of theirs to judge.
+  # What a change reaches, read once for every job below. A pull request that changes only
+  # documents, or Python comments, runs the suite on one leg, `ubuntu-latest` with 3.13, and skips
+  # the rest (`scripts/ci_scope.py` says which paths count): no behaviour changes, yet tests read
+  # them — `docs/cli.md` is held to the parser, every tracked file to the neutrality and anchor
+  # guards, and ruff, mypy and coverage read the comments that steer them — so one leg of the suite
+  # still runs, and the other legs, the oracle, the real runners and the plugin validator have
+  # nothing of theirs to judge. A mutation entry whose text such a change edits fails on the next
+  # pull request that runs the oracle, not on this one.
   #
   # Skipped by step and not by job wherever a check is a matrix leg: branch protection requires
   # each leg by its full name, and every leg here still starts and reports under it. A job skipped
   # by its `if:` reports success, so `oracle`, `runners` and `plugin` skip whole. Every job that
   # reads this one runs unless the run was cancelled and treats any answer but `false` as a change
   # to code, so this job failing, or answering nothing, runs everything: it can only narrow a run
-  # when it says, in so many words, that nothing outside `docs/` changed.
+  # when it says, in so many words, that no code changed.
   #
   # A push (to `main`) runs everything. A pull request's checkout is the merge commit the platform
-  # makes, so its first parent is the base the change is judged against, and `--no-renames` lists a
-  # file moved into `docs/` under the name it left as well as the one it took. A name git quotes
-  # does not begin `docs/` and counts as code. `smoke.yml` carries the same job, byte for byte.
+  # makes, so its first parent is the base the change is judged against. `smoke.yml` carries the
+  # same job, byte for byte.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -48,17 +49,14 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
-      - name: Whether the change reaches outside docs
+      - name: Whether the change reaches code
         id: scope
         env:
           EVENT: ${{ github.event_name }}
         run: |
           code=true
           if [ "$EVENT" = pull_request ]; then
-            changed="$(git diff --no-renames --name-only HEAD^1 HEAD)"
-            if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv '^docs/'; then
-              code=false
-            fi
+            code="$(python3 -I scripts/ci_scope.py HEAD^1 HEAD)"
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
