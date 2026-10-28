@@ -6194,3 +6194,13 @@ after = """    try:
 reddens = [
   "tests/test_fsops.py::test_vacant_raises_for_a_directory_it_cannot_list",
 ]
+
+# A remote's repository name is lower-cased before it is a project's, so `Widget-Kit` is a name.
+[[mutation]]
+name = "attach derives the project's name with its case"
+file = "src/stayfixed/gitenv.py"
+before = "    return segment.lower().removesuffix(\".git\")"
+after = "    return segment.removesuffix(\".git\")"
+reddens = [
+  "tests/attach/test_project_choice.py::test_with_nothing_recorded_the_project_is_the_last_segment_of_origin_lower_cased",
+]

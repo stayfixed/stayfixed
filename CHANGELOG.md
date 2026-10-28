@@ -13,13 +13,21 @@
 
   1. Before upgrading, run `stayfixed detach` in a checkout an earlier release attached from a linked
      worktree: its ledger is that worktree's, which this release no longer reads.
-  2. Upgrade the command with `uv tool upgrade stayfixed`. A plugin added from the marketplace at an
-     earlier release's tag, such as `@v0.3.1`, cannot be added again at the new one (Claude Code
-     refuses a source that differs from the one its settings record), so remove the marketplace,
-     which uninstalls the plugin and its saved options, and add it again:
+  2. Upgrade the command with `uv tool install --force 'stayfixed==0.6.0'`. `uv tool upgrade
+     stayfixed` keeps the version an install was pinned to, so a command installed as
+     `stayfixed==0.3.1` stays at 0.3.1 under it (`~/.local/share/uv/tools/stayfixed/uv-receipt.toml`
+     shows the pin). A plugin added from the marketplace at an earlier release's tag, such as
+     `@v0.3.1`, cannot be added again at the new one (Claude Code refuses a source that differs from
+     the one its settings record), so remove the marketplace, which uninstalls the plugin and its
+     saved options, and add it again:
      `/plugin marketplace remove stayfixed-marketplace`, then
      `/plugin marketplace add stayfixed/stayfixed@v0.6.0` and
      `/plugin install stayfixed@stayfixed-marketplace`.
+     If you installed the overlay itself as a plugin, as 0.3.x's `overlay init` told you to,
+     uninstall it and remove its marketplace too, or its hooks run beside the ones `attach` now
+     delivers: `claude plugin uninstall stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>`,
+     then `claude plugin marketplace remove stayfixed-overlay-marketplace-<owner>`. Keep the
+     overlay's `.claude-plugin/` until every machine that installs from it has moved.
   3. Add `stayfixed-overlay.toml` at the overlay's root, holding `requires = ">=0.1.0"` and
      `layout = 1`, then run `stayfixed overlay upgrade --root <overlay>`, with `--dry-run` first,
      which removes the overlay's retired `hooks/hooks.json` or names it where you edited it.
