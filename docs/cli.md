@@ -3052,7 +3052,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, or an edited wrapper that still runs, is not reported | `hooks/run-hook.sh` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker named by its file and position: red in a file stayfixed writes (`.claude/settings.local.json`, `~/.claude/settings.json`), where it writes no marked entry, and a warning in any other | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
+| `hook-entries` | every hook entry, counted by provenance: one that claims the stayfixed marker is counted as stayfixed's in whichever file it sits, and where it sits is not judged | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each personal value, guard switch, preference and session budget a session resolves, with the layer its value came from — the preset, the repository, the overlay's common file (`overlay common`), its file for the project this checkout is bound to (`overlay project`) or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; then, as information that never changes the row's status, every note reading the overlay's layers gave — no overlay recorded, a file not there or not loading, a key it cannot use or may not set; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the overlay's two `stayfixed.toml` files, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -3183,34 +3183,24 @@ what the owner needs to find it: at most three names, one outside the path gramm
 one inside it clipped at 120 characters, then a count of the rest, so the row stays short however
 many keys the file holds and however long their names are.
 
-`hook-entries` is where that bites, because its job is to list every entry with its provenance.
-It identifies an entry **by its file and position** — `.claude/settings.local.json entry 3 of 5`
-— which is what a reader needs in order to open it, survives two entries claiming one id, and
-reproduces nothing. Stayfixed writes no marked entry: `attach` delivers the overlay's hooks through
-the plugin it renders, and `setup` writes no hook. So an entry claiming the marker in a file
-stayfixed writes, `.claude/settings.local.json` or `~/.claude/settings.json`, claims what it never
-wrote there and is `red`, with `stayfixed attach` named for the ones an earlier release's attach
-recorded, which it takes back; one in any other file, a committed `.claude/settings.json` or
-`.codex/hooks.json`, is a `warn`, since stayfixed writes nothing there and a red no attach could
-clear would never clear. A settings file that exists and cannot be read as hook entries is reported by path as
-`warn`, never skipped: this is the one check whose whole purpose is that nobody's entries go
-unlisted, so "all accounted for" must never mean "could not look". One that is valid JSON nested
-deeper than Python's parser follows is reported by path, `red` in a file stayfixed writes and a
-`warn` elsewhere: a harness may still read it, as Claude Code does, so the hooks in it may run, and
-nothing here can check them. A number longer
-than Python converts to an integer is read as its text, and the entries beside it are judged as
-usual. So is a file that opens with a UTF-8 byte-order mark, and one whose `hooks` section holds,
+`hook-entries` is where that bites, because its job is to count every entry with its
+provenance. It counts entries, never ids, so two entries claiming one id are two, and it names
+settings files by their paths, never an entry by anything it holds. An entry claiming the marker
+is counted as stayfixed's in whichever file it sits; where it sits is not judged, since whoever can
+plant one in a settings file can write the file. A settings file that exists and cannot be read as
+hook entries is reported by path as `warn`, never skipped: this is the one check whose whole
+purpose is that nobody's entries go unlisted, so "all accounted for" must never mean "could not
+look". One that is valid JSON nested deeper than Python's parser follows is reported by path as a
+`warn` too: a harness may still read it, as Claude Code does, so the hooks in it may run, and
+nothing here can check them. A number longer than Python converts to an integer is read as its
+text, and the entries beside it are counted as usual. So is a file that opens with a UTF-8 byte-order mark, and one whose `hooks` section holds,
 beside valid entries, a value that is not a list where an event's list goes, a group that is not an
 object, a group whose `hooks` is not a list, or an entry that is not an object: Claude Code 2.1.288
-still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are judged
+still ran the valid hooks of each (measured on macOS, 2026-10-05), so those entries are counted
 like any other. Where such a misplaced value is itself an object or a list, which could hold a
 command, the file is also reported as one that could not be read, since that shape was not
-measured; so is an entry object where a group goes, and a command claiming the stayfixed marker
-inside any such part is `red` in a file stayfixed writes and a `warn` elsewhere. That is a conservative reading and not a measurement: whether a
-harness runs a command there is not known. An entry is named by its place in the whole file:
-every element of every group's `hooks` list, in every event, counted in document order, skipped
-scalars included, so `entry 2 of 2` may be the only entry of the second event's list. Only
-Claude Code's settings files are read this way: `.codex/hooks.json`, which no measurement covers,
+measured, and so is an entry object where a group goes: whether a harness runs a command there is
+not known. Only Claude Code's settings files are read this way: `.codex/hooks.json`, which no measurement covers,
 is read as strictly as the merge that rewrites it.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than

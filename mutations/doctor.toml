@@ -64,7 +64,7 @@ reddens = [
 name = "doctor swallows a settings file it could not read instead of reporting it"
 file = "src/stayfixed/doctor/entries.py"
 before = '''        except Refusal:
-            found.append((_BLIND, label, written))'''
+            found.append((_BLIND, label))'''
 after = '''        except Refusal:
             pass'''
 reddens = [
@@ -239,18 +239,6 @@ before = "    @cached_property\n    def overlay_root(self) -> Path | MachineUnre
 after = "    @property\n    def overlay_root(self) -> Path | MachineUnread | None:"
 reddens = [
   "tests/attach/test_doctor.py::test_one_report_resolves_the_overlay_root_once_for_every_area",
-]
-
-# A settings file the walk cannot read is a warning, and the row's status is the most severe of
-# its findings', so the blind file, told last, softens a row with nothing else to say and never a
-# red one. Read off the last finding alone, it turned a file nothing can check into a warning.
-[[mutation]]
-name = "a blind settings file softens a red row"
-file = "src/stayfixed/doctor/entries.py"
-before = "    status: Status = RED if RED in statuses else WARN if statuses else OK"
-after = "    status: Status = findings[-1].kind.status if findings else OK"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_blind_settings_file_keeps_a_file_the_walk_cannot_check_red",
 ]
 
 # An area's `register()` is its own code as its checks are, so it gets their guard: one that raises,
@@ -589,15 +577,14 @@ reddens = [
 
 # A settings file, or the directory holding it, can be committed as a symbolic link to a name longer
 # than a file name may be. Raised past the walk, `ENAMETOOLONG` puts `_guarded`'s warning in place of
-# all of `hook-entries`, so a forged entry beside the link loses its red and the report exits 0; read
-# as no file, the walk skips a file that is there. `fsops.names_regular_file` raises it, and the walk
-# reads such a path as a file it is blind to.
+# all of `hook-entries`; read as no file, the walk skips a file that is there.
+# `fsops.names_regular_file` raises it, and the walk reads such a path as a file it is blind to.
 [[mutation]]
 name = "hook-entries skips a settings file it cannot ask about"
 file = "src/stayfixed/doctor/entries.py"
 before = '''            regular = names_regular_file(path)
         except OSError:
-            found.append((_BLIND, label, written))'''
+            found.append((_BLIND, label))'''
 after = '''            regular = names_regular_file(path)
         except OSError:
             pass'''
@@ -607,16 +594,15 @@ reddens = [
 ]
 
 # Valid JSON nested deeper than Python's parser follows is read by the harness, so the hooks in it
-# may run. A file the walk refuses for that alone is red: read as one it is blind to, a warning,
-# it let a clone commit a marked entry beside such nesting and keep `stayfixed doctor`'s exit code
-# at 0, with or without a ledger, with an overlay recorded or not.
+# may run. A file the walk refuses for that alone is named as one nothing here can check, never as
+# one it could not read.
 [[mutation]]
 name = "hook-entries reads a settings file past the parser's reach as one it is blind to"
 file = "src/stayfixed/doctor/entries.py"
 before = '''        except ParserLimitError:
-            found.append((_UNCHECKED, label, written))'''
+            found.append((_UNCHECKED, label))'''
 after = '''        except ParserLimitError:
-            found.append((_BLIND, label, written))'''
+            found.append((_BLIND, label))'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.local.json]",
   "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[~/.claude/settings.json]",
@@ -629,10 +615,10 @@ name = "hook-entries reads every settings file it cannot read as one it cannot c
 file = "src/stayfixed/doctor/entries.py"
 before = '''            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
-            found.append((_BLIND, label, written))'''
+            found.append((_BLIND, label))'''
 after = '''            document = read_regular_bytes(path).decode("utf-8", errors="replace")
         except OSError:
-            found.append((_UNCHECKED, label, written))'''
+            found.append((_UNCHECKED, label))'''
 reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
 ]
@@ -670,26 +656,13 @@ reddens = [
 name = "hook-entries says nothing of a settings file it could only partly read"
 file = "src/stayfixed/doctor/entries.py"
 before = '''        if read.partly:
-            found.append((_BLIND, label, written))
+            found.append((_BLIND, label))
 '''
 after = '''        if False:
-            found.append((_BLIND, label, written))
+            found.append((_BLIND, label))
 '''
 reddens = [
   "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
-]
-
-[[mutation]]
-name = "hook-entries says nothing of a marked command the walk skipped"
-file = "src/stayfixed/doctor/entries.py"
-before = '''        if read.hidden:
-            found.append((_HIDDEN, label, written))
-'''
-after = '''        if False:
-            found.append((_HIDDEN, label, written))
-'''
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
 ]
 
 # A settings file is read through `fsops`' bounded reader, so one past the cap is a file the walk
@@ -1103,25 +1076,3 @@ reddens = [
   "tests/doctor/test_checks.py::test_an_xdg_config_home_naming_the_database_homes_config_is_not_ignored_with_home_unset",
 ]
 
-# Stayfixed writes no marked entry, so one in a file it writes, `settings.local.json` or the
-# machine's settings file, claims what it never wrote there and is red; one in any other file is a
-# warning, since red there was a row no attach could clear.
-[[mutation]]
-name = "hook-entries reads a marked entry in a file stayfixed writes as a warning"
-file = "src/stayfixed/doctor/entries.py"
-before = "            found.append((_MARKED if written else _MARKED_ELSEWHERE, where, written))"
-after = "            found.append((_MARKED_ELSEWHERE, where, False))"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[.claude/settings.local.json]",
-  "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[~/.claude/settings.json]",
-]
-
-[[mutation]]
-name = "a marked entry in a file stayfixed does not write is red"
-file = "src/stayfixed/doctor/entries.py"
-before = "            found.append((_MARKED if written else _MARKED_ELSEWHERE, where, written))"
-after = "            found.append((_MARKED, where, True))"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[.claude/settings.json]",
-  "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[.codex/hooks.json]",
-]
