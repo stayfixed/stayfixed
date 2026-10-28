@@ -441,6 +441,66 @@ reddens = [
   "tests/hooks/test_wrapper.py::test_a_project_root_that_cannot_be_entered_says_so",
 ]
 
+# With no usable `python3` every entry said why on stderr alone, which nobody reads on a `0`, and
+# stayfixed was off with nothing said. The entry that dispatches `SessionStart` says it to the
+# person and the model; the six memory entries on that event, and every tool event, stay silent.
+[[mutation]]
+name = "every entry says the hooks are off, not only the dispatching SessionStart"
+file = "hooks/run-hook.sh"
+before = '  if test "$call" = "hook SessionStart"; then'
+after = '  if :; then'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_every_other_entry_stays_silent_without_a_usable_python[memory-session-context]",
+  "tests/hooks/test_wrapper.py::test_every_other_entry_stays_silent_without_a_usable_python[hook-pretooluse]",
+]
+
+[[mutation]]
+name = "no python3 on PATH leaves the session unaware that stayfixed is off"
+file = "hooks/run-hook.sh"
+before = '|| off "" "no python3 on PATH"'
+after = '|| skip "no python3 on PATH"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_dispatching_session_start_says_the_hooks_are_off[no-python3]",
+]
+
+[[mutation]]
+name = "a python3 below the floor leaves the session unaware that stayfixed is off"
+file = "hooks/run-hook.sh"
+before = '  off "$python" "$python is not python 3.11 or newer"'
+after = '  skip "$python is not python 3.11 or newer"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_dispatching_session_start_says_the_hooks_are_off[below-the-floor]",
+]
+
+[[mutation]]
+name = "the hooks-off line stops reaching the person"
+file = "hooks/run-hook.sh"
+before = '{"systemMessage": "%s", '
+after = '{"systemMessag": "%s", '
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_dispatching_session_start_says_the_hooks_are_off[no-python3]",
+]
+
+[[mutation]]
+name = "the hooks-off line stops reaching the model"
+file = "hooks/run-hook.sh"
+before = '"additionalContext": "%s"'
+after = '"additionalContex": "%s"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_dispatching_session_start_says_the_hooks_are_off[no-python3]",
+]
+
+# The line is a JSON string the harness parses, and a `PATH` directory may be named anything: a
+# quote or a backslash in it would make stdout unparseable, and the line would be lost.
+[[mutation]]
+name = "the python3 path reaches the hooks-off JSON unnarrowed"
+file = "hooks/run-hook.sh"
+before = '''"$(printf %s "$1" | LC_ALL=C command -p tr -c 'A-Za-z0-9/._+ ~_-' '?')"'''
+after = '"$1"'
+reddens = [
+  "tests/hooks/test_wrapper.py::test_the_dispatching_session_start_says_the_hooks_are_off[below-the-floor]",
+]
+
 # `_snapshot` (`tests/test_install_path.py`) used to walk the whole of `.git`, and a CI job's
 # own background maintenance (`gc.auto`/`maintenance.auto` at their defaults, because the
 # fixtures pin only `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`) could drop `objects/maintenance.lock`

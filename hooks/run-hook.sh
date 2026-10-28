@@ -4,6 +4,24 @@
 # never dies of stayfixed's own fault. `/bin/sh` is SIP-protected on macOS, so `DYLD_*` variables
 # never reach the interpreter below; keep the shebang a system shell.
 skip() { echo "stayfixed: $1; continuing open" >&2; exit 0; }
+# No usable python3 is stayfixed off, and stderr on a `0` reaches nobody, so the one entry that
+# dispatches `SessionStart` says so as the JSON Claude Code shows the person (`systemMessage`) and
+# adds to the model's context (`additionalContext`). A `PATH` directory may be named anything, so
+# the path goes out narrowed to bytes a JSON string takes unescaped.
+off() {
+  if test "$call" = "hook SessionStart"; then
+    why="there is no python3 on PATH"
+    if test -n "$1"; then
+      why="$(printf %s "$1" | LC_ALL=C command -p tr -c 'A-Za-z0-9/._+ ~_-' '?')"
+      why="$why is not Python 3.11 or newer"
+    fi
+    line="stayfixed's hooks are off in this session: $why. Install Python 3.11 or newer on PATH."
+    printf '{"systemMessage": "%s", "hookSpecificOutput": ' "$line"
+    printf '{"hookEventName": "SessionStart", "additionalContext": "%s"}}\n' "$line"
+  fi
+  skip "$2"
+}
+call="$1 $2"
 
 case $0 in */*) here=${0%/*} ;; *) here=. ;; esac
 launcher="$(CDPATH= cd -- "${here:-/}/.." && pwd)/scripts/stayfixed"
@@ -16,7 +34,7 @@ unset GIT_DIR GIT_WORK_TREE
 root=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}
 test -z "$root" || CDPATH= cd -- "$root" 2>/dev/null || skip "cannot enter the project root $root"
 
-python=$(command -v python3) || skip "no python3 on PATH"
+python=$(command -v python3) || off "" "no python3 on PATH"
 "$python" -I -c 'import sys; sys.exit(sys.version_info < (3, 11))' >/dev/null 2>&1 ||
-  skip "$python is not python 3.11 or newer"
+  off "$python" "$python is not python 3.11 or newer"
 "$python" -I "$launcher" "$@" || skip "stayfixed exited $?"

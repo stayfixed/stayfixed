@@ -434,7 +434,13 @@ root it cannot enter — ends in exit `0` with one line on stderr that names the
 `continuing open`: **a session never dies of stayfixed's own fault.** `stayfixed hook` exits `0` on
 an internal error of its own for the same reason, so no shipped entry ever blocks a call. Claude
 Code discards stderr on a `0`, so `stayfixed doctor`'s `wrapper` row runs the wrapper and goes red
-on such a line.
+on such a line. Without a usable `python3` neither `doctor` nor any hook can run, so the one entry
+that dispatches `SessionStart` (`hook SessionStart`) also prints, on stdout, the hook answer Claude
+Code shows the person (`systemMessage`) and adds to the model's context (`additionalContext`):
+that stayfixed's hooks are off in this session, because there is no `python3` on `PATH` or the one
+there (its path, each byte but an ASCII letter, a digit, a space and `/._+~-` printed as `?`) is not
+Python 3.11 or newer, and to install Python 3.11 or newer on `PATH`. Every other entry, the six
+memory entries on the same event included, stays silent on stdout.
 A hook that runs past its ten-second `timeout`, or that cannot start at all — the wrapper missing or
 not executable — never reaches the mapping, and Claude Code then carries the tool call out.
 
