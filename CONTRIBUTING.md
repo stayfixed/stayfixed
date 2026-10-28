@@ -460,13 +460,17 @@ that the set holds on Linux under 3.13. A mutation that holds there and not on m
 under another interpreter, would reach `main`, where before it would have been caught in the
 pull request.
 
-A pull request that changes nothing outside `docs/` narrows further: the suite runs on that one
-configuration alone, and the oracle, the plugin validator and the install smoke skip. The
-documents ship in no artifact and no plugin tree, but tests read them, so the suite still runs
-once. The `changes` job in `ci.yml` and `smoke.yml` decides it, and decides it closed: a renamed
-file counts under the name it left, a name git quotes counts as code, and any answer but an
-explicit "only `docs/`" runs everything (`tests/test_ci_scope.py`). Every other leg still starts
-and reports, because branch protection requires each by name.
+A pull request that changes only documents, or Python comments, narrows further: the suite runs on
+that one configuration alone, and the oracle, the plugin validator and the install smoke skip. A
+document is a path under `docs/` or `changelog.d/`, or a Markdown file at the root; Markdown under
+`skills/` or `agents/` is code, since the plugin validator reads it, and so is a docstring. Tests
+read documents and comments, and ruff, mypy and coverage read the comments that steer them, so the
+suite still runs once. `scripts/ci_scope.py`, run by the `changes` job in `ci.yml` and `smoke.yml`,
+decides it, and decides it closed: a renamed file counts under the name it left, a Python file
+that does not tokenize counts as code, and any answer but an explicit `false` runs everything
+(`tests/test_ci_scope.py`). Every other leg still starts and reports, because branch protection
+requires each by name. A mutation entry whose text such a change edits fails on the next pull
+request that runs the oracle.
 
 A possessive repeat (`*+`, `++`) of one character or class may stand in any pattern; of a group,
 only where every pass is single characters and anchors followed by repeats of one character that

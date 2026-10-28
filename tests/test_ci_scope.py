@@ -1,15 +1,17 @@
 """The `changes` job of `ci.yml` and `smoke.yml`: what a change reaches, and the jobs that read it.
 
-A pull request that changes nothing outside `docs/` runs the suite on one leg and skips the other
-legs, the oracle, the real runners, the plugin validator and the install smoke. That is a narrowing,
-so it must be said in so many words: the scope step answers `false` only when every path the merge
-commit changes against its first parent begins `docs/`, and every job that reads it treats any
-other answer, or none, as a change to code. The step runs here as shipped, under `bash -e`, against
-a real merge commit; the wiring is read by `tests.workflow_yaml`'s strict reader.
+A pull request that changes only documents, or Python comments, runs the suite on one leg and skips
+the other legs, the oracle, the real runners, the plugin validator and the install smoke. That is a
+narrowing, so it must be said in so many words: the scope step answers `false` only when
+`scripts/ci_scope.py` finds every path the merge commit changes against its first parent to be one
+of those, and every job that reads it treats any other answer, or none, as a change to code. The
+step runs here as shipped, under `bash -e`, against a real merge commit; the wiring is read by
+`tests.workflow_yaml`'s strict reader.
 """
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -28,7 +30,7 @@ from tests.test_fixtures import (
 )
 from tests.workflow_yaml import Node, load
 
-SCOPE = "Whether the change reaches outside docs"
+SCOPE = "Whether the change reaches code"
 GATE = "env.FULL == 'true'"
 NARROWED = "${{ !cancelled() && needs.changes.outputs.code != 'false' }}"
 CHECKS_FULL = (
@@ -36,6 +38,8 @@ CHECKS_FULL = (
     " || matrix.os == 'ubuntu-latest' && matrix.python == '3.13' }}"
 )
 SMOKE_FULL = "${{ needs.changes.outputs.code != 'false' }}"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "ci_scope.py"
+WIDGET = 'def widget():\n    """Make a widget."""\n    return 1\n'
 
 
 def _jobs(workflow: Path) -> dict[str, dict[str, Node]]:
@@ -53,9 +57,11 @@ def _merge(tmp_path: Path, change: dict[str, str | None], renames: dict[str, str
     root = tmp_path / "repository"
     root.mkdir()
     git(root, "init", "-q", "-b", "base")
-    for path in ("src/widget.py", "docs/guide.md", "docs/old.md", "README.md"):
+    for path in ("docs/guide.md", "docs/old.md", "README.md"):
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(f"{path}\n" * 20, encoding="utf-8")
+    (root / "src").mkdir()
+    (root / "src" / "widget.py").write_text(WIDGET, encoding="utf-8")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "base")
     git(root, "checkout", "-q", "-b", "change")
@@ -75,6 +81,10 @@ def _merge(tmp_path: Path, change: dict[str, str | None], renames: dict[str, str
     git(root, "add", "LICENSE")
     git(root, "commit", "-q", "-m", "base moves on")
     git(root, "merge", "-q", "--no-ff", "--no-edit", "change")
+    # The step runs the script from the checkout, as the workflow does; untracked, it changes no
+    # commit the step compares.
+    (root / "scripts").mkdir(exist_ok=True)
+    shutil.copy(SCRIPT, root / "scripts" / "ci_scope.py")
     return root
 
 
@@ -103,7 +113,6 @@ def _scope(root: Path, event: str) -> tuple[subprocess.CompletedProcess[str], di
 @needs_smoke_workflow
 def test_both_workflows_run_one_scope_step() -> None:
     # `smoke.yml` cannot read `ci.yml`'s job, so it carries its own; the two may not drift.
-    # Mutation (oracle): `mutations/`'s "a rename into docs hides the file it moved".
     assert step_script(SMOKE_WORKFLOW, SCOPE) == step_script(CI_WORKFLOW, SCOPE)
 
 
@@ -123,17 +132,48 @@ def test_both_workflows_run_one_scope_step() -> None:
             "true",
             id="a-document-and-code",
         ),
-        pytest.param({"README.md": "edited\n"}, {}, "true", id="a-markdown-file-outside-docs"),
+        pytest.param({"README.md": "edited\n"}, {}, "false", id="a-markdown-file-at-the-root"),
+        pytest.param({"CHANGELOG.md": "new\n"}, {}, "false", id="the-changelog"),
+        pytest.param({"changelog.d/+x.fix.md": "new\n"}, {}, "false", id="a-changelog-fragment"),
+        # The plugin validator reads a skill's frontmatter. Mutation (oracle): `mutations/`'s
+        # "Markdown anywhere counts as a document".
+        pytest.param({"skills/x/SKILL.md": "new\n"}, {}, "true", id="a-skill"),
+        # Mutation (oracle): `mutations/`'s "a comment counts as code".
+        pytest.param(
+            {"src/widget.py": "# Widgets.\n" + WIDGET.replace("1\n", "1  # one\n")},
+            {},
+            "false",
+            id="python-comments-alone",
+        ),
+        pytest.param(
+            {"src/widget.py": "# Widgets.\n", "docs/guide.md": "edited\n"},
+            {},
+            "true",
+            id="python-comments-and-code-removed",
+        ),
+        pytest.param(
+            {"src/widget.py": WIDGET.replace("return 1", "return 2")}, {}, "true", id="python-code"
+        ),
+        # A docstring is a string the program can read. Mutation (oracle): `mutations/`'s "a
+        # docstring counts as a comment".
+        pytest.param(
+            {"src/widget.py": WIDGET.replace("Make", "Build")}, {}, "true", id="a-docstring"
+        ),
+        pytest.param({"src/new.py": "# nothing yet\n"}, {}, "true", id="a-python-file-added"),
+        pytest.param(
+            {"src/widget.py": WIDGET + '"""\n'}, {}, "true", id="python-that-does-not-tokenize"
+        ),
         # The rename lists only `docs/widget.py` without `--no-renames`, and the code it took away
         # would go unjudged. Mutation (oracle): `mutations/`'s "a rename into docs hides the file
         # it moved".
         pytest.param({}, {"src/widget.py": "docs/widget.py"}, "true", id="code-moved-into-docs"),
-        # git quotes a name outside ASCII, so it does not begin `docs/` and counts as code.
-        pytest.param({"docs/résumé.md": "new\n"}, {}, "true", id="a-quoted-name"),
+        # Read with `-z`, a name outside ASCII is the name it is.
+        pytest.param({"docs/résumé.md": "new\n"}, {}, "false", id="a-name-outside-ascii"),
+        # Mutation (oracle): `mutations/`'s "an empty change narrows the run".
         pytest.param({}, {}, "true", id="nothing-changed"),
     ],
 )
-def test_the_scope_step_answers_false_only_when_every_path_is_a_document(
+def test_the_scope_step_answers_false_only_for_documents_and_comments(
     tmp_path: Path, change: dict[str, str | None], renames: dict[str, str], code: str
 ) -> None:
     done, outputs = _scope(_merge(tmp_path, change, renames), "pull_request")
