@@ -49,7 +49,7 @@ from stayfixed import fsops
 from stayfixed.config.loader import preset_defaults
 from stayfixed.overlay.identity import require_overlay
 from stayfixed.overlay.layout import CAPABILITY_FILES, OVERLAY_FILES
-from stayfixed.overlay.template import retired, templates
+from stayfixed.overlay.template import templates
 from stayfixed.scaffold import Plan, apply, plan, unlinks
 
 # What `--root` has to name, said once. `--root` defaults to `.`, so the directory this command
@@ -86,11 +86,10 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     probe is `identity.require_overlay`, the same one `setup --overlay` records a root through:
     one question, asked one way, in the one module that knows what an overlay is.
 
-    The files a release no longer ships (`template.retired`) are planned beside the shipped
-    ones, so a copy that still holds what stayfixed wrote there is removed, and any other copy is
-    kept and named. Each directory above a file the run removed then goes once it is empty
-    (`fsops.rmdir_parents_within`), whether or not `apply` finished: a later run cannot tell a
-    directory this one emptied from one a person left empty, so it would never remove one. A
+    Only the files this release ships are planned; one an earlier release shipped is left alone.
+    Each directory above a file the run removed (a recorded file whose target moved) goes once it
+    is empty (`fsops.rmdir_parents_within`), whether or not `apply` finished: a later run cannot
+    tell a directory this one emptied from one a person left empty, so it would never remove one. A
     removed file is one an action unlinks that was there before `apply` and is not after it; a
     removal whose file was already gone empties nothing, and the directories above it stay.
 
@@ -103,7 +102,7 @@ def upgrade(root: Path, *, dry_run: bool) -> OverlayUpgrade:
     because a `Config` has to be complete, not because an overlay is a project.
     """
     require_overlay(root, because=NOT_AN_OVERLAY)
-    shipped = [*templates(), *retired()]
+    shipped = templates()
     planned = plan(root, preset_defaults(root.name), shipped)
     if not dry_run:
         present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]

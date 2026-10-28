@@ -189,8 +189,8 @@ lists an agent with an unsandboxed shell as out of scope.
 Exits `2` if `trust.json` exists and is not a record this stayfixed reads — not JSON, not UTF-8, a
 later version, no `version`, a `version` that is neither `1` nor later (`0`, `"1"`, `true`), or a
 version-1 record that is not whole: a key besides `version` and `approvals`, an approval that is not
-an object of four text fields, or one approval named twice. It holds every project's approval on the machine, so nothing will overwrite a file
-it could not read — repair or delete it; for a record of a later version, which a later stayfixed
+an object of four text fields, or one approval named twice. It holds every project's approval on
+the machine, so nothing will overwrite a file it could not read — repair or delete it; for a record of a later version, which a later stayfixed
 wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
 release's approvals.
 
@@ -2264,8 +2264,7 @@ the file was written. An overlay is where your own rules live, so a silent overw
 destroy the only copy of something. An overlay `setup --overlay create:` generated has no
 `.stayfixed/manifest.json` (the template repository carries none), and an identity record you
 added by hand has no entry in one, so neither is recorded as stayfixed's: a file there that differs
-from this release's is skipped as `exists and stayfixed did not write it`, and only the retired
-files below are removed by the bytes a release shipped.
+from this release's is skipped as `exists and stayfixed did not write it`.
 
 **Two files are always listed, however their hashes compare.**
 `common/claude/permissions.json` and `common/claude/hooks.json` are the two an overlay carries
@@ -2280,28 +2279,13 @@ file is empty, both held by a test. `--dry-run` first is how you read them befor
 code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
-`.stayfixed/manifest.json`. It also **removes** four files a release no longer ships:
-`common/memory/README.md`, which is `_README.md` now because the note reader reads every other `.md`
-there as a note; `skills/attach/SKILL.md`, the template's own copy of the `attach` skill, which the
-plugin's own replaces, since it covers detaching and a moved remote as well;
-`common/rules/README.md`, the README of a directory nothing read; and `hooks/hooks.json`, the hooks
-file the overlay fired while it was a plugin of its own. It does so only when a file holds
-what stayfixed wrote there: the digest `.stayfixed/manifest.json` recorded, or, in an overlay with
-no manifest (one generated from a template, since `scripts/publish_template.py` leaves it out), a file a
-release shipped there — 0.1.0 and 0.1.1 for the memory README, any of 0.1.0, 0.1.1 and 0.2.0 for the
-skill and the rules README, and any release up to 0.3.1 for the hooks file. A recorded one that is already gone is listed as `remove … (retired, already gone)`:
-nothing is removed, and its record is dropped. An unrecorded one that is gone is not listed at all,
-nor counted as unchanged, so a run after the removal, or on an overlay that never had the file,
-does not name it. Any other copy may hold your own words, so it is
-listed as `skip_modified` with the way out: rename the memory README to `_README.md`; the plugin's own `attach` skill replaces the
-template's, so delete your copy once you no longer need your edits; a standing rule is a note with
-`metadata.startup`, so move your rules into such notes and delete the README; `stayfixed attach`
-renders the hook entries in `common/claude/hooks.json`, so move yours there and delete the hooks
-file. Until then each run
-lists the copy again. Each directory above a file it removed then goes once that leaves it empty,
-up to the first that still holds anything and never the overlay root: `skills/attach/` and
-`skills/`, `common/rules/`, and `hooks/`. A directory that is a symbolic link is left, and so is one above a
-file that was already gone when the run began. Exits `0`; `1` when the report
+`.stayfixed/manifest.json`. A file an earlier release shipped and this one does not, such as
+`common/memory/README.md` or `hooks/hooks.json`, is not planned at all: delete it by hand. It
+**removes** a file only where `.stayfixed/manifest.json` records it at a target that has since
+moved and the file holds the bytes recorded. Each directory above a file it removed then goes once
+that leaves it empty, up to the first that still holds anything and never the overlay root. A
+directory that is a symbolic link is left, and so is one above a file that was already gone when
+the run began. Exits `0`; `1` when the report
 carries a REFUSED section, because nothing would be written while one of those stands; `2` when
 `--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
 by the containment walk.

@@ -416,73 +416,6 @@ reddens = [
   "tests/project/test_footprint_invariant.py::test_the_legitimate_user_runs_every_command_to_the_end[a-tracked-file-matching-an-ignore-pattern]",
 ]
 
-# `common/memory/README.md` became `_README.md`, and `overlay upgrade` created the new name beside
-# the old one, which the note reader went on reading as a note: `memory index --check` failed in
-# every attached project. Where the ledger records the file, its digest is what vouches for it.
-[[mutation]]
-name = "a retired overlay file the ledger records is kept"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = present is not None and digest(present) == record.sha256"
-after = "        ours = False"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_memory_readme_a_release_shipped_is_removed[recorded]",
-]
-
-# An overlay generated from a template carries no ledger, so the bytes a release shipped are the
-# only evidence that its copy of a retired file is stayfixed's.
-[[mutation]]
-name = "a retired overlay file holding the shipped bytes is kept"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = digest(current) in template.shipped"
-after = "        ours = False"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_the_memory_readme_a_release_shipped_is_removed[no-ledger]",
-]
-
-# The other side of the same line: with no ledger, a copy that is not the shipped bytes may hold
-# the owner's own words, and nothing else holds them.
-[[mutation]]
-name = "a retired overlay file with no ledger is removed whatever it holds"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        ours = digest(current) in template.shipped"
-after = "        ours = True"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
-]
-
-# A kept copy of the retired README is still read as a note, so the report names the way out.
-[[mutation]]
-name = "a kept retired overlay file is named without its way out"
-file = "src/stayfixed/scaffold/engine.py"
-before = "    if template.remedy:"
-after = "    if False:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[recorded]",
-  "tests/overlay/test_upgrade.py::test_an_edited_memory_readme_is_kept_and_the_report_says_what_to_do[no-ledger]",
-]
-
-# A retired file that is not there has nothing to remove: an overlay without one plans no action
-# for it, so a run on a fresh or already-cleared overlay reports nothing to do.
-[[mutation]]
-name = "a retired overlay file that is absent is planned for removal"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        # removed is \"unchanged\", and counted it, and a fresh overlay that never had it the same.\n        return\n    if location is Location.LOCAL:"
-after = "        actions.append(Action(Verb.REMOVE, template.id, target, None, \"retired\", record))\n        return\n    if location is Location.LOCAL:"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
-]
-
-# Nor is it reported: a retired file that is gone and unrecorded, listed among the unchanged, told
-# the owner on every later run that the file the release notes say was removed is unchanged.
-[[mutation]]
-name = "a retired file that is gone and unrecorded is reported unchanged"
-file = "src/stayfixed/scaffold/engine.py"
-before = "        # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,"
-after = "        unchanged.append(template.id)"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_overlay_without_the_retired_files_plans_nothing",
-]
-
 # git ends a line at `\n` alone. Read as ending at a lone `\r` too, an exclude file whose last line
 # was `/zz\r` counted as ended, the block's begin marker was glued onto it, and `zz` showed in
 # `git status` while the repository was attached.
@@ -552,7 +485,6 @@ after = """        if False:
 reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-there]",
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
-  "tests/overlay/test_upgrade.py::test_the_record_of_a_memory_readme_already_gone_is_dropped[directory-there]",
   "tests/project/test_upgrade.py::test_switching_ci_off_after_deleting_the_workflow_drops_its_record",
 ]
 
