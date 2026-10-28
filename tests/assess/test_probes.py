@@ -247,10 +247,9 @@ def test_a_hook_entry_claiming_stayfixed_s_marker_in_a_committed_file_is_still_f
     tmp_path: Path,
 ) -> None:
     # stayfixed writes no hook entry into a committed settings file -- `attach` merges into the one
-    # kept out of git -- and this probe has no grant to compare one with, so an entry claiming the
-    # marker there is the repository's word alone: an `http` entry with any id passed as
-    # stayfixed's own and was never listed. Mutation (oracle): `mutations/`'s "the foreign-hook
-    # probe takes a committed entry's word that it is stayfixed's" -> nothing is listed.
+    # kept out of git -- so an entry claiming the marker there is the repository's word alone: an
+    # `http` entry with any id passed as stayfixed's own and was never listed. No mutation: the
+    # walk reads no marker, so no line of it can read one.
     root = _repo(tmp_path, 'agents = ["claude"]')
     hook = {
         "type": "http",
@@ -307,8 +306,8 @@ def test_a_number_past_the_parser_s_reach_does_not_hide_the_foreign_entry_beside
 ) -> None:
     # An integer literal longer than the interpreter converts (4,300 digits by default) is valid
     # JSON a harness reads, and no part of any entry's provenance. The probe parsed the file a
-    # second time with the interpreter's limit on numbers and called it unreadable, while `doctor`
-    # read the same file and named the foreign entry. Mutation (advisory): the probe reads the
+    # second time with the interpreter's limit on numbers and called it unreadable. Mutation
+    # (advisory): the probe reads the
     # entries through `json.loads` again -> "could not look" and this reddens.
     root = _repo(tmp_path, 'agents = ["claude"]')
     _write(
@@ -335,8 +334,8 @@ def test_a_settings_file_that_is_not_utf_8_is_named_and_not_fatal(tmp_path: Path
 def test_a_settings_file_past_the_read_cap_is_one_the_probe_could_not_look_at(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A committed settings file is read to the read cap, as `doctor`'s `hook-entries` reads the
-    # same file, and one past it is "could not look", never read to its end. The cap is lowered so
+    # A committed settings file is read to the read cap, and one past it is "could not look",
+    # never read to its end. The cap is lowered so
     # the file is small. Mutation (oracle): `mutations/`'s "the foreign-hook probe reads a settings
     # file with no bound" -> the entry is read and listed as foreign.
     root = _repo(tmp_path, 'agents = ["claude"]')
@@ -654,35 +653,61 @@ def test_git_log_all_on_a_repository_with_no_commit_answers_zero(tmp_path: Path)
     assert (done.returncode, done.stdout) == (0, "")
 
 
-@pytest.mark.parametrize("shape", ["byte-order-mark", "scalar-event"])
-def test_a_foreign_entry_in_a_file_claude_code_runs_is_named_as_doctor_names_it(
-    tmp_path: Path, shape: str
-) -> None:
-    # The probe reads by the walk `doctor`'s `hook-entries` reads with, and after `doctor` began to
-    # read past a leading byte-order mark and a misplaced scalar -- the shapes Claude Code 2.1.288
-    # was measured running the hooks of (macOS, 2026-10-05) -- the probe still read both as files
-    # it could not look at, while `doctor` counted the foreign entry in each. Mutation (declared):
-    # the probe reads every file strictly -> "could not look".
+# A scalar where the `hooks` section expects an event's list, a group, a group's `hooks` list or
+# an entry: nothing in it is a command anything could run.
+SCALARS = {
+    "scalar-event": '"notalist"',
+    "group-not-an-object": "[5]",
+    "group-hooks-not-a-list": '[{"hooks": "x"}]',
+    "entry-not-an-object": '[{"hooks": ["str"]}]',
+}
+
+
+@pytest.mark.parametrize("shape", ["byte-order-mark", *SCALARS])
+def test_a_foreign_entry_in_a_file_claude_code_runs_is_named(tmp_path: Path, shape: str) -> None:
+    # Claude Code 2.1.288 was measured running the hooks of a file with a leading byte-order mark
+    # or a misplaced scalar (macOS, 2026-10-05), so the probe names the foreign entry in each rather
+    # than calling the file one it could not look at. Mutations (declared): the probe reads every
+    # file strictly, the lenient walk refuses a scalar, or it keeps the byte-order mark -> "could
+    # not look".
     root = _repo(tmp_path, 'agents = ["claude"]')
     plain = _settings("echo foreign")
     bom = chr(0xFEFF)
-    text = plain[:-2] + ', "Stop": "notalist"}}' if shape == "scalar-event" else bom + plain
+    text = (
+        bom + plain
+        if shape == "byte-order-mark"
+        else plain[:-2] + f', "Stop": {SCALARS[shape]}}}}}'
+    )
     _write(root, ".claude/settings.json", text)
     assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
         ("foreign-hooks", (".claude/settings.json",))
     ]
 
 
+@pytest.mark.parametrize(
+    "stop",
+    [
+        pytest.param('{"x": []}', id="event-an-object"),
+        pytest.param('[[{"hooks": []}]]', id="group-a-list"),
+        pytest.param('[{"hooks": {"x": {}}}]', id="hooks-an-object"),
+        pytest.param('[{"hooks": [[]]}]', id="entry-a-list"),
+        pytest.param(
+            '[{"type": "command", "command": "echo hidden"}]', id="entry-where-a-group-goes"
+        ),
+    ],
+)
 def test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found(
-    tmp_path: Path,
+    tmp_path: Path, stop: str
 ) -> None:
-    # An object where an event's list goes was not measured and could hold a command, so the walk
-    # skips it and says so: the probe names the foreign entry it did read and says it could not
-    # look at the rest, as `doctor` does. Mutation (declared): the probe drops the walk's word
-    # that it skipped a part -> only the foreign entry is named.
+    # A container where an event's list, a group, a group's `hooks` list or an entry goes, and an
+    # entry where a group goes, were not measured and could hold a command, so the walk skips each
+    # and says so: the probe names the foreign entry it did read and says it could not look at the
+    # rest. Mutations (declared): the probe drops the walk's word that it skipped a part, the walk
+    # skips a container at any level without saying so, or it reads an entry where a group goes
+    # as no entry -> only the foreign entry is named.
     root = _repo(tmp_path, 'agents = ["claude"]')
     plain = _settings("echo foreign")
-    _write(root, ".claude/settings.json", plain[:-2] + ', "Stop": {"x": []}}}')
+    _write(root, ".claude/settings.json", plain[:-2] + ', "Stop": ' + stop + "}}")
     assert sorted(_shapes(_items(root, tmp_path, "foreign-hooks"))) == [
         (COULD_NOT_LOOK, (".claude/settings.json",)),
         ("foreign-hooks", (".claude/settings.json",)),
@@ -690,13 +715,10 @@ def test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_wha
 
 
 @pytest.mark.parametrize("shape", ["byte-order-mark", "scalar-event"])
-def test_codexs_hook_file_is_read_by_the_probe_as_strictly_as_doctor_reads_it(
-    tmp_path: Path, shape: str
-) -> None:
+def test_codexs_hook_file_is_read_by_the_probe_strictly(tmp_path: Path, shape: str) -> None:
     # The lenient walk is for the files Claude Code was measured running partly malformed, and no
-    # measurement covers Codex's `.codex/hooks.json`, which `doctor` reads strictly: the probe
-    # reads it strictly too, so the two give one answer about one file. Mutation (declared): the
-    # probe reads every file leniently -> the foreign entry is named.
+    # measurement covers Codex's `.codex/hooks.json`, so the probe reads it strictly. Mutation
+    # (declared): the probe reads every file leniently -> the foreign entry is named.
     root = _repo(tmp_path, 'agents = ["codex"]')
     plain = _settings("echo foreign")
     bom = chr(0xFEFF)

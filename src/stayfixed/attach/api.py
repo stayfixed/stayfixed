@@ -7,8 +7,8 @@ deliberately, in a commit that says which area and why — it does not import a 
 this area.
 
 No module under `src/` outside this area imports from here. `doctor` was the one consuming area,
-and its `attached` row and the claims `hook-entries` reads are now this area's own
-(`attach/doctor.py`), which reaches this area's modules directly. What is left is what the suite
+and its `attached` row is now this area's own (`attach/doctor.py`), which reaches this area's
+modules directly. What is left is what the suite
 reads from outside the area:
 
 - the ledger (`ledger`) and `AttachLedger`, because `ledger` returns it: a return

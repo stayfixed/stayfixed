@@ -38,8 +38,8 @@ def _nothing_of_the_developers_own(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     The flag cases below cannot pass an environment through argparse, so the environment is made
     hermetic instead of passed.
 
-    `_own_root` is stood down for the same reason and one more: `plugin_root` would otherwise
-    answer with this checkout, and the `wrapper` check **executes** what it answers. Every case
+    `_own_root` is stood down for the same reason and one more: it would otherwise answer with
+    this checkout, and the `wrapper` check **executes** what it answers. Every case
     here would then spawn a real `hooks/run-hook.sh`, and `test_a_clean_installation_exits_zero`
     would become false the day that run goes red on somebody's machine — which is a fact about
     their interpreters, not about the argparse wiring this file is for. What the two checks do
@@ -206,13 +206,13 @@ def test_the_json_form_carries_every_check_and_its_remedy(
 ) -> None:
     # The skill relays remedies verbatim, so a remedy missing from `--json` is a remedy the
     # user never sees — and the summary line has room for none of them. The count is the
-    # report's seventeen rows, held beside `README.md`, `docs/cli.md`, the doctor skill and the
+    # report's fourteen rows, held beside `README.md`, `docs/cli.md`, the doctor skill and the
     # smoke workflow by `tests/test_documents.py`.
     (tmp_path / "stayfixed.toml").write_text("[[[", encoding="utf-8")
     code = invoke(["doctor", "--root", str(tmp_path), "--home", str(tmp_path / "home"), "--json"])
     assert code == 1
     report = json.loads(capsys.readouterr().out)
-    assert len(report["checks"]) == 17
+    assert len(report["checks"]) == 14
     assert all({"name", "status", "detail", "remedy"} <= set(check) for check in report["checks"])
     red = next(check for check in report["checks"] if check["status"] == "red")
     assert red["remedy"]
@@ -233,12 +233,12 @@ def test_doctor_json_carries_no_codex_hooks_row(
     )
     invoke(["doctor", "--root", str(root), "--home", str(tmp_path / "home"), "--json"])
     names = [check["name"] for check in json.loads(capsys.readouterr().out)["checks"]]
-    assert "hook-entries" in names and "codex-hooks" not in names
+    assert "wrapper" in names and "codex-hooks" not in names
 
 
 def test_the_summary_line_is_bounded() -> None:
     # `findings.LISTED_LIMIT` exists because an unbounded summary pushes the repairing command
-    # off the end of the line, and seventeen checks is already past eight. Asserted over a
+    # off the end of the line, and fourteen checks is already past eight. Asserted over a
     # synthetic report rather than a fixture, because arranging nine simultaneous real failures
     # would be a test about the fixture.
     checks = [Check(f"check-{n}", RED, "d", "r") for n in range(LISTED_LIMIT + 3)]

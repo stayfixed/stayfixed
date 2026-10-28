@@ -39,11 +39,6 @@ class Template:
     style: Style = Style.MARKDOWN
     entries: dict[str, list[dict[str, Any]]] | None = None
     retired: bool = False
-    # For a retired whole file only. `shipped`: the digests of the bytes a release shipped at
-    # the target, which vouch for the file where no manifest record does. `remedy`: what the
-    # report tells the owner to do with a copy that is kept because it holds other bytes.
-    shipped: frozenset[str] = frozenset()
-    remedy: str = ""
 
 
 @dataclass(frozen=True)

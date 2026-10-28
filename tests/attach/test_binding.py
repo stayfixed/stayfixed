@@ -167,8 +167,8 @@ def test_a_store_through_a_symlink_loop_is_refused_like_any_other_store_that_is_
     # `doctor` hands this function the store the attach ledger names, and the ledger is a file a
     # clone can commit, beside a symlink loop of its own. Python 3.11 and 3.12 raise
     # `RuntimeError` resolving a path through a loop where 3.13 answers a path, so on the two
-    # older interpreters the resolve escaped the refusal, and `doctor`'s `attached` and
-    # `hook-entries` rows read red, "this check could not run". The loop is real; the
+    # older interpreters the resolve escaped the refusal, and `doctor`'s `attached` row read red,
+    # "this check could not run". The loop is real; the
     # older interpreters' answer to it is stood in for, so the case holds on every interpreter.
     #
     # Mutation (oracle): `mutations/`'s "read_binding lets a store it cannot resolve raise" ->

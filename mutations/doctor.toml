@@ -1,5 +1,5 @@
 # The doctor group: the report on an installation — the core's checks and the run that asks
-# them, the rows the areas contribute, and `hook-entries` with its walk of the settings files.
+# them, and the rows the areas contribute.
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
@@ -14,21 +14,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read",
 ]
 
-# Which plugin root `doctor` trusts, first half. This ordering no longer decides what is *executed*
-# -- `_wrapper` takes `own_root` and nothing else -- so what it pins now is which wrapper `files`
-# reads its mode from. A plugin's own and one a repository committed are different files with
-# different meanings, and the row would otherwise report on the wrong one.
-[[mutation]]
-name = "doctor reads a named plugin root's files in preference to its own"
-file = "src/stayfixed/doctor/checks.py"
-before = "    return _own_root() or _named_root(env)"
-after = "    return _named_root(env) or _own_root()"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_named_plugin_root_never_outranks_the_one_this_stayfixed_is_part_of",
-]
-
-# Which plugin root `doctor` trusts, and the entry that matters: `doctor` runs a subprocess out of
-# this answer. With `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and
+# Which plugin root `doctor` runs a subprocess out of. With `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and
 # which `cli-path`'s own remedy and the README tell people to install -- a project that commits
 # `hooks/run-hook.sh` mode 100755 plus an `env` block naming its tree got that script RUN, and the
 # report then read `wrapper: ok`. Code execution and a false clean bill of health from a read-only
@@ -42,33 +28,15 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
 ]
 
-# The other half of the same containment: `files` keeps reading the wrapper's mode, because that
-# needs only a path -- and must say whose root it measured, so nobody reads "executable" off a
-# repository-planted file as a clean bill of health for the installation.
+# The other half of the same containment: under a named root `wrapper` still reads the wrapper's
+# mode, because that needs only a path, and a wrapper without `+x` is red there, never a skip.
 [[mutation]]
-name = "doctor reports on a named plugin root's files without saying whose they are"
+name = "a named root's wrapper without its executable bit is a skip"
 file = "src/stayfixed/doctor/checks.py"
-before = '    whose = "" if context.own_root is not None else NAMED_ROOT_CAVEAT'
-after = '    whose = ""'
+before = "        if not os.access(wrapper, os.X_OK):"
+after = "        if False:"
 reddens = [
-  "tests/doctor/test_checks.py::test_a_plugin_root_the_environment_named_is_read_and_never_executed",
-]
-
-# The same check's other half, and the one a green report hides. Three arms used to swallow — an
-# OSError on the read, a JSON error inside the walk, and a Refusal out of `owned_ids` — and all
-# three produced "all accounted for" from the check whose whole purpose is that nobody's entries
-# go unlisted. `owned_ids` is asked here for its strictness: it shares its reader with
-# `apply_entries`, so a shape the merge would refuse is a shape this walk must admit it cannot
-# account for.
-[[mutation]]
-name = "doctor swallows a settings file it could not read instead of reporting it"
-file = "src/stayfixed/doctor/entries.py"
-before = '''        except Refusal:
-            found.append((_BLIND, label))'''
-after = '''        except Refusal:
-            pass'''
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_file_that_cannot_be_read_is_reported_rather_than_skipped",
+  "tests/doctor/test_checks.py::test_a_named_root_wrapper_without_its_executable_bit_is_red_and_with_it_a_skip",
 ]
 
 # Reasons, never payloads. The sink's record carries `context` and `decision`, both filled from a
@@ -319,18 +287,6 @@ reddens = [
 
 # --- install path: the cross-area import boundary ----------------------------------------
 #
-# `hook-entries` reads the machine's settings file's path off the harness registry. Asked of
-# `setup.api`, it loaded `setup.run` with the report and closed a dependency cycle between `doctor`,
-# `setup` and `overlay`.
-[[mutation]]
-name = "hook-entries asks setup for the machine's settings file"
-file = "src/stayfixed/doctor/entries.py"
-before = "(USER_SETTINGS,) = CLAUDE.settings"
-after = "from stayfixed.setup.api import USER_SETTINGS"
-reddens = [
-  "tests/doctor/test_entries.py::test_the_row_reads_the_machines_settings_file_off_the_harness_registry",
-]
-
 # The wrapper row runs the wrapper under Claude Code's names for the plugin root and the project
 # root, read off the harness registry. A name the row stopped setting would run the wrapper with no
 # project root, which it reads before any Python runs.
@@ -355,18 +311,18 @@ reddens = [
 ]
 
 # A machine where `doctor` finds no plugin root is a machine where no hook entry reaches stayfixed,
-# and the report says so as two `skip` rows under a skill instruction reading "a skip is not a
+# and the report says so as a `skip` row under a skill instruction reading "a skip is not a
 # fault". An empty remedy there is the report's loudest finding rendered as its quietest.
 [[mutation]]
-name = "the plugin-root skips go back to an empty remedy"
+name = "the plugin-root skip goes back to an empty remedy"
 file = "src/stayfixed/doctor/checks.py"
 before = '''PLUGIN_ROOT_REMEDY = (
     f"{RUN_FROM_OWN_ROOT}, or set CLAUDE_PLUGIN_ROOT to where the plugin is installed, which "
-    "lets `files` read the wrapper without making it runnable here"
+    "lets `wrapper` read the wrapper's executable bit without running it"
 )'''
 after = 'PLUGIN_ROOT_REMEDY = ""'
 reddens = [
-  "tests/doctor/test_checks.py::test_the_two_plugin_root_skips_both_carry_a_remedy",
+  "tests/doctor/test_checks.py::test_the_plugin_root_skip_carries_a_remedy",
 ]
 
 # The named-root skip carried a hand copy of the remedy's first half, and the copy had already
@@ -401,18 +357,7 @@ reddens = [
 name = "a doctor check spells its own name again"
 file = "src/stayfixed/doctor/checks.py"
 before = 'WRAPPER = "hooks/run-hook.sh"'
-after = "WRAPPER = \"hooks/run-hook.sh\"\n_STRAY = \"files\""
-reddens = [
-  "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
-]
-
-# The same stray in a module that defines a core check but does not register it: the scan reads
-# every module `CHECKS`' checks are defined in, not only the registry's.
-[[mutation]]
-name = "a stray hook-entries name in the module that defines the check"
-file = "src/stayfixed/doctor/entries.py"
-before = '_MACHINE_LABEL = f"~/{USER_SETTINGS}"'
-after = "_MACHINE_LABEL = f\"~/{USER_SETTINGS}\"\n_STRAY = \"hook-entries\""
+after = "WRAPPER = \"hooks/run-hook.sh\"\n_STRAY = \"wrapper\""
 reddens = [
   "tests/doctor/test_checks.py::test_every_registry_name_is_spelled_exactly_once_in_the_module",
 ]
@@ -489,9 +434,8 @@ reddens = [
 ]
 
 # The `ci-ref` row's two missing guards, and both are about a path the *repository* authors:
-# `.github/workflows/stayfixed.yml`. This row read it with neither of the guards its two siblings in
-# the same module have -- `hook_entries` asks `is_file()` of every settings file before it opens
-# one, and `_diagnostics` reads its log to a cap -- so a committed symlink to a FIFO made
+# `.github/workflows/stayfixed.yml`. This row read it with neither guard -- `_diagnostics` reads
+# its log to a cap -- so a committed symlink to a FIFO made
 # `read_text` block with nothing to read, and `doctor`, which is one line of output and has no
 # timeout of its own, never returned. Measured on a real FIFO before the guard: the row did not come
 # back. None of the bytes reaches the report either way, so this is containment hygiene rather than
@@ -573,107 +517,6 @@ after = "    except (json.JSONDecodeError, UnicodeDecodeError):\n        return 
 reddens = [
   "tests/doctor/test_checks.py::test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record[long-number]",
   "tests/doctor/test_checks.py::test_a_hook_sink_log_line_past_the_parsers_reach_is_no_record[nested]",
-]
-
-# A settings file, or the directory holding it, can be committed as a symbolic link to a name longer
-# than a file name may be. Raised past the walk, `ENAMETOOLONG` puts `_guarded`'s warning in place of
-# all of `hook-entries`; read as no file, the walk skips a file that is there.
-# `fsops.names_regular_file` raises it, and the walk reads such a path as a file it is blind to.
-[[mutation]]
-name = "hook-entries skips a settings file it cannot ask about"
-file = "src/stayfixed/doctor/entries.py"
-before = '''            regular = names_regular_file(path)
-        except OSError:
-            found.append((_BLIND, label))'''
-after = '''            regular = names_regular_file(path)
-        except OSError:
-            pass'''
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.claude]",
-  "tests/doctor/test_checks.py::test_a_settings_file_doctor_cannot_ask_about_is_one_the_walk_is_blind_to[.codex/hooks.json]",
-]
-
-# Valid JSON nested deeper than Python's parser follows is read by the harness, so the hooks in it
-# may run. A file the walk refuses for that alone is named as one nothing here can check, never as
-# one it could not read.
-[[mutation]]
-name = "hook-entries reads a settings file past the parser's reach as one it is blind to"
-file = "src/stayfixed/doctor/entries.py"
-before = '''        except ParserLimitError:
-            found.append((_UNCHECKED, label))'''
-after = '''        except ParserLimitError:
-            found.append((_BLIND, label))'''
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[.claude/settings.local.json]",
-  "tests/doctor/test_checks.py::test_a_settings_file_nested_past_the_parsers_reach_is_one_the_walk_cannot_check[~/.claude/settings.json]",
-]
-
-# The other half: a file this process may not read is this machine's state, which git cannot
-# commit and a harness running as the same user cannot read either, so it is one the walk is
-# blind to, never one nothing here can check.
-[[mutation]]
-name = "hook-entries reads every settings file it cannot read as one it cannot check"
-file = "src/stayfixed/doctor/entries.py"
-before = '''            document = read_regular_bytes(path).decode("utf-8", errors="replace")
-        except OSError:
-            found.append((_BLIND, label))'''
-after = '''            document = read_regular_bytes(path).decode("utf-8", errors="replace")
-        except OSError:
-            found.append((_UNCHECKED, label))'''
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
-]
-
-# One byte that is not UTF-8 in a settings file moves no entry. Refused, it made the file one the
-# walk is blind to, and the entries in it went uncounted.
-[[mutation]]
-name = "hook-entries is blind to a settings file holding a byte that is not UTF-8"
-file = "src/stayfixed/doctor/entries.py"
-before = """            document = read_regular_bytes(path).decode("utf-8", errors="replace")
-        except OSError:"""
-after = """            document = read_regular_bytes(path).decode("utf-8")
-        except (OSError, UnicodeDecodeError):"""
-reddens = [
-  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-a-forged-entry]",
-  "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[latin-1-beside-no-marked-entry]",
-]
-
-# In the block led by `mutations/`'s "the live-entry walk refuses a scalar where a list or an object
-# belongs": the row reads Claude Code's settings files by that walk and every other strictly, since
-# only Claude Code 2.1.288 was measured running a partly malformed file (macOS, 2026-10-05), and
-# names a file the walk could only partly read.
-[[mutation]]
-name = "hook-entries reads every settings file leniently, Codex's included"
-file = "src/stayfixed/doctor/entries.py"
-before = "            read = judged_entries(document, lenient=relative in LENIENT_SETTINGS)"
-after = "            read = judged_entries(document, lenient=True)"
-reddens = [
-  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[scalar-event]",
-  "tests/attach/test_doctor.py::test_codexs_hook_file_is_read_as_strictly_as_before_since_nothing_measured_it[byte-order-mark]",
-]
-
-[[mutation]]
-name = "hook-entries says nothing of a settings file it could only partly read"
-file = "src/stayfixed/doctor/entries.py"
-before = '''        if read.partly:
-            found.append((_BLIND, label))
-'''
-after = '''        if False:
-            found.append((_BLIND, label))
-'''
-reddens = [
-  "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
-]
-
-# A settings file is read through `fsops`' bounded reader, so one past the cap is a file the walk
-# is blind to, never one read to its end.
-[[mutation]]
-name = "hook-entries reads a settings file past the cap"
-file = "src/stayfixed/doctor/entries.py"
-before = "            document = read_regular_bytes(path).decode("
-after = "            document = path.read_bytes().decode("
-reddens = [
-  "tests/doctor/test_checks.py::test_a_settings_file_past_the_read_cap_is_one_the_walk_is_blind_to",
 ]
 
 # Each submodule discovery imports has one reader. A core module that asks for `commands` itself,
@@ -1022,26 +865,6 @@ file = "src/stayfixed/doctor/checks.py"
 before = "        name for name, value in budgets.configured.items() if value < budgets.preset[name]"
 after = "        name for name, value in budgets.configured.items() if value > budgets.preset[name]"
 reddens = ["tests/doctor/test_checks.py::test_a_budget_the_project_lowered_is_reported_green_and_named"]
-
-# `retired-deny`: a deny rule an earlier preset wrote and its successor retired is named while it is
-# still in the user settings file, and a file the owner left unparseable is a warning, not a red row.
-[[mutation]]
-name = "the retired-deny row names no retired rule"
-file = "src/stayfixed/doctor/checks.py"
-before = "    found = [rule for rule in retired if isinstance(rule, str) and rule in held]"
-after = "    found = [rule for rule in retired if isinstance(rule, str) and rule in ()]"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_retired_deny_rule_left_in_the_user_settings_is_named_with_setup_as_its_remedy",
-]
-
-[[mutation]]
-name = "the retired-deny row raises on user settings that are not JSON"
-file = "src/stayfixed/doctor/checks.py"
-before = "    except (OSError, ValueError):"
-after = "    except OSError:"
-reddens = [
-  "tests/doctor/test_checks.py::test_user_settings_that_do_not_parse_are_a_warning_and_not_a_crash",
-]
 
 # home-manager exports `XDG_CONFIG_HOME=$HOME/.config`, the very directory the machine file is read
 # under: ignoring it loses nothing, and a warning about it could never be cleared.

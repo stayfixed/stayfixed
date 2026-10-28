@@ -21,7 +21,6 @@ EXPORTED = [
     "Manifest",
     "ManifestError",
     "ParserLimitError",
-    "Placed",
     "Plan",
     "Record",
     "Refused",

@@ -283,8 +283,6 @@ def _write_user_settings(
     home: Path,
     deny_rules: Sequence[str],
     personal: Mapping[str, Any],
-    *,
-    retired: Sequence[str] = (),
 ) -> bool:
     """Merge the preset's deny rules and the personal values into `<home>/<USER_SETTINGS>`.
 
@@ -293,12 +291,6 @@ def _write_user_settings(
     `permissions.allow` — and `pluginConfigs` is filled key by key inside its own `options`, only
     where it holds no value: Claude Code writes there the answers a person gives in its
     plugin-config screen, so a value there is the user's and survives every run.
-
-    `retired` is the one removal: rules an earlier preset wrote under the same table and this one
-    took back (the preset's `[deny] retired`), each removed where it stands verbatim. A rule the
-    owner wrote is kept unless it is one of those exact strings, which is the rule an earlier
-    `setup` would have written in any case. A rule a preset both retires and lists is removed and
-    then added back at the end, so a contradictory preset still leaves it denied.
     """
     path = home / USER_SETTINGS
     document, text = _read_document(path)
@@ -309,7 +301,6 @@ def _write_user_settings(
     existing_deny = (
         [r for r in raw_deny if isinstance(r, str)] if isinstance(raw_deny, list) else []
     )
-    existing_deny = [r for r in existing_deny if r not in retired]
     permissions["deny"] = existing_deny + [r for r in deny_rules if r not in existing_deny]
     document["permissions"] = permissions
 
@@ -651,14 +642,13 @@ def setup(
     write_machine(machine, personal=personal, overlay_root=None, machine=machine_table)
 
     deny_rules = [r for r in data.get("deny", {}).get("global", []) if isinstance(r, str)]
-    retired = [r for r in data.get("deny", {}).get("retired", []) if isinstance(r, str)]
     # **`pluginConfigs` is filled from the machine file where it holds no value, and never
     # overwritten.** It is where Claude Code reads a plugin's `userConfig` answers, and where its
     # plugin-config screen writes the ones a person gives, so a value already there is the
     # user's. The cost is stated where a reader will meet it: a personal value changed in the
     # machine file after the first run does not reach `pluginConfigs`; changing it there, or
     # removing it so the next `setup` fills it again, does.
-    deny_written = _write_user_settings(home, deny_rules, read_personal(machine), retired=retired)
+    deny_written = _write_user_settings(home, deny_rules, read_personal(machine))
 
     installed, install_notes = _install_plugins(
         data, _agents(data), tuple(dict.fromkeys(plugins)), home=home, runner=runner

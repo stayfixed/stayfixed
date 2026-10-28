@@ -213,6 +213,17 @@ def test_a_retired_record_whose_file_is_already_gone_is_dropped(
     assert (tmp_path / "docs").is_dir() is directory
 
 
+def test_a_retired_artifact_gone_and_unrecorded_is_neither_planned_nor_unchanged(
+    tmp_path: Path,
+) -> None:
+    # `uninstall` retires every `[artifacts] local` id, recorded or not; one whose file is gone
+    # has nothing to remove, and listing it among the unchanged would name a file not there.
+    # Mutation: `mutations/`'s "a retired file that is gone and unrecorded is reported unchanged".
+    planned = plan(tmp_path, a_config(tmp_path), [a_template(retired=True)])
+    assert planned.actions == ()
+    assert planned.unchanged == ()
+
+
 def test_a_retired_template_edited_by_hand_is_reported_not_removed(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_text("mine now\n", encoding="utf-8")
     Manifest({}).with_record(a_record()).write(tmp_path)

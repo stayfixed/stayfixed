@@ -12,7 +12,7 @@ from stayfixed.config.loader import preset_defaults
 from stayfixed.hooks.api import EVENTS
 from stayfixed.overlay.identity import NO_RECORD, NOT_A_RECORD, overlay_fault
 from stayfixed.overlay.layout import IDENTITY_RECORD, OVERLAY_FILES
-from stayfixed.overlay.template import retired, template_root, templates
+from stayfixed.overlay.template import template_root, templates
 from stayfixed.presets import load_preset
 from stayfixed.printed import quoted
 from stayfixed.scaffold import MANIFEST_PATH
@@ -302,18 +302,6 @@ def test_the_identity_record_is_the_last_file_a_render_writes_and_a_clone_checks
     # tree is made, and one cut short is never an overlay: a render writes in this order, and git
     # checks a tree out in path order, in which the record's path has to sort after every other.
     assert OVERLAY_FILES[-1] == IDENTITY_RECORD == max(OVERLAY_FILES)
-
-
-def test_no_retired_file_is_one_the_template_ships() -> None:
-    # `overlay upgrade` plans a retired file's removal beside the shipped files' refresh, under
-    # the same id. A name in both would be refreshed and removed by one run, and the tree would
-    # ship a file the next upgrade deletes. No mutation: both lists are constants, and this holds
-    # them apart for whoever edits either.
-    names = [template.target for template in retired()]
-    assert names
-    assert set(names).isdisjoint(OVERLAY_FILES)
-    for relative in names:
-        assert not (template_root() / relative).exists(), relative
 
 
 def test_the_templates_plan_cleanly_into_an_empty_directory(tmp_path: Path) -> None:

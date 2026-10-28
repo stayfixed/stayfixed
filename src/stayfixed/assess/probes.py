@@ -54,8 +54,8 @@ PROFILE = "profile"
 PROFILE_NOT_SHIPPED = "profile-not-shipped"
 
 COULD_NOT_LOOK_REMEDY = (
-    "stayfixed could not read what `where` names; `stayfixed doctor` names a settings file it "
-    "cannot read, and a git query that timed out may answer once the repository is idle"
+    "stayfixed could not read all of what `where` names, so open each file it names and read it "
+    "yourself; a git query that timed out may answer once the repository is idle"
 )
 # Formatted with `", ".join(profiles.shipped()) or "none"`: stayfixed's own listing.
 PROFILE_NOT_SHIPPED_REMEDY = (
@@ -168,19 +168,16 @@ def _memory_history(context: ProbeContext) -> Looked:
 
 
 def _foreign_hooks(context: ProbeContext) -> Looked:
-    """Committed settings files of the selected harnesses that hold any hook entry, read by the
-    walk `doctor`'s `hook-entries` reads them with (`scaffold.judged_entries`,
-    lenient for the files a harness was measured running partly malformed): a file one names and
-    the other cannot read would be two answers about one file. Every way repository content can
-    make reading fail is "could not look", and so is a part of the file the walk skipped that
-    could hold a command. One difference stays: this decodes strictly, so a byte that is not
-    UTF-8 is "could not look" here where `doctor` reads past it.
+    """Committed settings files of the selected harnesses that hold any hook entry, read by
+    `scaffold.judged_entries`, lenient for the files a harness was measured running partly
+    malformed. Every way repository content can make reading fail is "could not look", and so is
+    a part of the file the walk skipped that could hold a command. The file is decoded strictly,
+    so a byte that is not UTF-8 is "could not look" too.
 
     **An entry claiming stayfixed's marker is foreign here too.** stayfixed writes no hook entry
     into a committed settings file -- `attach` merges into the one a repository keeps out of git --
-    and this probe has no grant to compare an entry with, which is what lets `hook-entries` vouch
-    for one. So a marker in a committed file is the repository's word alone, and one an entry of
-    any `type`, carrying any id, can give."""
+    so a marker in a committed file is the repository's word alone, and the walk does not read
+    one."""
     from stayfixed.harnesses import LENIENT_SETTINGS, select
 
     harnesses, _ = select(context.config.stayfixed.agents)
@@ -189,10 +186,10 @@ def _foreign_hooks(context: ProbeContext) -> Looked:
     for relative in sorted({s for h in harnesses for s in h.settings}):
         try:
             path = contained(context.root, relative)
-            # To the read cap, as `doctor` reads the same file: a committed one past it is a file
-            # this probe could not look at, never one read to its end.
+            # To the read cap: a committed file past it is one this probe could not look at,
+            # never one read to its end.
             text = read_regular_text(path) if fsops.is_file(path) else ""
-            # Raises `EntriesError` for a shape `doctor` names as one it could not read.
+            # Raises `EntriesError` for a shape the walk cannot read.
             walked = judged_entries(text, lenient=relative in LENIENT_SETTINGS)
         except _UNREADABLE:
             unread.append(relative)

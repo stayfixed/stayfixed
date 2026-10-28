@@ -72,12 +72,11 @@ SETUP_SANDBOXED = SANDBOX_REFUSED.format(
     remedy=RUN_OUTSIDE.format(command="`stayfixed setup`"),
 )
 
-# The one machine-scope settings file `setup` writes, relative to `home`, and the one `doctor`'s
-# `hook-entries` check reads back: Claude Code's settings file, which it reads under the home
-# directory as it does under a project, so it is the registry's one spelling of that file and the
-# two cannot drift apart. Codex has no equivalent: whether Codex has anything like a plugin's
-# `userConfig` has never been measured, so nothing is written there and the report says so rather
-# than guessing a path.
+# The one machine-scope settings file `setup` writes, relative to `home`: Claude Code's settings
+# file, which it reads under the home directory as it does under a project, so it is the
+# registry's one spelling of that file. Codex has no equivalent: whether Codex has anything like
+# a plugin's `userConfig` has never been measured, so nothing is written there and the report says
+# so rather than guessing a path.
 (USER_SETTINGS,) = CLAUDE.settings
 
 
