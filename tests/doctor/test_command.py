@@ -38,8 +38,8 @@ def _nothing_of_the_developers_own(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     The flag cases below cannot pass an environment through argparse, so the environment is made
     hermetic instead of passed.
 
-    `_own_root` is stood down for the same reason and one more: `plugin_root` would otherwise
-    answer with this checkout, and the `wrapper` check **executes** what it answers. Every case
+    `_own_root` is stood down for the same reason and one more: it would otherwise answer with
+    this checkout, and the `wrapper` check **executes** what it answers. Every case
     here would then spawn a real `hooks/run-hook.sh`, and `test_a_clean_installation_exits_zero`
     would become false the day that run goes red on somebody's machine — which is a fact about
     their interpreters, not about the argparse wiring this file is for. What the two checks do

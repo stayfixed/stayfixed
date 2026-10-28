@@ -54,8 +54,8 @@ PROFILE = "profile"
 PROFILE_NOT_SHIPPED = "profile-not-shipped"
 
 COULD_NOT_LOOK_REMEDY = (
-    "stayfixed could not read what `where` names; check that a settings file it names is "
-    "readable and valid JSON, and a git query that timed out may answer once the repository is idle"
+    "stayfixed could not read all of what `where` names, so open each file it names and read it "
+    "yourself; a git query that timed out may answer once the repository is idle"
 )
 # Formatted with `", ".join(profiles.shipped()) or "none"`: stayfixed's own listing.
 PROFILE_NOT_SHIPPED_REMEDY = (

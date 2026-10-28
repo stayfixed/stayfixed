@@ -118,9 +118,9 @@ class Context:
     config: Config | None
     plugin_root: Path | None = None
     # The plugin root this process can vouch for, which is the only one anything here executes.
-    # `plugin_root` may be a root the environment named; this is `None` unless self-derivation
-    # answered. Two fields and not a flag, because the check that runs the wrapper should not be
-    # able to reach the other answer at all.
+    # `plugin_root` is the root the environment named, if any; this is `None` unless
+    # self-derivation answered. Two fields and not a flag, because the check that runs the wrapper
+    # should not be able to reach the other answer at all.
     own_root: Path | None = None
     # Keyword-only and required: a report built without the session would have no owner's layer
     # to name and no way to tell a repository with no `stayfixed.toml` from one that fell back.

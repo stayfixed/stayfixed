@@ -14,21 +14,7 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_wrapper_refusal_that_quotes_bytes_that_are_not_text_is_still_read",
 ]
 
-# Which plugin root `doctor` trusts, first half. This ordering no longer decides what is *executed*
-# -- `_wrapper` takes `own_root` and nothing else -- so what it pins now is which wrapper `wrapper`
-# reads its mode from. A plugin's own and one a repository committed are different files with
-# different meanings, and the row would otherwise report on the wrong one.
-[[mutation]]
-name = "doctor reads a named plugin root's files in preference to its own"
-file = "src/stayfixed/doctor/checks.py"
-before = "    return _own_root() or _named_root(env)"
-after = "    return _named_root(env) or _own_root()"
-reddens = [
-  "tests/doctor/test_checks.py::test_a_named_plugin_root_never_outranks_the_one_this_stayfixed_is_part_of",
-]
-
-# Which plugin root `doctor` trusts, and the entry that matters: `doctor` runs a subprocess out of
-# this answer. With `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and
+# Which plugin root `doctor` runs a subprocess out of. With `_own_root()` returning `None` -- which a `uv tool install` wheel gives, and
 # which `cli-path`'s own remedy and the README tell people to install -- a project that commits
 # `hooks/run-hook.sh` mode 100755 plus an `env` block naming its tree got that script RUN, and the
 # report then read `wrapper: ok`. Code execution and a false clean bill of health from a read-only

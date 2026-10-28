@@ -31,9 +31,7 @@ one nobody can tell from a leftover:
   none: the areas' `attached` and `bundles` give it as the core's rows do, so one
   sentence says one state, through `configured`.
 
-`plugin_root` is not here: nothing outside this area imports it, and the one test that reads it
-takes it from `stayfixed.doctor.checks`, its own area's module. `stayfixed assess` needs nothing
-from this list.
+`stayfixed assess` needs nothing from this list.
 """
 
 from stayfixed.doctor.checks import run_checks

@@ -37,8 +37,8 @@ printing an unbounded free-text field in the same command would not be a policy,
 prints a count and the reader opens the file. `_diagnostics` says what quoting would let through.
 
 **A value the environment names is not the same as a value this process chose**, and the two
-checks that touch a plugin root say which they have: `plugin_root` finds the file, `own_root` is
-the only root anything executes.
+checks that touch a plugin root say which they have: `plugin_root` is the one a variable named,
+`own_root` is the only root anything executes.
 
 **The sink's layout is read from `stayfixed.hooks.api`, where it is defined.** `DIRECTORY`,
 `MARKERS`, `DIAGNOSTICS` and `DIAGNOSTICS_MAX_BYTES` are four strings this area and the hook area
@@ -171,7 +171,7 @@ def _own_root() -> Path | None:
 # measured in its *Codex plugin hooks* trial, so a rule written against one of them is
 # `config/machine.py`'s own finding again — "gating one of a pair of equivalent inputs is not a
 # partial defence, it is a redirect with a longer name". Neither is ever executed; see
-# `plugin_root`.
+# `_wrapper`.
 NAMED_ROOTS = tuple(dict.fromkeys(harness.plugin_root_env for harness in (CANONICAL, *HARNESSES)))
 
 
@@ -182,32 +182,6 @@ def _named_root(env: Mapping[str, str]) -> Path | None:
         if named and fsops.is_file(Path(named) / WRAPPER):
             return Path(named)
     return None
-
-
-def plugin_root(env: Mapping[str, str]) -> Path | None:
-    """Where `hooks/run-hook.sh` is on this machine, or `None` when it cannot be found.
-
-    **This answer says where the file is. It does not say that the file may be run.** The two
-    readings of it want different things: the wrapper's mode needs only the path, while
-    executing it needs to know who chose the path. So `Context` carries both this and
-    `own_root`, and `wrapper` executes only out of the second.
-
-    **This stayfixed's own root first, and the named variable only after it.** A plugin-root
-    variable is the same class of input as `STAYFIXED_CONFIG`, which `config/machine.py` does not
-    read at all: a committed `.claude/settings.json` `env` block reaches this process without a
-    trust prompt.
-    `hooks/run-hook.sh` derives its launcher from its own path for that reason, and this is the
-    same rule one layer up.
-
-    The variable is still consulted, because there is one arrangement self-derivation cannot
-    answer for: a stayfixed installed as a wheel beside a separately installed plugin — which is
-    what `uv tool install` gives, and what `cli-path`'s own remedy and the README tell people to
-    do. A wheel with no plugin anywhere carries neither, so `None` is an ordinary answer here
-    and the checks that need it skip.
-    """
-    # One expression rather than an early return, so the order itself is the single line a
-    # mutation inverts.
-    return _own_root() or _named_root(env)
 
 
 # A repository with no `stayfixed.toml`: what works there, and what adds the rest. A warning and
@@ -374,7 +348,8 @@ def _wrapper(context: Context) -> Row:
             return Row(
                 RED,
                 f"{WRAPPER} is not executable, so every hook entry exits 126 and the harness "
-                "reads that as a non-blocking error",
+                "reads that as a non-blocking error; this is the plugin root the environment "
+                "names, read here and run nowhere",
                 f"chmod +x {wrapper}",
             )
         return Row(
@@ -804,8 +779,8 @@ def _diagnostics(context: Context) -> Row:
 
     **Nothing in this file is quoted, because nothing here can establish who wrote it.** The log
     is `${CLAUDE_PLUGIN_DATA}/stayfixed/diagnostics.jsonl`, and that variable is the same class
-    `plugin_root`'s docstring names: a committed `.claude/settings.json` `env` block reaches this
-    process without a trust prompt. `event`,
+    as `NAMED_ROOTS`: a committed `.claude/settings.json` `env` block reaches this process without
+    a trust prompt. `event`,
     `handler` and `error` are stayfixed's own vocabulary *for a log stayfixed wrote*; for a log a
     repository committed they are three free-text fields, and `skills/doctor/SKILL.md` tells the
     model to relay this detail verbatim: quoted, a committed log whose `handler` is an
@@ -999,7 +974,7 @@ def _context(
         env,
         session.config,
         own_root=_own_root(),
-        plugin_root=plugin_root(env),
+        plugin_root=_named_root(env),
         session=session,
     )
 

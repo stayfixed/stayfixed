@@ -189,11 +189,11 @@ lists an agent with an unsandboxed shell as out of scope.
 Exits `2` if `trust.json` exists and is not a record this stayfixed reads — not JSON, not UTF-8, a
 later version, no `version`, a `version` that is neither `1` nor later (`0`, `"1"`, `true`), or a
 version-1 record that is not whole: a key besides `version` and `approvals`, an approval that is not
-an object of four text fields, or one approval named twice. It may hold every project's approval
-on the machine, so nothing will overwrite a file it could not read — delete it to start a new
-record, or repair it if it is one; for a record of a later version, which a later stayfixed
-wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
-release's approvals.
+an object of four text fields, or one approval named twice. Nothing will overwrite a file it
+could not read: one that does not parse may hold every project's approval, so repair or delete it,
+and delete any other to start a new record; for a record of a later version, which a later
+stayfixed wrote and is met after a downgrade, update stayfixed instead, since deleting it would
+destroy that release's approvals.
 
 **Reads** the machine's trust record.
 
@@ -3112,7 +3112,7 @@ the harness's to decide, and this row does not read that file.
 | missing | no `autoMemoryDirectory` | `warn` | `attach`, which writes it |
 | unreadable | a file that cannot be read as one JSON object | `warn` | make it one JSON object, then `attach` |
 
-**Eight of the fifteen have a `skip` arm — nineteen arms between them, every one on a state of
+**Eight of the fourteen have a `skip` arm — nineteen arms between them, every one on a state of
 this machine or this repository.** A `skip` is **not** a finding and never reaches the exit code, so
 read the detail — each one says which measurement it is missing. No row skips for want of a build
 that can answer it: `codex-hooks`, the one that did, left the report, and what holds on Codex is the

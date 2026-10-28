@@ -38,16 +38,19 @@ NO_HOME = (
     "HOME names no home directory, so there is no trust record to write; pass --machine PATH to "
     "keep one beside that file, which no hook reads"
 )
-# The close of every refusal of a record that is there and cannot be read.
-_HOLDS = "it may hold every project's approval on this machine, so nothing here will overwrite it"
-_KEPT = f"{_HOLDS} — delete it to start a new record, or repair it if it is one"
+# The close of the refusals of a record that is there and does not parse.
+_HOLDS = "it holds every project's approval on this machine, so nothing here will overwrite it"
+_KEPT = f"{_HOLDS} — repair or delete it"
 # A record a later stayfixed wrote is met after a downgrade, where deleting it would destroy the
 # later release's approvals: the remedy is the later release.
 LATER_VERSION = (
     "{path} is a trust record of a version this stayfixed does not read, which a later stayfixed "
     f"wrote; {_HOLDS} — update stayfixed to read it"
 )
-NOT_A_RECORD = "{path} is not a version-1 trust record; " + _KEPT
+NOT_A_RECORD = (
+    "{path} is not a version-1 trust record, and nothing here will overwrite it; delete it to "
+    "start a new record"
+)
 # A write to the record that was refused the way an agent's sandbox refuses one (`boundary`'s
 # docstring): run from an agent's shell, nothing it asks of the record can be written.
 SANDBOXED = SANDBOX_REFUSED.format(

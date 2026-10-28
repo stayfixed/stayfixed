@@ -60,7 +60,6 @@ from stayfixed.doctor.checks import (
     WORKFLOW,
     WORKFLOW_MAX_BYTES,
     WORKFLOW_NOT_A_FILE,
-    plugin_root,
 )
 from stayfixed.harnesses import CLAUDE
 from stayfixed.hooks.api import DIAGNOSTICS, DIAGNOSTICS_MAX_BYTES, DIRECTORY, MARKERS
@@ -498,8 +497,9 @@ def test_a_named_root_wrapper_without_its_executable_bit_is_red_and_with_it_a_sk
     # one thing it can read there; with the bit, it is still the skip it was.
     #
     # `_own_root` is stood down because the suite runs from a checkout, which *is* a plugin
-    # root with a healthy wrapper in it, and that root outranks the named variable.
-    # Mutation: `mutations/`'s "a named root's wrapper without its executable bit is a skip".
+    # root, and `wrapper` runs that one. It says whose root it read, since a committed `env` block
+    # can name it. Mutation: `mutations/`'s "a named root's wrapper without its executable bit is
+    # a skip".
     monkeypatch.setattr(checks, "_own_root", lambda: None)
     root = _initialised(tmp_path)
     plugin = _planted_plugin(tmp_path, executable=False)
@@ -507,6 +507,7 @@ def test_a_named_root_wrapper_without_its_executable_bit_is_red_and_with_it_a_sk
     check = _by_name(_checks(tmp_path, root, env=env), "wrapper")
     assert check.status == RED, check
     assert check.remedy == f"chmod +x {plugin / 'hooks' / 'run-hook.sh'}"
+    assert "the plugin root the environment names" in check.detail
     (plugin / "hooks" / "run-hook.sh").chmod(0o755)
     assert _by_name(_checks(tmp_path, root, env=env), "wrapper").status == SKIP
 
@@ -521,30 +522,6 @@ def test_an_own_root_wrapper_without_its_executable_bit_could_not_be_run(
     check = _by_name(_checks(tmp_path, _initialised(tmp_path)), "wrapper")
     assert check.status == RED, check
     assert "could not be run" in check.detail
-
-
-def test_a_named_plugin_root_never_outranks_the_one_this_stayfixed_is_part_of(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # `files` reads this answer, so which file it reads still matters: a wrapper the plugin
-    # ships and one a repository committed have different modes and different meanings. Nothing
-    # is *executed* from this answer any more — that rule is the case below — so the second arm
-    # is about a file `doctor` reads and never runs.
-    #
-    # Both roots are planted, so the case says nothing about how this suite happens to be
-    # installed. Both names are asserted because Codex exports `PLUGIN_ROOT` as well: a rule
-    # written against one of a pair is `config/machine.py`'s own finding again.
-    ours = _planted_plugin(tmp_path / "ours")
-    theirs = _planted_plugin(tmp_path / "theirs")
-    monkeypatch.setattr(checks, "_own_root", lambda: ours)
-    for name in checks.NAMED_ROOTS:
-        assert plugin_root(_env(tmp_path, **{name: str(theirs)})) == ours
-    # Non-vacuous: the variable is still the answer where self-derivation has none, which is
-    # the wheel-beside-a-plugin arrangement the ordering deliberately keeps working — for the
-    # read half only.
-    monkeypatch.setattr(checks, "_own_root", lambda: None)
-    for name in checks.NAMED_ROOTS:
-        assert plugin_root(_env(tmp_path, **{name: str(theirs)})) == theirs
 
 
 def test_a_plugin_root_the_environment_named_is_read_and_never_executed(
@@ -1101,10 +1078,10 @@ def test_a_check_that_cannot_read_a_file_is_a_warning_and_one_that_is_broken_is_
     def is_broken(_: Context) -> Row:
         raise ValueError("this check has a bug in it")
 
-    warned = checks._guarded("files", cannot_read, context)
+    warned = checks._guarded("wrapper", cannot_read, context)
     assert warned.status == "warn"
     assert "PermissionError" in warned.detail
-    assert checks._guarded("files", is_broken, context).status == "red"
+    assert checks._guarded("wrapper", is_broken, context).status == "red"
 
 
 @pytest.mark.parametrize("line", ["long-number", "nested"])

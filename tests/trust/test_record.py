@@ -48,7 +48,10 @@ def test_a_flat_map_with_no_version_is_refused_and_kept(tmp_path: Path) -> None:
     path.write_text(document, encoding="utf-8")
     with pytest.raises(UnreadableTrust) as caught:
         recorded(machine(tmp_path))
-    assert str(caught.value) == f"{path} is not a version-1 trust record; {KEPT}"
+    assert str(caught.value) == (
+        f"{path} is not a version-1 trust record, and nothing here will overwrite it; delete it to "
+        "start a new record"
+    )
     with pytest.raises(UnreadableTrust):
         approve_all(machine(tmp_path), "reviewed", {"/n": "e"}, now=T0)
     assert path.read_text(encoding="utf-8") == document
@@ -127,8 +130,8 @@ def test_an_unreadable_record_refuses_and_is_never_overwritten(
 # What every refusal of a record that is there and cannot be read ends with, written out rather than
 # imported, so the sentence a person reads is held here and not only by the module that says it.
 KEPT = (
-    "it may hold every project's approval on this machine, so nothing here will overwrite it — "
-    "delete it to start a new record, or repair it if it is one"
+    "it holds every project's approval on this machine, so nothing here will overwrite it — repair "
+    "or delete it"
 )
 
 
@@ -218,7 +221,7 @@ def test_a_record_past_the_parser_is_refused_and_never_overwritten(
     # past what it follows raises `RecursionError`, and an integer longer than the interpreter
     # converts (4,300 digits by default) a plain `ValueError`. The reader caught only the first
     # kind, so a write ended in an internal error quoting the interpreter, where a record it cannot
-    # read is refused in the record's own sentence: it may hold every project's approval, and
+    # read is refused in the record's own sentence: it holds every project's approval, and
     # nothing overwrites it. Mutation (oracle): `mutations/`'s "the trust record's reader lets a
     # document past the parser escape" -> the internal error comes back and both cases redden.
     path = tmp_path / RECORD

@@ -332,7 +332,7 @@ the event a handler reads does not say which value that was. That is all detecti
 `detect`'s docstring says why. Adding a harness is adding a value — a positive `detects`, its
 project-root and plugin-root variables, its `render`, its settings files, its memory directory if it
 keeps one, and its `reach`, the tier each enforcement surface holds at under it — and nothing that
-reads those needs an edit: `doctor` walks the settings files every value names, and the README's
+reads those needs an edit: `assess` reads the settings files every value names, and the README's
 table of what each agent enforces is held equal to every value's `reach` by a test. It is not only a value: what a new
 harness still touches outside the registry is listed in the module docstring of
 `src/stayfixed/harnesses.py`, and `tests/test_harnesses.py` holds that list to every string in the
