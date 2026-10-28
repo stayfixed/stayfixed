@@ -2618,6 +2618,17 @@ reddens = [
   "tests/attach/test_project_choice.py::test_doctor_judges_a_checkout_attached_with_no_stayfixed_toml_on_what_attach_used",
 ]
 
+# A checkout nothing on this machine binds has no project to build a configuration for: without the
+# guard, both rows end red on an error instead of skipping as they did.
+[[mutation]]
+name = "doctor builds a configuration for a checkout nothing binds"
+file = "src/stayfixed/doctor/model.py"
+before = "            if bound is None:\n                return None"
+after = "            if False:\n                return None"
+reddens = [
+  "tests/attach/test_project_choice.py::test_doctor_reads_an_unbound_checkout_with_no_stayfixed_toml_as_it_did",
+]
+
 # Where the main checkout has a stayfixed.toml, the file names the project, so a worktree without it
 # and a file the session dropped are judged on no configuration, as before.
 [[mutation]]

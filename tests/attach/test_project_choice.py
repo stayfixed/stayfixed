@@ -232,6 +232,16 @@ def test_doctor_judges_a_checkout_attached_with_no_stayfixed_toml_on_what_attach
     assert "store the composed store under the data directory" in rows["memory"].detail
 
 
+def test_doctor_reads_an_unbound_checkout_with_no_stayfixed_toml_as_it_did(tmp_path: Path) -> None:
+    # Nothing on this machine binds the checkout, so there is no project to build a configuration
+    # for: the rows skip and answer as they did before `attach` could bind such a checkout.
+    # Mutation: `mutations/`'s "doctor builds a configuration for a checkout nothing binds".
+    root, _, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
+    rows = _doctor(tmp_path, root, machine)
+    assert (rows["attached"].status, rows["attached"].detail) == (SKIP, NO_CONFIG_SKIP)
+    assert "no store: memory is the harness's own" in rows["memory"].detail
+
+
 def test_doctor_reads_a_worktree_whose_main_checkout_has_a_stayfixed_toml_as_it_did(
     tmp_path: Path,
 ) -> None:
