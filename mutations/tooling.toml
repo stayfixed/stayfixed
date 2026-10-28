@@ -3685,3 +3685,58 @@ reddens = [
   "tests/scripts/test_publish_template.py::test_a_repository_view_past_the_parser_is_a_failure_and_never_an_internal_error[long]",
   "tests/scripts/test_publish_template.py::test_a_repository_view_past_the_depth_bound_is_a_failure",
 ]
+
+# The benchmark's ledger refuses a repetition whose reservation would carry the spend past the
+# ceiling; without it, every repetition starts whatever the ledger says.
+[[mutation]]
+name = "the benchmark starts a repetition whatever the ledger holds"
+file = "scripts/bench/bench.py"
+before = '            if self.total + self.reserved + amount > self.ceiling:'
+after = '            if False:'
+reddens = [
+  "tests/scripts/test_bench.py::test_the_ceiling_stops_before_a_repetition_that_could_cross_it",
+  "tests/scripts/test_bench.py::test_a_repetition_that_overshoots_its_cap_is_charged_what_it_reported",
+]
+
+# The baseline arm is a bare `claude -p`: a `--plugin-dir` there would load stayfixed in both arms.
+[[mutation]]
+name = "the benchmark's baseline arm loads the plugin too"
+file = "scripts/bench/bench.py"
+before = '    if arm.plugin:'
+after = '    if True:'
+reddens = [
+  "tests/scripts/test_bench.py::test_the_without_arm_gets_no_plugin_dir_and_the_with_arm_one",
+]
+
+# A repetition's PATH names no directory of the caller's, so a stayfixed the person running the
+# benchmark installed is not reachable from the baseline arm.
+[[mutation]]
+name = "the benchmark's repetition inherits the caller's PATH"
+file = "scripts/bench/bench.py"
+before = '        "PATH": f"{python.parent}:{links}:/usr/bin:/bin:/usr/sbin:/sbin",'
+after = '''        "PATH": f"{python.parent}:{links}:{os.environ['PATH']}",'''
+reddens = [
+  "tests/scripts/test_bench.py::test_the_environment_holds_no_variable_of_the_caller_but_the_token",
+]
+
+# Every file the benchmark writes is scrubbed of the token: an agent that runs `env` puts it in
+# the transcript.
+[[mutation]]
+name = "the benchmark writes the token into its output"
+file = "scripts/bench/bench.py"
+before = '            text = text.replace(secret, "<token>")'
+after = '            text = text'
+reddens = [
+  "tests/scripts/test_bench.py::test_the_token_never_reaches_the_output",
+]
+
+# The count the benchmark exists for: a "passed" claim over a tree whose own tests are not green.
+[[mutation]]
+name = "the benchmark never counts a false done"
+file = "scripts/bench/bench.py"
+before = '        verdict["false_done"] = passed and not green'
+after = '        verdict["false_done"] = False'
+reddens = [
+  "tests/scripts/test_bench.py::test_a_passed_claim_over_a_red_truth_is_false_done",
+  "tests/scripts/test_bench.py::test_stale_green_with_a_deleted_test_is_not_green",
+]
