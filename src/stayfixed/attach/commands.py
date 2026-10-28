@@ -86,9 +86,7 @@ def _screen(attached: Attached) -> list[str]:
     and the remote are the repository's, and a hook's command or an allow rule holds spaces and may
     hold anything."""
     origin = "no origin remote" if attached.origin is None else f"origin {quoted(attached.origin)}"
-    # How the project was chosen, where no `stayfixed.toml` names it: `choose_project`'s own phrase.
-    chosen = "" if attached.chosen is None else f", {attached.chosen}"
-    lines = [f"binding {attached.binding}: project {quoted(attached.project)}{chosen}, {origin}"]
+    lines = [f"binding {attached.binding}: project {quoted(attached.project)}, {origin}"]
     for side in ("added", "removed"):
         carried = getattr(attached, side)
         lines += [

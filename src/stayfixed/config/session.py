@@ -213,21 +213,19 @@ def command_config(
 
     With no `stayfixed.toml` it is `load`'s refusal, unless the caller can name the project
     itself (`unnamed`, asked only then: `attach`'s choice): the configuration is then the preset's
-    (`loader.preset_defaults`) under the same resolution, the overlay's project layer read for
-    that name."""
+    (`loader.preset_defaults`) under the same resolution."""
     text = read_document(root)
     path = machine if machine is not None else machine_config_path()
     if text is not None:
         config = loads(text, root, machine=machine, owner=owner)
-        raw, project = tomllib.loads(text), None
+        raw = tomllib.loads(text)
     elif unnamed is None:
         return load(root, machine=machine, owner=owner)
     else:
-        project = unnamed()
-        config, raw = preset_defaults(project), {}
+        config, raw = preset_defaults(unnamed()), {}
     preset = preset_named(raw)
     held = resolve_owner(path, preset=preset) if owner is None else rebased(owner, preset)
-    overlays, notes = overlay_layers.read(root, machine=path, project=project)
+    overlays, notes = overlay_layers.read(root, machine=path)
     resolved = _resolved(SessionConfig(config, held, document=raw), overlays, notes).config
     return config if resolved is None else resolved
 

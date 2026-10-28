@@ -2339,9 +2339,8 @@ offering to remove the ledger.
 be bound to your overlay. Its project — the directory under the overlay's `projects/` it is bound
 to — is chosen, by `attach` and `--check` alike, in this order:
 
-1. `--project NAME`, held to the rule `[project] name` is held to (one lowercase path segment:
-   lowercase letters, digits, `.`, `_` and `-`, led by a letter or digit), which the parser
-   refuses (`2`) without echoing the value;
+1. `--project NAME`, held to the rule `[project] name` is held to, which the parser refuses (`2`)
+   without echoing the value;
 2. the project this machine's binding records for the checkout, so a re-attach needs no flag;
 3. the one overlay project whose `projects/<name>/project.toml` records this checkout's `origin`,
    compared as the binding's `origin` note compares remotes (below: the three spellings of one
@@ -2349,17 +2348,15 @@ to — is chosen, by `attach` and `--check` alike, in this order:
    two or more such projects are refused (`2`), naming them, with `--project` to choose;
 4. otherwise the last segment of `origin`'s path, `.git` taken off and lower-cased
    (`https://example.com/Owner/Widget-Kit.git` is `widget-kit`), refused (`2`) where that is not a
-   project name, or where the overlay's `projects/<that name>/project.toml` records another
-   remote.
+   project name.
 
 With no `origin` and neither of the first two, it is refused (`2`). Every refusal names `--project`
-as the way out. The attach screen's binding line says which way the project was chosen — `named by
---project`, `as this machine's binding names it`, `found in the overlay by its remote` or `taken
-from the remote's name` — beside the project and the origin, which is what you read: matching by
-remote is a convenience, and a clone whose `origin` claims one of your repositories is bound to that
-project. The configuration it acts on is the preset's, under your overlay's `common/stayfixed.toml`
-and `projects/<name>/stayfixed.toml`, the latter read for the chosen project from the first attach,
-and the machine file, as a session resolves its preferences; so `memory.mode` is the preset's,
+as the way out. The attach screen's binding line names the project and the origin, which is what
+you read: matching by remote is a convenience, and a clone whose `origin` claims one of your
+repositories is bound to that project. The configuration it acts on is the preset's, under your
+overlay's `common/stayfixed.toml`, its `projects/<name>/stayfixed.toml` once the binding is recorded
+(a first attach reads it after recording, as for a repository with the file), and the machine
+file, as a session resolves its preferences; so `memory.mode` is the preset's,
 `harness`, unless an overlay file sets `overlay`. Where the repository has a `stayfixed.toml`, its
 `[project] name` names the project and nothing above applies; `--project` beside it is refused
 (`2`).
@@ -3172,10 +3169,10 @@ second state arm of its own — a plugin built before the release record existed
 it says so rather than comparing anything.
 And four rows read the project configuration and skip, in one sentence, when there is none to
 read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached` and
-`bundles`. `memory` reads the resolution a session reads and answers without one. A checkout with
-no `stayfixed.toml` that this machine binds is the one exception for `attached` and for the note
-store `memory` reads: both are judged on the configuration `attach` acted on there, the
-preset's under the overlay's layers for the project the binding record names.
+`bundles`. `memory` reads the resolution a session reads and answers without one. A checkout this
+machine binds whose main checkout has no `stayfixed.toml` is the one exception for `attached` and
+for the note store `memory` reads: both are judged on the configuration `attach` acted on there,
+the preset's under the overlay's layers for the project the binding record names.
 
 **A `skip` does not mean there is nothing to do.** Seven of the twenty-two arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and

@@ -361,11 +361,6 @@ def _bound(root: Path, config: Config, overlay: Path) -> Binding:
     return Binding(project, overlay, store, origin, recorded, state, note, earlier, fault)
 
 
-# How `choose_project` chose, each said on the attach screen after the project's name.
-NAMED = "named by --project"
-BOUND_HERE = "as this machine's binding names it"
-BY_REMOTE = "found in the overlay by its remote"
-FROM_REMOTE = "taken from the remote's name"
 # The refusals of a repository whose project nothing names, each with `--project` as the way out.
 # Every name in them is the overlay's, the owner's own, or one `origin` spells, printed quoted.
 NO_PROJECT = (
@@ -380,33 +375,22 @@ NOT_A_NAME = (
     "the name this checkout's origin ends in cannot be a project's ({rule}); name the project "
     "with `--project`"
 )
-ANOTHER_REMOTE = (
-    "the overlay's project {name}, which this checkout's origin is named after, records another "
-    "remote; name the project with `--project`"
-)
 NAMED_BY_FILE = (
     "--project names the project of a repository with no stayfixed.toml, and this one's "
     "[project] name names it already"
 )
 
 
-def choose_project(root: Path, named: str | None, *, machine: Path | None) -> tuple[str, str]:
-    """The project a repository with no `stayfixed.toml` attaches under, and how it was chosen:
-    `named` (`--project`, held to the name rule by the parser), else the project this machine's
-    binding records for the checkout, else the one overlay project whose record names `origin`
-    (compared as `memory.store.origin_note` compares remotes), else `origin`'s own name
-    (`gitenv.repository_name`) held to the name rule, unless the overlay records that project
-    with another remote. Every refusal names `--project`.
-
-    **A convenience and not a gate.** A clone whose `origin` claims one of the owner's
-    repositories is bound to that project, and the anchor is `origin`, which whoever cloned set:
-    the owner who runs `attach` reads the project and the origin on its screen.
-    """
+def choose_project(root: Path, named: str | None, *, machine: Path | None) -> str:
+    """The project a repository with no `stayfixed.toml` attaches under: **a convenience and not
+    a gate.** A clone whose `origin` claims one of the owner's repositories is bound to that
+    project, and the anchor is `origin`, which whoever cloned set: the owner who runs `attach`
+    reads the project and the origin on its screen."""
     if named is not None:
-        return named, NAMED
+        return named
     found = bound_project(root)
     if found is not None:
-        return found.project, BOUND_HERE
+        return found.project
     origin = origin_remote(root)
     if origin is None:
         raise Refusal(NO_PROJECT)
@@ -418,14 +402,11 @@ def choose_project(root: Path, named: str | None, *, machine: Path | None) -> tu
         names = ", ".join(quoted(name) for name in matches)
         raise Refusal(SEVERAL_PROJECTS.format(count=len(matches), names=names))
     if matches:
-        return matches[0], BY_REMOTE
+        return matches[0]
     derived = repository_name(origin)
     if not PROJECT_NAME.match(derived):
         raise Refusal(NOT_A_NAME.format(rule=NAME_RULE))
-    recorded = _recorded(overlay, derived)
-    if recorded is not None and origin_note(recorded, origin) is not None:
-        raise Refusal(ANOTHER_REMOTE.format(name=quoted(derived)))
-    return derived, FROM_REMOTE
+    return derived
 
 
 def _projects(overlay: Path) -> list[str]:

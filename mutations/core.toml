@@ -6335,18 +6335,6 @@ reddens = [
   "tests/test_fsops.py::test_vacant_raises_for_a_directory_it_cannot_list",
 ]
 
-# The overlay's project layer is read for the project `attach` chose for a repository with no
-# stayfixed.toml, before any binding records it, so a `memory.mode` it sets applies from the first
-# attach and `--check` meets what the run meets.
-[[mutation]]
-name = "attach reads no overlay project layer for the project it chose"
-file = "src/stayfixed/config/overlay_layers.py"
-before = "    project = project if project is not None else _bound(root, notes)"
-after = "    project = _bound(root, notes)"
-reddens = [
-  "tests/attach/test_project_choice.py::test_check_reads_the_overlay_project_layer_for_the_chosen_project_before_any_binding",
-]
-
 # A remote's repository name is lower-cased before it is a project's, so `Widget-Kit` is a name.
 [[mutation]]
 name = "attach derives the project's name with its case"

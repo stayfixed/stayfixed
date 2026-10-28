@@ -44,7 +44,7 @@ def check(
     project of a repository with no `stayfixed.toml` as the run's does (`write.configured`).
     """
     root = main_checkout_of(root)
-    config, _ = configured(root, project, machine=machine, owner=owner)
+    config = configured(root, project, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     diff = gates(root, config, binding)
     plan_writes(root, config, binding, diff)

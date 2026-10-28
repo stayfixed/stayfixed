@@ -16,18 +16,16 @@ from pathlib import Path
 import pytest
 
 from stayfixed import binding
-from stayfixed.attach.binding import BOUND_HERE, BY_REMOTE, FROM_REMOTE, NAMED
 from stayfixed.cli import build_parser, discover_registrars, run
 from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, SKIP, Check, run_checks
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
-from stayfixed.printed import quoted
 from tests.attach.test_binding import _machine, _project_and_store
 from tests.attach.test_write import SETTINGS
 from tests.doctor.test_checks import _env
 from tests.gitfixture import git
 from tests.runners import Recorder, claude_code
-from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
+from tests.snapshot import assert_snapshot_unchanged, snapshot
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -73,23 +71,12 @@ def _flags(root: Path, machine: Path) -> list[str]:
     return ["--root", str(root), "--machine", str(machine)]
 
 
-def _screen(root: Path, project: str, chosen: str, origin: str) -> str:
-    made = binding.read_id(root)
-    assert made is not None
-    return (
-        f"binding {binding.short(made)}: project {quoted(project)}, {chosen}, "
-        f"origin {quoted(origin)}"
-    )
-
-
 def _bound_to(root: Path) -> str | None:
     found = binding.bound_project(root)
     return None if found is None else found.project
 
 
-def test_project_names_the_project_of_a_repository_with_no_stayfixed_toml(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_project_names_the_project_of_a_repository_with_no_stayfixed_toml(tmp_path: Path) -> None:
     # The first way, and the one every refusal below names: the owner says which project. It wins
     # over the remote's own name, `widget` here. Mutation: `mutations/`'s "attach ignores
     # --project".
@@ -97,36 +84,29 @@ def test_project_names_the_project_of_a_repository_with_no_stayfixed_toml(
     root, _, machine = _clone(tmp_path, origin=origin)
     assert invoke(["attach", "--project", "mine", *_flags(root, machine)]) == 0
     assert _bound_to(root) == "mine"
-    assert _screen(root, "mine", NAMED, origin) in capsys.readouterr().out.splitlines()
 
 
-def test_a_later_attach_takes_the_project_this_machines_binding_records(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_a_later_attach_takes_the_project_this_machines_binding_records(tmp_path: Path) -> None:
     # The second way: once bound, a routine re-attach needs no `--project`, and does not drift to
-    # the remote's name. Mutation: `mutations/`'s "attach forgets this machine's binding".
-    origin = "git@example.com:o/widget.git"
-    root, _, machine = _clone(tmp_path, origin=origin)
+    # the remote's name, even where the overlay no longer records this remote for the project, so
+    # the overlay alone would name `widget`. Mutation: `mutations/`'s "attach forgets this
+    # machine's binding".
+    root, overlay, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
     assert invoke(["attach", "--project", "mine", *_flags(root, machine)]) == 0
-    capsys.readouterr()
+    (overlay / PROJECTS / "mine" / PROJECT_RECORD).unlink()
     assert invoke(["attach", *_flags(root, machine)]) == 0
     assert _bound_to(root) == "mine"
-    assert _screen(root, "mine", BOUND_HERE, origin) in capsys.readouterr().out.splitlines()
 
 
-def test_the_one_overlay_project_recording_this_origin_is_the_project(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_the_one_overlay_project_recording_this_origin_is_the_project(tmp_path: Path) -> None:
     # The third way, the one a second machine meets: the overlay's record names the remote in
     # another spelling, which is the same repository as the binding note compares them. Mutation:
     # `mutations/`'s "attach finds no overlay project by its remote".
-    origin = "https://github.com/o/widget"
-    root, overlay, machine = _clone(tmp_path, origin=origin)
+    root, overlay, machine = _clone(tmp_path, origin="https://github.com/o/widget")
     _recorded(overlay, "alpha", "git@github.com:O/Widget.git")
     _recorded(overlay, "beta", "git@github.com:o/other.git")
     assert invoke(["attach", *_flags(root, machine)]) == 0
     assert _bound_to(root) == "alpha"
-    assert _screen(root, "alpha", BY_REMOTE, origin) in capsys.readouterr().out.splitlines()
 
 
 def test_two_overlay_projects_recording_this_origin_are_refused_and_nothing_is_written(
@@ -147,7 +127,7 @@ def test_two_overlay_projects_recording_this_origin_are_refused_and_nothing_is_w
 
 
 def test_with_nothing_recorded_the_project_is_the_last_segment_of_origin_lower_cased(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
 ) -> None:
     # The fourth way, a first attach anywhere: the repository's own name, `.git` taken off and
     # lower-cased, which the overlay's record then keeps beside this remote for the next machine.
@@ -156,24 +136,8 @@ def test_with_nothing_recorded_the_project_is_the_last_segment_of_origin_lower_c
     root, overlay, machine = _clone(tmp_path, origin=origin)
     assert invoke(["attach", *_flags(root, machine)]) == 0
     assert _bound_to(root) == "widget-kit"
-    assert _screen(root, "widget-kit", FROM_REMOTE, origin) in capsys.readouterr().out.splitlines()
     record = overlay / PROJECTS / "widget-kit" / PROJECT_RECORD
     assert origin in record.read_text(encoding="utf-8")
-
-
-def test_a_derived_name_the_overlay_records_with_another_remote_is_refused(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # `widget` in the overlay is another repository of that name, and binding this clone to it
-    # would deliver that project's grants and notes here. Mutation: `mutations/`'s "attach takes a
-    # derived name the overlay records for another remote".
-    root, overlay, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
-    _recorded(overlay, "widget", "git@example.com:other/widget.git")
-    before = snapshot(root)
-    assert invoke(["attach", *_flags(root, machine)]) == 2
-    assert "--project" in capsys.readouterr().err
-    assert_snapshot_unchanged(root, before)
-    assert invoke(["attach", "--project", "widget-fork", *_flags(root, machine)]) == 0
 
 
 def test_a_derived_name_that_is_no_project_name_is_refused(
@@ -198,8 +162,6 @@ def test_no_origin_and_no_binding_is_refused_naming_project(
     assert "--project" in capsys.readouterr().err
     assert invoke(["attach", "--check", *_flags(root, machine)]) == 2
     assert binding.read_id(root) is None
-    assert invoke(["attach", "--project", "mine", *_flags(root, machine)]) == 0
-    assert _bound_to(root) == "mine"
 
 
 def test_project_beside_a_stayfixed_toml_is_refused(
@@ -231,32 +193,6 @@ def test_a_project_no_directory_name_can_be_is_refused_before_anything_runs(
     assert binding.read_id(root) is None
 
 
-def test_check_reads_the_overlay_project_layer_for_the_chosen_project_before_any_binding(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # No binding record names the project yet, so the overlay's project layer is read for the
-    # project chosen here, or a `memory.mode` it sets would go unseen until a second attach. Its
-    # `memory.groups` leaves the share, which only overlay mode asks about: `--check` refuses it as
-    # the run would. Mutation: `mutations/`'s "attach reads no overlay project layer for the
-    # project it chose".
-    root, overlay, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
-    (overlay / PROJECTS / "widget").mkdir(parents=True)
-    (overlay / PROJECTS / "widget" / "stayfixed.toml").write_text(
-        '[memory]\nmode = "overlay"\ngroups = ["../../escape"]\n', encoding="utf-8"
-    )
-    assert invoke(["attach", "--check", *_flags(root, machine)]) == 2
-    assert "memory.groups" in capsys.readouterr().err
-    (overlay / PROJECTS / "widget" / "stayfixed.toml").write_text(
-        '[memory]\nmode = "overlay"\n', encoding="utf-8"
-    )
-    before = snapshot(root)
-    assert invoke(["attach", "--check", *_flags(root, machine)]) == 0
-    assert_snapshot_unchanged(root, before)
-    assert invoke(["attach", *_flags(root, machine)]) == 0
-    document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
-    assert "autoMemoryDirectory" in document
-
-
 def test_without_an_overlay_layer_the_mode_is_the_presets_and_no_pointer_is_written(
     tmp_path: Path,
 ) -> None:
@@ -267,22 +203,6 @@ def test_without_an_overlay_layer_the_mode_is_the_presets_and_no_pointer_is_writ
     document = json.loads((root / SETTINGS).read_text(encoding="utf-8"))
     assert "autoMemoryDirectory" not in document
     assert document["enabledPlugins"]
-
-
-def test_attach_then_detach_leaves_a_repository_with_no_stayfixed_toml_as_it_was(
-    tmp_path: Path,
-) -> None:
-    # The round trip through Claude Code's calls: `detach` reads no configuration, so a checkout
-    # attached with no `stayfixed.toml` comes back byte for byte, and `git status` shows nothing at
-    # either end.
-    root, _, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
-    before = snapshot(root)
-    assert invoke(["attach", *_flags(root, machine)]) == 0
-    assert_snapshot_changed(root, before)
-    assert git(root, "status", "--porcelain", "-uall").strip() == ""
-    assert invoke(["detach", *_flags(root, machine)]) == 0
-    assert_snapshot_unchanged(root, before)
-    assert git(root, "status", "--porcelain", "-uall").strip() == ""
 
 
 def _doctor(tmp_path: Path, root: Path, machine: Path) -> dict[str, Check]:
@@ -309,16 +229,22 @@ def test_doctor_judges_a_checkout_attached_with_no_stayfixed_toml_on_what_attach
         "attached; the delivery is in place; autoMemoryDirectory points the harness at the "
         "composed store; the binding is bound",
     )
-    assert rows["memory"].status == OK
-    assert "the store does not resolve" not in rows["memory"].detail
     assert "store the composed store under the data directory" in rows["memory"].detail
 
 
-def test_doctor_reads_an_unbound_checkout_with_no_stayfixed_toml_as_it_did(tmp_path: Path) -> None:
-    # Nothing on this machine binds the checkout, so there is no project to build a configuration
-    # for: the rows skip and answer as they did before `attach` could bind such a checkout.
-    root, _, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
-    rows = _doctor(tmp_path, root, machine)
+def test_doctor_reads_a_worktree_whose_main_checkout_has_a_stayfixed_toml_as_it_did(
+    tmp_path: Path,
+) -> None:
+    # A linked worktree without the file whose main checkout has one and is attached: the file
+    # names the project, so there is no configuration of `attach`'s to build, and the row skips as
+    # before `attach` could bind a checkout with no file. Mutation: `mutations/`'s "doctor builds a
+    # configuration where the main checkout has a stayfixed.toml".
+    from tests.attach.test_detach import _bound as _attached_with_file
+
+    root, store, machine = _attached_with_file(tmp_path)
+    assert invoke(["attach", "--store", str(store), *_flags(root, machine)]) == 0
+    side = tmp_path / "side"
+    git(root, "worktree", "add", "-q", str(side), "-b", "side")
+    (side / "stayfixed.toml").unlink()
+    rows = _doctor(tmp_path, side, machine)
     assert (rows["attached"].status, rows["attached"].detail) == (SKIP, NO_CONFIG_SKIP)
-    assert rows["memory"].status == OK
-    assert "no store: memory is the harness's own" in rows["memory"].detail

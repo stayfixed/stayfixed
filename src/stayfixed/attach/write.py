@@ -51,7 +51,7 @@ import datetime
 import json
 import os
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -218,9 +218,6 @@ class Attached:
     binding: str
     origin: str | None = None
     project: str = ""
-    # How the project was chosen for a repository with no `stayfixed.toml` (`choose_project`'s
-    # phrase), and `None` where the file names it.
-    chosen: str | None = None
     added: Carried = Carried()
     removed: Carried = Carried()
     allow_added: tuple[str, ...] = ()
@@ -783,8 +780,6 @@ class AttachPlan:
     rules: tuple[tuple[str, str], ...]
     # What the rendered plugin carries, read from the overlay (`render.read_parts`).
     parts: dict[str, Part]
-    # How the project was chosen where no `stayfixed.toml` names it (`configured`).
-    chosen: str | None = None
 
 
 def attach(
@@ -863,21 +858,20 @@ def gates(root: Path, config: Config, binding: Binding) -> PermissionDiff:
 
 def configured(
     root: Path, project: str | None, *, machine: Path | None, owner: Owner | None
-) -> tuple[Config, str | None]:
-    """The run's one `Config`, and how its project was chosen where the repository has no
-    `stayfixed.toml` (`binding.choose_project`, asked only then), else `None`. `project` is
-    `--project`, refused beside the file, which names the project already."""
+) -> Config:
+    """The run's one `Config`, its project chosen where the repository has no `stayfixed.toml`
+    (`binding.choose_project`, asked only then). `project` is `--project`, refused beside the
+    file, which names the project already."""
     chosen: list[str] = []
 
     def unnamed() -> str:
-        name, how = choose_project(root, project, machine=machine)
-        chosen.append(how)
-        return name
+        chosen.append(choose_project(root, project, machine=machine))
+        return chosen[0]
 
     config = command_config(root, machine=machine, owner=owner, unnamed=unnamed)
     if project is not None and not chosen:
         raise Refusal(NAMED_BY_FILE)
-    return config, chosen[0] if chosen else None
+    return config
 
 
 def _plan(
@@ -895,10 +889,10 @@ def _plan(
     # One load for the whole run, handed to `read_binding` rather than left for it to make a
     # second of: a `--check` that read two documents reports the wrong thing, while an `attach`
     # that reads two writes under the wrong one.
-    config, chosen = configured(root, project, machine=machine, owner=owner)
+    config = configured(root, project, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     diff = gates(root, config, binding)
-    return replace(plan_writes(root, config, binding, diff), chosen=chosen)
+    return plan_writes(root, config, binding, diff)
 
 
 def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
@@ -1002,7 +996,7 @@ def _carry_out(
     _record_project(binding, bound.origin)
     # The mode, resolved again now that the binding is recorded: the overlay's project layer is
     # read for a bound checkout only, so a first attach's plan could not see a mode set there. A
-    # repository with no `stayfixed.toml` has it read for the project chosen (`configured`).
+    # repository with no `stayfixed.toml` is named the project just bound (`configured`).
     config = command_config(root, machine=machine, owner=owner, unnamed=lambda: binding.project)
     memory = config.memory.mode == OVERLAY_MODE
     if memory:
@@ -1053,7 +1047,6 @@ def _carry_out(
         short(id),
         origin=None if binding.remote is None else without_userinfo(binding.remote),
         project=binding.project,
-        chosen=planned.chosen,
         added=after.without(before),
         removed=before.without(after),
         allow_added=planned.diff.added_allow,

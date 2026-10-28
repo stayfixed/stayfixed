@@ -181,9 +181,7 @@ def _memory(context: Context, answers: Answers) -> Row:
         except ValueError:
             where = "the composed store under the data directory"
         groups = (
-            [g for g in config.memory.groups if g in store.groups]
-            if (config := context.attach_config)
-            else []
+            [g for g in context.config.memory.groups if g in store.groups] if context.config else []
         )
         pending = len(unreviewed(store, walk(store.path, groups).notes))
         parts.append(f"store {where}, {pending} unreviewed note(s)")

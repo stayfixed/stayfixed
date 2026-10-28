@@ -1555,8 +1555,8 @@ reddens = [
 [[mutation]]
 name = "the attached row reads a configuration that is not there"
 file = "src/stayfixed/attach/doctor.py"
-before = "        if config is None:\n            return Row(SKIP, NO_CONFIG_SKIP)"
-after = "        if False:\n            return Row(SKIP, NO_CONFIG_SKIP)"
+before = "    attached = configured(lambda context, config: _attached(context, config, ledger), attach=True)"
+after = "    attached = lambda context: _attached(context, context.attach_config, ledger)  # noqa: E731"
 reddens = [
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
 ]
@@ -1696,8 +1696,8 @@ reddens = ["tests/attach/test_doctor.py::test_a_composed_store_whose_link_dangle
 [[mutation]]
 name = "attach ignores --project"
 file = "src/stayfixed/attach/binding.py"
-before = "    if named is not None:\n        return named, NAMED"
-after = "    if False:\n        return named, NAMED"
+before = "    if named is not None:\n        return named\n"
+after = "    if False:\n        return named\n"
 reddens = [
   "tests/attach/test_project_choice.py::test_project_names_the_project_of_a_repository_with_no_stayfixed_toml",
 ]
@@ -1706,8 +1706,8 @@ reddens = [
 [[mutation]]
 name = "attach forgets this machine's binding"
 file = "src/stayfixed/attach/binding.py"
-before = "    found = bound_project(root)\n    if found is not None:\n        return found.project, BOUND_HERE"
-after = "    found = None\n    if found is not None:\n        return found.project, BOUND_HERE"
+before = "    found = bound_project(root)\n    if found is not None:\n        return found.project\n"
+after = "    found = None\n    if found is not None:\n        return found.project\n"
 reddens = [
   "tests/attach/test_project_choice.py::test_a_later_attach_takes_the_project_this_machines_binding_records",
 ]
@@ -1742,22 +1742,12 @@ reddens = [
   "tests/attach/test_project_choice.py::test_a_derived_name_that_is_no_project_name_is_refused",
 ]
 
-# A derived name the overlay keeps for another repository would deliver that project here.
-[[mutation]]
-name = "attach takes a derived name the overlay records for another remote"
-file = "src/stayfixed/attach/binding.py"
-before = "    if recorded is not None and origin_note(recorded, origin) is not None:"
-after = "    if False:"
-reddens = [
-  "tests/attach/test_project_choice.py::test_a_derived_name_the_overlay_records_with_another_remote_is_refused",
-]
-
 # With no origin and no binding nothing names the project, and the directory's name is a guess.
 [[mutation]]
 name = "attach takes the directory's name where nothing names the project"
 file = "src/stayfixed/attach/binding.py"
 before = "    if origin is None:\n        raise Refusal(NO_PROJECT)"
-after = "    if origin is None:\n        return root.name, FROM_REMOTE"
+after = "    if origin is None:\n        return root.name"
 reddens = [
   "tests/attach/test_project_choice.py::test_no_origin_and_no_binding_is_refused_naming_project",
 ]

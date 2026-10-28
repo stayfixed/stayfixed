@@ -29,13 +29,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.config.schema import BRANCH_NAME, NAME_RULE, PROJECT_NAME
 from stayfixed.errors import Refusal
-from stayfixed.gitenv import (
-    GitUnavailable,
-    git_run,
-    in_work_tree,
-    origin_remote,
-    repository_name,
-)
+from stayfixed.gitenv import GitUnavailable, git_run, in_work_tree, origin_remote, repository_name
 
 DEFAULT_BRANCH = "main"
 ORIGIN_PREFIX = "refs/remotes/origin/"

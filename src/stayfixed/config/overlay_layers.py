@@ -5,9 +5,7 @@ checkout, and `<overlay>/projects/<project>/stayfixed.toml` for a checkout this 
 reads the id in the checkout's git common directory and this machine's record of it, so a clone
 that commits the `[project] name` of one of the owner's projects has no project layer, and only
 the common file applies to it. The overlay is the one `[overlay] root` of the machine file names
-(`config.overlay.overlay_root`). The one exception is `attach` in a repository with no
-`stayfixed.toml`, which names no project of its own: the project `attach` chose is read before the
-binding records it (`read`'s `project`).
+(`config.overlay.overlay_root`).
 
 **Read the way a session reads `stayfixed.toml`, noting rather than refusing.** A name this
 stayfixed does not read is ignored, and a value it cannot use is left out so the layer beneath
@@ -95,14 +93,12 @@ _TABLES: dict[str, type[Any]] = {
 
 
 def read(
-    root: Path | None, *, machine: Path | None = None, project: str | None = None
+    root: Path | None, *, machine: Path | None = None
 ) -> tuple[tuple[Layer, ...], tuple[str, ...]]:
     """The overlay's layers for the checkout at `root`, lowest first, and the notes reading them
     gave. `machine` is the machine file, as `overlay_root` takes it; `root` is `None` for a hook
     with no project root, which has no binding and gets the common layer only, as an unbound
-    checkout does. `project` is the project `attach` chose for a repository with no
-    `stayfixed.toml` (`attach.binding.choose_project`), read in place of the binding's, which a
-    first attach has not recorded yet."""
+    checkout does."""
     notes: list[str] = []
     try:
         overlay = overlay_root(machine)
@@ -114,7 +110,7 @@ def read(
     common = _layer(overlay / COMMON / CONFIG_FILE, LayerName.OVERLAY_COMMON, notes)
     if common is not None:
         layers.append(common)
-    project = project if project is not None else _bound(root, notes)
+    project = _bound(root, notes)
     if project is not None:
         path = overlay / PROJECTS / project / CONFIG_FILE
         own = _layer(path, LayerName.OVERLAY_PROJECT, notes)

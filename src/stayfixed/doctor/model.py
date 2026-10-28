@@ -18,7 +18,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Final, Literal
 
-from stayfixed.binding import bound_project
+from stayfixed.binding import bound_project, main_checkout_or_none
+from stayfixed.config.loader import read_document
 from stayfixed.config.overlay import overlay_root as recorded_overlay_root
 from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import Config
@@ -154,24 +155,25 @@ class Context:
 
     @cached_property
     def attach_config(self) -> Config | None:
-        """`config`, or, in a checkout with no `stayfixed.toml` that this machine binds, the
-        configuration `attach` acts on there (`config.session.command_config`, for the project the
-        binding record names): the rows about what `attach` delivered — `attached` and the note
-        store — judge such a checkout on what `attach` used. Every other row reads `config`. An
-        unbound checkout with no file, and one whose file does not load, have none, as before; a
-        resolution that fails is none too (`errors.resolved_or_none`), resolved once a report."""
+        """`config`, or, where this machine binds a checkout whose main checkout has no
+        `stayfixed.toml` at all, the configuration `attach` acts on there
+        (`config.session.command_config` in the main checkout, for the project the binding record
+        names): the rows about what `attach` delivered — `attached` and the note store — judge such
+        a checkout on what `attach` used. Every other row reads `config`, and every other case,
+        a file the session dropped or one only the main checkout has included, is `None`, as
+        `config` is; a resolution that fails is none too (`errors.resolved_or_none`)."""
         if self.config is not None:
             return self.config
 
         def built() -> Config | None:
-            bound = bound_project(self.root)
+            main = main_checkout_or_none(self.root)
+            if main is None or read_document(main) is not None:
+                return None
+            bound = bound_project(main)
             if bound is None:
                 return None
             return command_config(
-                self.root,
-                machine=self.machine,
-                owner=self.session.owner,
-                unnamed=lambda: bound.project,
+                main, machine=self.machine, owner=self.session.owner, unnamed=lambda: bound.project
             )
 
         return resolved_or_none(built)
@@ -190,13 +192,17 @@ class Contribution:
     checks: tuple[tuple[str, Callable[[Context], Row]], ...]
 
 
-def configured(check: Callable[[Context, Config], Row]) -> Callable[[Context], Row]:
+def configured(
+    check: Callable[[Context, Config], Row], *, attach: bool = False
+) -> Callable[[Context], Row]:
     """`check`, a row that reads the project configuration, asked with it where the report has one;
-    where it has none the row skips with `NO_CONFIG_SKIP`, and `not-initialised` says why."""
+    where it has none the row skips with `NO_CONFIG_SKIP`, and `not-initialised` says why. With
+    `attach`, a row about what `attach` delivered, the configuration is `Context.attach_config`."""
 
     def row(context: Context) -> Row:
-        if context.config is None:
+        config = context.attach_config if attach else context.config
+        if config is None:
             return Row(SKIP, NO_CONFIG_SKIP)
-        return check(context, context.config)
+        return check(context, config)
 
     return row
