@@ -744,27 +744,6 @@ reddens = [
   "tests/overlay/test_create.py::test_the_publishers_template_is_used_when_the_owner_has_none",
 ]
 
-# A removal leaves the directories above the file behind, empty.
-[[mutation]]
-name = "overlay upgrade leaves the directories a retirement empties"
-file = "src/stayfixed/overlay/upgrade.py"
-before = "                    fsops.rmdir_parents_within(root, target)"
-after = "                    pass"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_removing_a_file_removes_the_directories_it_leaves_empty",
-]
-
-# A removal whose file was already gone unlinks nothing, and the directories above it held no file
-# of stayfixed's: a person may have made them, so they are not this run's to empty.
-[[mutation]]
-name = "overlay upgrade prunes above a file that was not there"
-file = "src/stayfixed/overlay/upgrade.py"
-before = "        present = [a.target for a in planned.actions if unlinks(a) and _exists(root, a.target)]"
-after = "        present = [a.target for a in planned.actions if unlinks(a)]"
-reddens = [
-  "tests/overlay/test_upgrade.py::test_an_empty_directory_no_file_was_removed_from_is_left",
-]
-
 # `git init -b` arrived in git 2.28; an older `git` refused it and the `--local` overlay was left
 # without a repository.
 [[mutation]]

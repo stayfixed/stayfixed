@@ -2280,15 +2280,10 @@ code path that then runs, which is what makes the dry run worth reading.
 
 **Writes**, without `--dry-run`, every artifact the report lists as `create` or `update`, plus
 `.stayfixed/manifest.json`. A file an earlier release shipped and this one does not, such as
-`common/memory/README.md` or `hooks/hooks.json`, is not planned at all: delete it by hand. It
-**removes** a file only where `.stayfixed/manifest.json` records it at a target that has since
-moved and the file holds the bytes recorded. Each directory above a file it removed then goes once
-that leaves it empty, up to the first that still holds anything and never the overlay root. A
-directory that is a symbolic link is left, and so is one above a file that was already gone when
-the run began. Exits `0`; `1` when the report
-carries a REFUSED section, because nothing would be written while one of those stands; `2` when
-`--root` is not an overlay, when the manifest itself cannot be trusted, or when a write is refused
-by the containment walk.
+`common/memory/README.md` or `hooks/hooks.json`, is not planned at all: delete it by hand. Exits
+`0`; `1` when the report carries a REFUSED section, because nothing would be written while one of
+those stands; `2` when `--root` is not an overlay, when the manifest itself cannot be trusted, or
+when a write is refused by the containment walk.
 
 ---
 

@@ -2129,17 +2129,6 @@ before = "import subprocess"
 after = "import socket, subprocess"
 reddens = ["tests/test_outbound.py::test_no_module_imports_a_network_or_native_module"]
 
-# A file a run removed left the directories above it empty: noise git does not even keep. The
-# walk up from the file's own directory is what takes them.
-[[mutation]]
-name = "the empty parents of a removed file are never walked"
-file = "src/stayfixed/fsops.py"
-before = "    for depth in range(len(parts) - 1, 0, -1):"
-after = "    for depth in range(0):"
-reddens = [
-  "tests/test_fsops.py::test_rmdir_parents_within_removes_each_empty_parent_and_never_the_root",
-]
-
 # Every walk here opens each directory with `O_NOFOLLOW`, so a component that is a symlink is
 # refused rather than followed out of the root.
 [[mutation]]
@@ -2148,7 +2137,6 @@ file = "src/stayfixed/fsops.py"
 before = '_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)'
 after = '_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)'
 reddens = [
-  "tests/test_fsops.py::test_rmdir_parents_within_leaves_a_symlinked_directory_and_what_it_points_at",
   "tests/config/test_paths.py::test_a_link_inside_a_tree_past_the_longest_path_is_missed_by_contained_and_refused_by_the_write",
 ]
 
