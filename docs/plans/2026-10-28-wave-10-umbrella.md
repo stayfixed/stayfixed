@@ -143,11 +143,12 @@ alone. An edge means "merged into `dev`".
 
 ```mermaid
 graph LR
-  IS1 --> CL7
-  CL7 --> IS2
+  CL7 --> IS1
+  IS1 --> IS2
   IS1 --> IS3
   IS1 --> DM
   CL6 --> CL8
+  CL8 --> CL9
   DM --> CX
   BMcal[BM calibration] --> BMrun[BM run]
   DM --> RD2
@@ -159,16 +160,18 @@ graph LR
 
 What each edge carries:
 
-- **IS1 → CL7 → IS2.** #34 rewrites `check.yml`'s base step and the tests' YAML reader. CL7 removes
-  the `timeout-minutes` bound from the same file. #32 verifies the workflow as both leave it, never
-  the one they replace.
+- **CL7 → IS1 → IS2.** CL7 removes the `timeout-minutes` bound from `check.yml` and its tests, and is
+  ready first. #34 then rewrites the same file's base step and the tests' YAML reader. #32 verifies
+  the workflow as both leave it, never the one they replace.
 - **IS1 → IS3.** #33 splits `src/stayfixed/assess/rule.py`, moves `run_gate` into the domain and
   edits `src/stayfixed/docs/trail.py`. IS3's #37 changes `src/stayfixed/assess/gates.py` and #47 the
   tracked-file walk, so they build on the moved modules.
 - **IS1 → DM.** #31 may change how a gate's adoption stage is spelt, removing the old spelling in
   the same pull request (d3 as amended). DM's regression act writes and asserts that configuration.
-- **CL6 → CL8.** Both remove rows from `doctor` and change its row count, which seven files pin. The
-  second rebases on the first's numbers.
+- **CL6 → CL8 → CL9.** All three edit `src/stayfixed/doctor/`, `tests/doctor/test_checks.py`,
+  `src/stayfixed/harnesses.py`, `docs/cli.md`'s `doctor` section and `mutations/doctor.toml`. CL9
+  removes the `retired-deny` row and moves `doctor`'s count from 17 to 16, which about fifteen
+  places pin.
 - **DM → CX.** CX measures the `Stop`-hook recipe and the fixture's acts on Codex.
 - **BM calibration → BM run.** The run's ceiling comes from the calibration's measured cost per run.
 - **DM, CX, BM run, IS3, RD1 → RD2.** RD2 describes what shipped:
@@ -182,7 +185,6 @@ The remaining lanes need no edge:
 - **RD1** depends on nothing and goes first.
 - **IC** depends only on the owner's artwork. It merges before `v0.7.0`, and its README edit
   rebases on RD1.
-- **CL9** depends on nothing.
 
 ## Releases
 
@@ -209,14 +211,15 @@ appended to the group file `scripts/mutation_oracle.py` `GROUP_OF` routes them t
 
 | File or area | Owner, in order | Note |
 |---|---|---|
-| `README.md` | RD1 (the first screen), IC (the restated text a hold matched), CL6/CL8 (their rows), CX (the capability table), IS3 (the `docs`/`trail` contract, if #43 changes it), then RD2 | **hot spot**: each lane quotes the previous lane's text it rewrites |
+| `README.md` | RD1 (the first screen), IC (the restated text a hold matched), CL6, CL8 and CL9 (their rows and the 17), CX (the capability table), IS3 (the `docs`/`trail` contract, if #43 changes it), then RD2 | **hot spot**: each lane quotes the previous lane's text it rewrites |
 | `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json` | RD1 (the descriptions), IC (the icon in `.claude-plugin/plugin.json`), then the release tasks (the versions) | `tests/test_manifests.py` `_storefront` holds them as one |
-| `.github/workflows/check.yml`, `tests/test_check_workflow.py` and its YAML reader | IS1 (#34), CL7, then IS2 | |
-| `.github/workflows/smoke.yml`, `scripts/smoke_hooks.py`, `tests/scripts/test_smoke_scripts.py`, `src/stayfixed/doctor/`, `tests/doctor/` and the six other files that pin `doctor`'s 17 rows | CL6, then CL8, then CX (if it adds a Codex row) | **hot spot**: each quotes the previous lane's count in its plan |
+| `.github/workflows/check.yml`, `tests/test_check_workflow.py` and its YAML reader | CL7, IS1 (#34), then IS2 | |
+| `.github/workflows/smoke.yml`, `scripts/smoke_hooks.py`, `tests/scripts/test_smoke_scripts.py`, `src/stayfixed/doctor/`, `tests/doctor/` and the files that pin `doctor`'s 17 rows | CL6, CL8, CL9 (17 → 16), then CX (if it adds a Codex row) | **hot spot**: each quotes the previous lane's count in its plan |
 | `hooks/` | CL6 (removes `hashes.json`) | no lane adds a hook entry |
 | `src/stayfixed/assess/`, `src/stayfixed/docs/trail.py` | IS1, then IS3 | |
 | `src/stayfixed/config/` | IS1 (#31's format, if it changes), CL9 (the preset's `[deny] retired`) | |
-| `src/stayfixed/guards/`, `src/stayfixed/harnesses.py` | IC (comment restatements in `src/stayfixed/guards/bgcleanup.py` and `src/stayfixed/guards/commit.py`), then CX (BR-014) | |
+| `src/stayfixed/harnesses.py` | CL6 (a comment), CL8 (`Hooked` and `Harness.hooked`), then CX (BR-014) | |
+| `src/stayfixed/guards/` | IC (comment restatements in `src/stayfixed/guards/bgcleanup.py` and `src/stayfixed/guards/commit.py`), then CX (BR-014) | |
 | `src/stayfixed/config/loader.py` | IC (a restatement, only if the match is located), then IS1 | |
 | `src/stayfixed/trust/record.py`, `src/stayfixed/overlay/template.py`, `src/stayfixed/presets/recommended.toml` | CL9 | |
 | `src/stayfixed/release/`, `scripts/release.py` | CL6 | |
