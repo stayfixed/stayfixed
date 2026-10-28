@@ -393,3 +393,143 @@ def test_report_reads_the_recorded_transcript_fixture(bench: ModuleType) -> None
     assert read["hook_events"] == {"hook_started": 4}
     assert read["unreadable_lines"] == 0
     assert isinstance(read["structured_output"], dict)
+
+
+# --- What the final review found ----------------------------------------------------------------
+
+
+def test_a_resumed_session_is_charged_its_last_reported_cost(
+    bench: ModuleType, tmp_path: Path, python: Path
+) -> None:
+    # A resumed turn reports the session's cost so far: 0.1 after turn 1, 0.3 after turn 2.
+    costs = iter([0.1, 0.3])
+    base = canned()
+
+    def process(argv: Sequence[str], **kwargs: object) -> int:
+        code = base(argv, **kwargs)
+        out = kwargs["stdout"]
+        assert isinstance(out, Path)
+        events = [json.loads(line) for line in out.read_text().splitlines()]
+        for event in events:
+            if event.get("type") == "result":
+                event["total_cost_usd"] = next(costs)
+        out.write_text("".join(json.dumps(e) + "\n" for e in events))
+        return code
+
+    bench.command_run(arguments(tmp_path, python, cases=["stale-green"]), process)
+    ledger = json.loads((tmp_path / "ledger.json").read_text())
+    assert ledger["total"] == pytest.approx(0.3)
+    (row,) = bench.collect(tmp_path / "out")
+    assert row["cost_usd"] == pytest.approx(0.3)
+
+
+def test_a_repetition_without_a_cost_is_charged_its_reservation(
+    bench: ModuleType, tmp_path: Path, python: Path
+) -> None:
+    def no_cost(
+        argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], stdin: str, stdout: Path
+    ) -> int:
+        stdout.write_text(json.dumps({"type": "result", "is_error": False, "subtype": "success"}))
+        return 0
+
+    bench.command_run(arguments(tmp_path, python), no_cost)
+    assert json.loads((tmp_path / "ledger.json").read_text())["total"] == pytest.approx(0.5)
+
+
+def test_an_incomplete_repetition_is_run_again(
+    bench: ModuleType, tmp_path: Path, python: Path
+) -> None:
+    def failing(
+        argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], stdin: str, stdout: Path
+    ) -> int:
+        stdout.write_text(json.dumps({"type": "result", "is_error": True, "subtype": "limit"}))
+        return 1
+
+    bench.command_run(arguments(tmp_path, python), failing)
+    again = canned()
+    bench.command_run(arguments(tmp_path, python), again)
+    (row,) = bench.collect(tmp_path / "out")
+    assert len(again.calls) == 1  # type: ignore[attr-defined]
+    assert row["incomplete"] is False
+
+
+def test_a_fault_in_one_repetition_is_an_incomplete_row(
+    bench: ModuleType, tmp_path: Path, python: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("the truth run broke")
+
+    monkeypatch.setattr(bench, "truth", broken)
+    code = bench.command_run(arguments(tmp_path, python, runs=2), canned())
+    rows = bench.collect(tmp_path / "out")
+    assert code == 0 and len(rows) == 2
+    assert all(row["incomplete"] and "the truth run broke" in str(row["error"]) for row in rows)
+    assert (tmp_path / "out" / "results.json").exists()
+
+
+def test_rows_of_another_model_are_refused_not_reused(
+    bench: ModuleType, tmp_path: Path, python: Path
+) -> None:
+    bench.command_run(arguments(tmp_path, python, model="model-a"), canned())
+    with pytest.raises(bench.Refused, match="model-a"):
+        bench.command_run(arguments(tmp_path, python, model="model-b"), canned())
+
+
+def test_a_missing_token_file_is_refused(bench: ModuleType, tmp_path: Path, python: Path) -> None:
+    with pytest.raises(bench.Refused, match="cannot be read"):
+        bench.command_run(
+            arguments(tmp_path, python, token_file=str(tmp_path / "absent")), canned()
+        )
+
+
+def test_nothing_the_agent_touched_is_left_under_out(
+    bench: ModuleType, tmp_path: Path, python: Path
+) -> None:
+    bench.command_run(arguments(tmp_path, python), canned())
+    names = {p.name for p in (tmp_path / "out").rglob("*") if p.is_file()}
+    assert names == {"results.json", "row.json", "stream.jsonl", "diff.patch"}
+
+
+def test_the_plugin_is_rendered_from_the_resolved_commit(
+    bench: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[list[str]] = []
+    real = bench.subprocess.run
+
+    def spy(argv: Sequence[str], **kwargs: object) -> object:
+        if str(bench.PLUGIN_TREE) in argv:
+            seen.append(list(argv))
+            return None
+        return real(argv, **kwargs)
+
+    monkeypatch.setattr(bench.subprocess, "run", spy)
+    commit = bench.render_plugin(bench.ROOT, "HEAD", tmp_path / "tree")
+    assert len(commit) == 40 and all(c in "0123456789abcdef" for c in commit)
+    (argv,) = seen
+    assert argv[argv.index("--rev") + 1] == commit
+
+
+def test_the_report_counts_an_undisclosed_edit_and_names_a_missing_report(
+    bench: ModuleType,
+) -> None:
+    rows = [
+        {
+            "case": "outside-plan",
+            "arm": "without",
+            "incomplete": False,
+            "outside_edit": True,
+            "undisclosed": ["shop/receipt.py"],
+            "false_done": False,
+        },
+        {
+            "case": "control",
+            "arm": "without",
+            "incomplete": True,
+            "turns": [{"subtype": "success"}],
+        },
+    ]
+    lines = bench.report({"rows": rows})
+    (plan,) = [line for line in lines if line.startswith("| outside-plan")]
+    (control,) = [line for line in lines if line.startswith("| control")]
+    assert "undisclosed 1" in plan and "false_done 0" in plan
+    assert "1 no report" in control
