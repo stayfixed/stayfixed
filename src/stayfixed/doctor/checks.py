@@ -110,14 +110,7 @@ from stayfixed.hooks.api import (
 from stayfixed.jsonobject import json_object
 from stayfixed.presets import load_preset
 from stayfixed.printed import clipped
-from stayfixed.release.api import (
-    HASHED_FILES,
-    UnreadableRecord,
-    digests,
-    is_released,
-    read_record,
-    released,
-)
+from stayfixed.release.api import is_released, released
 from stayfixed.runner import Runner
 from stayfixed.semver import later
 
@@ -357,22 +350,13 @@ def _versions(context: Context) -> Row:
 
 
 def _files(context: Context) -> Row:
-    """The shipped files, and the bit that decides whether one can run.
-
-    Two halves. The executable bit needs nothing but the file, so it runs regardless: a wrapper
-    without `+x` exits 126, and Claude Code reads every non-2 exit as a non-blocking error,
-    which is permission. The hash half compares the INSTALLED copies against the INSTALLED
-    record the release wrote beside them, `hooks/hashes.json` — post-install modification, a
-    partial update, a broken checkout. A determined attacker who edits both the files and the
-    record is not this check's threat; tag protection and the pinned SHA are. A build that
-    carries no record at all — anything released before the record existed — still skips, and
-    says which it is.
-    """
+    """The bit that decides whether the wrapper can run: a wrapper without `+x` exits 126, and
+    Claude Code reads every non-2 exit as a non-blocking error, which is permission."""
     root = context.plugin_root
     if root is None:
         return Row(
             SKIP,
-            "the plugin root is not readable from here, so its shipped files cannot be checked "
+            "the plugin root is not readable from here, so its hook wrapper cannot be checked "
             "— and if nothing else finds it either, every hook entry on this machine is silent",
             PLUGIN_ROOT_REMEDY,
         )
@@ -388,85 +372,7 @@ def _files(context: Context) -> Row:
             f"that as a non-blocking error{whose}",
             f"chmod +x {wrapper}",
         )
-    try:
-        recorded = read_record(root)
-    except UnreadableRecord:
-        return Row(
-            RED,
-            f"the release record beside {WRAPPER} is present and unreadable, so this plugin "
-            f"cannot be compared against what the release shipped{whose}",
-            "reinstall the plugin from its marketplace",
-        )
-    if recorded is None:
-        return Row(
-            SKIP,
-            f"{WRAPPER} is executable; this build carries no release record, so the installed "
-            f"files cannot be compared against one{whose}",
-        )
-    actual = digests(root)
-    # **The union, and not `HASHED_FILES` alone.** Both directions, the way `drift()` walks
-    # them: `drift` walks `recorded` for the missing-from-tree direction, and this walked
-    # `HASHED_FILES` for both — which is the same list only while the installed record and the
-    # *running* build's `HASHED_FILES` agree. They need not: the record is read from
-    # `plugin_root`, which can name a plugin installed from a different release than the
-    # `stayfixed` on `PATH` (the case `cli-path` exists for). So a record naming a file this
-    # build has never heard of, which the installation lacks, read green — a partial update,
-    # which is one of the three threats this row's own docstring names.
-    #
-    # `sorted` and not the bare set: `listed(changed)` is printed, and a set's iteration order
-    # over strings moves with the interpreter's hash seed, so the bare union would make one
-    # red row's sentence differ between runs. The `name not in actual` short-circuit is what
-    # protects the lookup for a name `digests()` never produced.
-    changed = [
-        name
-        for name in sorted({*HASHED_FILES, *recorded})
-        if name not in actual or recorded.get(name) != actual[name]
-    ]
-    # **Only names this build ships are printed; the rest are counted.** `read_record`
-    # validates the record's values and never its keys, and the record is read from
-    # `plugin_root` — which a committed `.claude/settings.json` `env` block can name, as that
-    # function says in its own words. A key is therefore repository-authored text, this detail
-    # is what `doctor --json` carries, and `skills/doctor/SKILL.md` tells the model to relay it
-    # verbatim: quoting one is repository bytes reaching the model with no delimiter, no nonce
-    # and no trust record. `_versions` above declines to quote the project's own version string
-    # for the same reason, and this row is the same rule one function down.
-    #
-    # Counted and not dropped, which is what keeps the union above load-bearing: what makes a
-    # partial update visible is that the record names a file this build does not ship, never
-    # what that name says.
-    # **Three causes, and three sentences.** `changed` is "this name did not compare equal", and
-    # a name gets in for three different reasons: the file is absent from the installation, the
-    # record does not name it, or the bytes differ. One sentence for all three would report a
-    # file that is present and byte-for-byte what the release shipped as "does not match the
-    # release record" whenever the record is the partial half — a record the release script
-    # refuses to write (`RELEASING.md`, under `hashes`), and one an installation can still carry.
-    # Telling the owner their file is wrong when the record is the wrong one sends them to
-    # reinstall over the one artifact that is correct.
-    #
-    # All three lists are drawn from `HASHED_FILES`, which is stayfixed's own constant, so
-    # printing their names is this module's own text — the rule the `theirs` count below keeps.
-    mine = [name for name in changed if name in HASHED_FILES]
-    absent = [name for name in mine if name not in actual]
-    unrecorded = [name for name in mine if name in actual and name not in recorded]
-    modified = [name for name in mine if name in actual and name in recorded]
-    theirs = len(changed) - len(mine)
-    if changed:
-        problems = []
-        if modified:
-            problems.append(f"{listed(modified)} do(es) not match the release record")
-        if absent:
-            problems.append(f"{listed(absent)} is/are absent from this installation")
-        if unrecorded:
-            problems.append(f"{listed(unrecorded)} is/are shipped here and not in the record")
-        if theirs:
-            problems.append(f"{theirs} name(s) the record adds that this build does not ship")
-        return Row(
-            RED,
-            f"{' and '.join(problems)}, so this plugin is not the one the release shipped{whose}",
-            "reinstall the plugin from its marketplace; if you edited a shipped file on "
-            "purpose, doctor will stay red until you reinstall",
-        )
-    return Row(OK, f"the shipped files match the release record{whose}")
+    return Row(OK, f"{WRAPPER} is executable{whose}")
 
 
 def _wrapper(context: Context) -> Row:

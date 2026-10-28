@@ -185,7 +185,7 @@ it, and tests reach its modules directly, as they do every area's. (`config`, `p
 `release`, `scaffold` and `templates` are subpackages and not areas, and `harnesses` is a module —
 area discovery does not find them, because they carry none of `commands.py`, `hooks.py` and
 `doctor.py`. `release` still publishes an `api.py`, which holds what an installed stayfixed reads
-about its own releases: the tags it pins and the record of the files a release ships.)
+about its own releases: the tags it pins.)
 
 The rule between the two runs one way: delivery may import the core, and the core may not import
 delivery, through an `api.py` or not, at module level or inside a function, so the private layer can
@@ -552,7 +552,7 @@ release note someone outside the project can read — not as a note to yourself 
 `uv run python scripts/release.py check` cross-checks the version across `pyproject.toml`,
 `uv.lock`, the package, both plugin manifests, `CHANGELOG.md` and the marketplace entry's `ref`.
 It runs in CI; run it before you push. It is this repository's own tooling and not a command
-stayfixed ships, as are its `notes`, `hashes` and `pin` beside it ([RELEASING.md](RELEASING.md)
+stayfixed ships, as are its `notes` and `pin` beside it ([RELEASING.md](RELEASING.md)
 says when each runs).
 
 ## Plans

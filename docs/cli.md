@@ -3088,7 +3088,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 |---|---|---|
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and memory stays the coding agent's own, and that `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
-| `files` | the hook wrapper's executable bit, and the three shipped files against the hashes the release recorded beside them | `hooks/run-hook.sh`, `hooks/hooks.json`, `scripts/stayfixed`, `hooks/hashes.json` |
+| `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported, and under a root the environment named, where `wrapper` skips, no row reports a missing or edited launcher | `hooks/run-hook.sh` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker named by its file and position: red in a file stayfixed writes (`.claude/settings.local.json`, `~/.claude/settings.json`), where it writes no marked entry, and a warning in any other; and, as one line of information, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
@@ -3146,7 +3146,7 @@ the harness's to decide, and this row does not read that file.
 | missing | no `autoMemoryDirectory` | `warn` | `attach`, which writes it |
 | unreadable | a file that cannot be read as one JSON object | `warn` | make it one JSON object, then `attach` |
 
-**Ten of the seventeen have a `skip` arm — twenty-two arms between them, every one on a state of
+**Ten of the seventeen have a `skip` arm — twenty-one arms between them, every one on a state of
 this machine or this repository.** A `skip` is **not** a finding and never reaches the exit code, so
 read the detail — each one says which measurement it is missing. No row skips for want of a build
 that can answer it: `codex-hooks`, the one that did, left the report, and what holds on Codex is the
@@ -3155,9 +3155,7 @@ README's reach table.
 none — and which state is the ordinary one moves with the release history rather than with any
 code here: while no released tag matches the stayfixed running there is no commit to pin, so
 `init` records nothing and the row skips on a correct installation; once a release exists, a
-repository `init` set up carries a ref and the row answers. `files` compares the installed
-plugin against the hashes the release recorded beside it, and skips only on a build carrying no
-such record.
+repository `init` set up carries a ref and the row answers.
 
 The ten that skip on a state are `files` and `wrapper`, when there is no plugin root this
 process can vouch for; `attached`, when this machine records no overlay to check the ledger
@@ -3170,9 +3168,7 @@ whether it records an overlay is not known, which is neither of those; `overlay-
 when the overlay declares no stayfixed requirement and no other repository's work tree holds it;
 `bundles`, when the note store does not resolve; `diagnostics`, when no harness data root is set in the environment, which is every
 `stayfixed doctor` run from a terminal rather than from a hook; and `ci-ref`, when no `[ci] ref`
-is recorded. `files` has a
-second state arm of its own — a plugin built before the release record existed carries none, and
-it says so rather than comparing anything.
+is recorded.
 And four rows read the project configuration and skip, in one sentence, when there is none to
 read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached` and
 `bundles`. `memory` reads the resolution a session reads and answers without one. A checkout this
@@ -3180,12 +3176,12 @@ machine binds whose main checkout has no `stayfixed.toml` is the one exception f
 for the note store `memory` reads: both are judged on the configuration `attach` acted on there,
 the preset's under the overlay's layers for the project the binding record names.
 
-**A `skip` does not mean there is nothing to do.** Seven of the twenty-two arms carry a remedy:
+**A `skip` does not mean there is nothing to do.** Seven of the twenty-one arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and
 could-not-be-asked arms, and the moved-overlay arm of `pre-commit` and of `overlay-requires`. The dividing line is not "always"
 versus "on a state" — every other arm skips on a state and carries nothing: `bundles`,
 `diagnostics` and `ci-ref`, the *no overlay recorded* arms of the two overlay
-rows, `overlay-requires`' no-requirement arm, `files` on a build with no release record, and the
+rows, `overlay-requires`' no-requirement arm, and the
 four with no project configuration, whose remedy is
 `not-initialised`'s, and the three on a machine file that does not load, whose remedy is
 `preferences`', red on the same file. Nor
@@ -3194,8 +3190,8 @@ nothing though `attached` names `stayfixed setup --overlay` there. It is whether
 itself worth acting on. Those seven report something wrong that no other
 row will tell you: a plugin root nothing can find, a root that will be read and never executed,
 a recorded attach the overlay could not confirm, an overlay root recorded and not there. Of the
-other fifteen, twelve report a measurement that is simply unavailable — no store, no overlay,
-no overlay requirement, no harness data root, no `[ci] ref`, no release record in this build or no
+other fourteen, eleven report a measurement that is simply unavailable — no store, no overlay,
+no overlay requirement, no harness data root, no `[ci] ref` or no
 project configuration — and no command in that row's gift changes it, and three report a machine
 file another row is red about, with the command that clears it.
 

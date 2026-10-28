@@ -16,7 +16,7 @@ description: Diagnose a stayfixed installation — hooks, memory store, budgets,
    hook entries on the user's behalf — name the command that would.
 3. A `skip` is not a fault, and it is not always harmless either. Ten checks skip on a
    state of the machine or of the repository: `wrapper` and `files`
-   when no plugin root can be vouched for, `files` again on a build with no release record,
+   when no plugin root can be vouched for,
    `attached` when no overlay is recorded or the overlay cannot be asked, `pre-commit` with no
    overlay root recorded, `overlay-requires` with no overlay root recorded or no requirement
    declared — and those last two also skip when the overlay root this machine records is not a

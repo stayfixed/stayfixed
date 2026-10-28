@@ -536,3 +536,49 @@ where `wrapper` skips. Folding it here makes Wave D's count change once, 17 → 
 
 Written by each wave's controller when its pull request merges: the head sha, the net size
 (`git diff --shortstat`), the review's findings and their triage, and anything filed.
+
+### Wave A — CL6, #136, branch `cleanup/hashes`, code head `4146e9e`
+
+- **Net:** `git diff --shortstat origin/dev HEAD -- src tests mutations docs` gives 18 files, +76/−1238
+  (src +10/−228, tests +58/−706, mutations −292, docs +8/−12). The oracle lost 23 entries (2678 →
+  2655 at `4146e9e`, after the dev merge).
+- **Order:** Task 2 was committed before Task 1, because `src/stayfixed/doctor/checks.py` imported the record's
+  names at module level, so Task 1 alone failed every test.
+- **Step 0 (added on the plan's final review):** `wrapper` does not report a partially updated
+  plugin. It runs `run-hook.sh --version` and reads only the exit code and stderr. The pull request
+  says that after it no row reports one.
+- **Review:** two seats, all findings Minor. One class was fixed in one round (`077c568`): text that
+  still spoke for the record. That covered the `release.yml` comment, the `files` row (now naming
+  `scripts/stayfixed`, and noting that no row reports a missing or edited launcher under a named
+  root), `_files`' skip detail, a `test_command.py` comment, and the `ci-ref` skip test's name. The
+  re-review found every fix addressed.
+- **Taken later:** `files` duplicating `wrapper` (the plan's final review, S1; the lane's review,
+  136-F1) is folded in Wave D, Task 9.
+- **The lane's review:** one Important (136-F1, above), four Minors deferred: 136-F2 (the new
+  `files` test restates the named-root test; it goes with the row in Wave D), 136-F3 (the
+  `hooks/hashes.json` absence assertion), 136-F4 (the sdist rule names no user who needs the three
+  files) and 136-F5 (the body's oracle figures, corrected in the body).
+- **Merged dev `059b587` (#135):** `hooks/hashes.json` had a modify/delete conflict, resolved by
+  keeping the deletion.
+
+### Wave B — CL7, #134, branch `cleanup/timeout-bound`, code head `bb2bd2f`
+
+- **Net:** 3 files, +17/−172 at the end. src is unchanged and `.github/` is +2/−36.
+- **Fragment type:** the plan said `removed`, but `pyproject.toml` defines no such towncrier type.
+  Every cut fragment is `change`; Wave D's is `upgrading`.
+- **Tests:** the plan's "four bound tests" were three.
+- **Review:** the correctness seat found nothing. The refuse/delete seat found four Minors, deferred
+  because no minor rides a round and two of them contradict the plan's text:
+  - the paragraph "What the input does not bound";
+  - the sentence arguing for the bound's absence;
+  - the kept smoke pin, which proves no more than an explicit 15;
+  - the new test restating the `STEPS` list.
+- **The plan's final review (M1):** `docs/cli.md`'s passage on another workflow a `uses:` points at
+  now names the runner's own limit, not the hosted 360 minutes (`b0f6df9`). The passage on this
+  job keeps 360: `check.yml` pins `ubuntu-latest`, as the lane's review found (`bb2bd2f`).
+- **The lane's review (134-F1), the owner's ruling:** the smoke call's `timeout-minutes: 25`, the
+  test that it passes a non-default value and that test's mutation entry are deleted (`bb2bd2f`).
+  They showed a run taking a caller's value through the bound expression, which is gone; the plan
+  had kept them. Minors 134-F2 and F3 are deferred.
+- **Outside scope, for the owner's design-rule pass:** `check.yml`'s `base:` disagreement refusal
+  and its `path:` character refusal rest on the caller-file anchor.

@@ -914,104 +914,6 @@ reddens = [
   "tests/test_fsops.py::test_unlink_within_removes_only_a_link_that_points_where_it_was_told",
 ]
 
-# "Absent" and "present and unreadable" are different answers and the callers branch on the
-# difference: an absent record skips in `doctor` and an unreadable one must be red. A decoder
-# error that read as `None` would turn a corrupted record into a quiet skip.
-[[mutation]]
-name = "a record that is not JSON reads as no record at all"
-file = "src/stayfixed/release/hashes.py"
-before = """
-    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
-"""
-after = """
-    if text.count("{") != text.count("}"):
-        return None
-    # Through `jsonobject`, the one reader of a JSON object, so every way the parse can fail --
-"""
-reddens = ["tests/release/test_hashes.py::test_a_record_that_is_not_json_is_unreadable_rather_than_absent"]
-
-# Valid JSON of the wrong shape decodes cleanly, so the decoder catch never sees it — the same
-# hole `versions._parse` had for a lockfile that was valid TOML of the wrong shape.
-[[mutation]]
-name = "a record of another format is read as this one"
-file = "src/stayfixed/release/hashes.py"
-before = """
-        document.get("format") != FORMAT
-        or not isinstance(files, dict)
-"""
-after = """
-        False
-        or not isinstance(files, dict)
-"""
-reddens = [
-  "tests/release/test_hashes.py::test_a_record_of_the_wrong_shape_is_unreadable[another-format]",
-]
-
-# The release record's tests compared `write_record`, `read_record` and `drift` against
-# `digests` — both sides of every assertion moving together, and nothing anywhere pinning what
-# `digests` computes. Measured: the digest truncated to its first eight characters left every
-# record test passing, which is the algorithm and the length a downstream verifier depends on
-# going unchecked.
-[[mutation]]
-name = "the release record records a truncated digest"
-file = "src/stayfixed/release/hashes.py"
-before = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()"
-after = "            found[relative] = hashlib.sha256(path.read_bytes()).hexdigest()[:8]"
-reddens = [
-  "tests/release/test_hashes.py::test_each_file_is_hashed_to_its_full_sha256",
-]
-
-# No record and a record naming nothing are different answers: `doctor` skips the first and
-# reports every shipped file unrecorded on the second.
-[[mutation]]
-name = "no release record reads as a record naming nothing"
-file = "src/stayfixed/release/hashes.py"
-before = "    if not fsops.is_file(path):\n        return None"
-after = "    if not fsops.is_file(path):\n        return {}"
-reddens = [
-  "tests/release/test_hashes.py::test_no_record_reads_as_none_and_a_record_reads_back_as_written",
-]
-
-# A record is read back as written: the digests `doctor` compares are the ones the record names.
-[[mutation]]
-name = "the release record reader truncates the digests it read"
-file = "src/stayfixed/release/hashes.py"
-before = "    return {str(key): str(value) for key, value in files.items()}"
-after = "    return {str(key): str(value)[:8] for key, value in files.items()}"
-reddens = [
-  "tests/release/test_hashes.py::test_no_record_reads_as_none_and_a_record_reads_back_as_written",
-]
-
-# A `hooks/hashes.json` carrying non-UTF-8 bytes raised `UnicodeDecodeError` past every caller and
-# surfaced as `stayfixed: internal error`, exit 2 — through `doctor`, with the remedy "report this,
-# with the command you ran".
-[[mutation]]
-name = "a record that is not UTF-8 escapes UnreadableRecord again"
-file = "src/stayfixed/release/hashes.py"
-before = "    except UnicodeDecodeError as exc:"
-# NOT `except ValueError`: `UnicodeDecodeError` is a subclass of it (so is
-# `json.JSONDecodeError`), so that substitution still caught the error it was meant to stop
-# catching, and the entry survived while reading as coverage. Measured by the unfiltered run.
-after = "    except InterruptedError as exc:"
-reddens = [
-  "tests/release/test_hashes.py::test_a_record_that_is_not_utf8_is_unreadable_rather_than_an_internal_error",
-]
-
-# The other escape through the same `try`: a record the process cannot read took the wrong
-# turn to `warn` rather than to the red "present and unreadable" arm.
-[[mutation]]
-name = "a record that cannot be read escapes UnreadableRecord again"
-file = "src/stayfixed/release/hashes.py"
-before = """
-    except OSError as exc:
-        raise UnreadableRecord"""
-after = """
-    except InterruptedError as exc:
-        raise UnreadableRecord"""
-reddens = [
-  "tests/release/test_hashes.py::test_a_record_the_process_cannot_read_is_unreadable_rather_than_a_warning",
-]
-
 # The type is the only thing `doctor` may branch on here: it does not quote the loader's text,
 # because the loader builds that text out of the file's own keys and values.
 [[mutation]]
@@ -2665,21 +2567,6 @@ reddens = [
   "tests/attach/test_commands.py::test_a_group_holding_a_nul_is_refused_by_check_and_attach_alike",
 ]
 
-# A release's hash record is read where the plugin is installed, through the one JSON object
-# reader, so a record nested past the parser or its depth bound, or holding an integer longer than
-# the interpreter converts, is present and unreadable; parsed with a bare `json.loads`, either
-# escaped the record's reader and `doctor`'s `files` row read "this check could not run".
-[[mutation]]
-name = "the hash record is parsed with a bare json.loads"
-file = "src/stayfixed/release/hashes.py"
-before = "    document = json_object(text, RECORD, error=UnreadableRecord, shape=lambda _: not_a_record)"
-after = "    document = json.loads(text)"
-reddens = [
-  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[nested]",
-  "tests/release/test_hashes.py::test_a_record_past_the_parser_is_unreadable_rather_than_an_internal_error[long-number]",
-  "tests/release/test_hashes.py::test_a_record_past_the_depth_bound_is_unreadable_as_one_past_the_parser",
-]
-
 # Python 3.14's JSON parser follows about 57,800 levels, further than its own `json.dumps` and
 # `str` do, so a document 3.13 refuses as nested too deep was read on 3.14 and then ended `detach`
 # and the settings engine in an internal error when they wrote it back. The object reader bounds
@@ -3104,17 +2991,6 @@ file = "src/stayfixed/committed.py"
 before = '    if ".." in lexical.parts:'
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
-
-# The release record reads in every encoding `json` detects, a byte-order mark and UTF-16 or
-# UTF-32 included, and not as UTF-8 alone.
-[[mutation]]
-name = "the release record is decoded as UTF-8 alone"
-file = "src/stayfixed/release/hashes.py"
-before = '        text = raw.decode(json.detect_encoding(raw), "surrogatepass")'
-after = '        text = raw.decode("utf-8")'
-reddens = [
-  "tests/release/test_hashes.py::test_a_record_with_a_byte_order_mark_or_in_utf_16_or_32_reads_as_it_did",
-]
 
 [[mutation]]
 name = "the JSON writer writes back a text past the read cap"

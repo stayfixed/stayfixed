@@ -34,7 +34,6 @@ from pathlib import Path
 
 from stayfixed.overlay.api import OVERLAY_FILES
 from stayfixed.project.api import PROJECT_FILES
-from stayfixed.release.api import HASHED_FILES, RECORD
 from stayfixed.scaffold import MANIFEST_PATH
 
 # The mutation declarations, one file per group. The sdist must carry the files this checkout
@@ -75,21 +74,17 @@ WHEEL_MUST = (
     "stayfixed/profiles/go/adapters.py",
 )
 # What a downstream packager needs to verify the sdist, plus the three files the harness runs
-# without an interpreter of ours and the record they are checked against.
+# without an interpreter of ours.
 SDIST_MUST = (
     "tests/test_fsops.py",
     "CHANGELOG.md",
     "skills/README.md",
     "agents/code-navigator.md",
-    # The three files the harness runs with no interpreter of ours in front of them, and the
-    # record they are checked against — `HASHED_FILES` and `RECORD`, not four string literals
-    # spelled here a second time. The record is in this list for the same reason the three are:
-    # a build that dropped it would pass this checker while `doctor files` quietly degraded
-    # from a comparison to a `skip`, which is the one answer that looks like a healthy install
-    # and is not one. `pyproject.toml` carries all four under `hooks/**` and `scripts/**`, so
-    # this is a claim about the build and not a new packaging rule.
-    *HASHED_FILES,
-    RECORD,
+    # `pyproject.toml` carries these under `hooks/**` and `scripts/**`, so this is a claim about
+    # the build and not a new packaging rule.
+    "hooks/run-hook.sh",
+    "hooks/hooks.json",
+    "scripts/stayfixed",
     *(f"mutations/{path.name}" for path in sorted(DECLARATIONS.glob("*.toml"))),
 )
 SDIST_EXECUTABLE = ("hooks/run-hook.sh", "scripts/stayfixed")
