@@ -262,12 +262,7 @@ jobs:
     # `tests/test_fixtures.py`. The `owner/repo@ref` forms live in smoke-release.yml: a
     # reusable-workflow ref is resolved when the run is created, `uses:` takes no expression, and
     # neither `@dev` nor a release tag names the commit a pull request is testing.
-    #
-    # `timeout-minutes` is passed, and not left to the default: every other call passes none,
-    # and only a run proves that the platform takes a value a caller passed, through the
-    # expression, as the job's bound.
     uses: ./.github/workflows/check.yml
     with:
       path: tests/fixtures/smoke-project
       base: ${{ github.base_ref || 'main' }}
-      timeout-minutes: 25

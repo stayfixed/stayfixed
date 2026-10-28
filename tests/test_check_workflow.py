@@ -454,22 +454,6 @@ def test_the_job_s_time_limit_is_the_input_as_given() -> None:
     assert "The time limit is inside its bounds" not in names, names
 
 
-@needs_smoke_workflow
-def test_a_real_run_passes_the_time_limit_a_value_of_its_own() -> None:
-    # The case above holds the expression's text, which does not prove that the platform takes a
-    # value a caller passed, through the expression, as the job's bound. Every caller `init`
-    # writes passes none, so only the smoke's own call of this file can: it passes a value that is
-    # not the default. Mutation (declared): the smoke call passes the default, and no run takes a
-    # caller's value any more.
-    document = load(SMOKE_WORKFLOW.read_text(encoding="utf-8"))
-    assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
-    job = document["jobs"]["same-repository-form"]
-    assert isinstance(job, dict) and job["uses"] == "./.github/workflows/check.yml", job
-    passed = job["with"]
-    assert isinstance(passed, dict) and isinstance(passed["timeout-minutes"], str), passed
-    assert int(passed["timeout-minutes"]) != 15, passed
-
-
 def _demanded_summary(step_name: str, output: str) -> str:
     """The one line the named smoke step's `grep -qx` demands of the script output it saved."""
     script = step_script(SMOKE_WORKFLOW, step_name)

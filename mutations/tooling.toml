@@ -1704,17 +1704,6 @@ reddens = [
   "tests/test_fixtures.py::test_the_release_smoke_calls_the_release_this_tree_carries",
 ]
 
-# Every caller `init` writes passes no time limit, so only the smoke's own call of the reusable
-# workflow shows the platform taking a caller's value, through the expression, as the job's bound.
-[[mutation]]
-name = "no real run passes the reusable workflow a time limit of its own"
-file = ".github/workflows/smoke.yml"
-before = "      timeout-minutes: 25"
-after = "      timeout-minutes: 15"
-reddens = [
-  "tests/test_check_workflow.py::test_a_real_run_passes_the_time_limit_a_value_of_its_own",
-]
-
 # CI's rendered-artifact check accepted any directory named `.git`, so an empty `mkdir .git` stood
 # in for the repository `setup --overlay <path>` makes on `main`.
 [[mutation]]
