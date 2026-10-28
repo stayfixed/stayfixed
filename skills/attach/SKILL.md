@@ -7,7 +7,9 @@ description: Bind a repository to its private memory overlay and point the harne
 
 The store is `<overlay>/projects/<project name>/memory`, where the name is the `[project] name`
 in this repository's `stayfixed.toml`, and `attach` derives it: the overlay root comes from the
-machine configuration, not from what is typed here.
+machine configuration, not from what is typed here. With no `stayfixed.toml`, the project is the
+one the overlay records this checkout's remote for, or one named after that remote; where the
+user wants another, or `attach` asks for one, pass `--project NAME`.
 
 1. Run `stayfixed attach --check` first. It reports whether this machine already
    binds this checkout (`bound` or `unbound`), and which allow rules would be added. It

@@ -2449,8 +2449,8 @@ reddens = ["tests/doctor/test_floor_report.py::test_rows_that_read_the_configura
 [[mutation]]
 name = "a row that reads the configuration is asked without one"
 file = "src/stayfixed/doctor/model.py"
-before = "        if context.config is None:\n            return Row(SKIP, NO_CONFIG_SKIP)\n        return check(context, context.config)"
-after = "        return check(context, context.config)  # type: ignore[arg-type]"
+before = "        if config is None:\n            return Row(SKIP, NO_CONFIG_SKIP)\n        return check(context, config)"
+after = "        return check(context, config)  # type: ignore[arg-type]"
 reddens = [
   "tests/doctor/test_floor_report.py::test_rows_that_read_the_configuration_skip_without_one[budgets]",
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
@@ -2604,4 +2604,38 @@ after = "            found.append((_MARKED, where, True))"
 reddens = [
   "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[.claude/settings.json]",
   "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[.codex/hooks.json]",
+]
+
+# A checkout this machine binds with no stayfixed.toml is judged by `attached` and the note store on
+# the configuration `attach` acted on (`Context.attach_config`): with none, both rows said nothing of
+# a delivery and a composed store that were in place.
+[[mutation]]
+name = "doctor judges a bound checkout with no stayfixed.toml on no configuration"
+file = "src/stayfixed/doctor/model.py"
+before = "            if bound is None:\n                return None"
+after = "            if True:\n                return None"
+reddens = [
+  "tests/attach/test_project_choice.py::test_doctor_judges_a_checkout_attached_with_no_stayfixed_toml_on_what_attach_used",
+]
+
+# A checkout nothing on this machine binds has no project to build a configuration for: without the
+# guard, both rows end red on an error instead of skipping as they did.
+[[mutation]]
+name = "doctor builds a configuration for a checkout nothing binds"
+file = "src/stayfixed/doctor/model.py"
+before = "            if bound is None:\n                return None"
+after = "            if False:\n                return None"
+reddens = [
+  "tests/attach/test_project_choice.py::test_doctor_reads_an_unbound_checkout_with_no_stayfixed_toml_as_it_did",
+]
+
+# Where the main checkout has a stayfixed.toml, the file names the project, so a worktree without it
+# and a file the session dropped are judged on no configuration, as before.
+[[mutation]]
+name = "doctor builds a configuration where the main checkout has a stayfixed.toml"
+file = "src/stayfixed/doctor/model.py"
+before = "            if main is None or read_document(main) is not None:"
+after = "            if main is None:"
+reddens = [
+  "tests/attach/test_project_choice.py::test_doctor_reads_a_worktree_whose_main_checkout_has_a_stayfixed_toml_as_it_did",
 ]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -115,6 +116,82 @@ def test_an_interpreter_below_the_floor_degrades_open(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert "is not python 3.11 or newer" in result.stderr
+
+
+OFF = "stayfixed's hooks are off in this session: "
+TO_DO = ". Install Python 3.11 or newer on PATH."
+
+
+def _no_python3(tmp_path: Path) -> tuple[str, str]:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    return str(empty), "there is no python3 on PATH"
+
+
+def _a_python3_below_the_floor(tmp_path: Path) -> tuple[str, str]:
+    # A `python3` that fails the probe, so this runs where no real sub-floor interpreter exists:
+    # what is under test is what the wrapper says, not the probe. Its directory carries the two
+    # bytes a JSON string must escape, and a non-ASCII one, since a `PATH` directory may be named
+    # anything and the line goes out inside a JSON string the harness parses.
+    directory = tmp_path / 'a "quoted\\ dir é'
+    directory.mkdir()
+    shim = directory / "python3"
+    shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    shim.chmod(0o755)
+    # Each byte outside the narrow set is a `?`, the `é` two of them.
+    return str(directory), f"{tmp_path}/a ?quoted? dir ??/python3 is not Python 3.11 or newer"
+
+
+@pytest.mark.parametrize(
+    "state", [_no_python3, _a_python3_below_the_floor], ids=["no-python3", "below-the-floor"]
+)
+def test_the_dispatching_session_start_says_the_hooks_are_off(
+    tmp_path: Path, state: Callable[[Path], tuple[str, str]]
+) -> None:
+    # Measured on a machine whose `PATH` held only a 3.9 `/usr/bin/python3`: every entry said why
+    # on stderr, which nobody reads on a `0`, and stayfixed was off with nothing said. So the one
+    # entry that dispatches `SessionStart` says it where Claude Code shows the person
+    # (`systemMessage`) and where the model reads (`additionalContext`), and still exits 0.
+    path, why = state(tmp_path)
+    result = _run("hook", "SessionStart", plugin_root=_plugin_root(tmp_path, 0), path=path)
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    line = f"{OFF}{why}{TO_DO}"
+    assert payload["systemMessage"] == line
+    assert payload["hookSpecificOutput"] == {
+        "hookEventName": "SessionStart",
+        "additionalContext": line,
+    }
+    assert "continuing open" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("memory", "session-context", "--bundle", "standing-rules", "--part", "1"),
+        ("hook", "PreToolUse"),
+    ],
+    ids=["memory-session-context", "hook-pretooluse"],
+)
+def test_every_other_entry_stays_silent_without_a_usable_python(
+    tmp_path: Path, argv: tuple[str, ...]
+) -> None:
+    # Seven entries run on `SessionStart`; the six memory ones saying it too would put the line
+    # before the session seven times, and on a tool event stdout is a contract about the call.
+    path, _ = _no_python3(tmp_path)
+    result = _run(*argv, plugin_root=_plugin_root(tmp_path, 0), path=path)
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert "no python3 on PATH" in result.stderr
+
+
+def test_a_usable_interpreter_leaves_session_start_to_stayfixed(tmp_path: Path) -> None:
+    # The positive row: with a usable `python3` the wrapper adds nothing to what stayfixed prints.
+    result = _run(
+        "hook", "SessionStart", plugin_root=_plugin_root(tmp_path, 0, echo_cwd=True), cwd=tmp_path
+    )
+    assert (result.returncode, result.stderr) == (0, "")
+    assert result.stdout.splitlines() == [str(tmp_path.resolve())]
 
 
 def test_an_interpreter_at_the_floor_is_accepted(tmp_path: Path) -> None:

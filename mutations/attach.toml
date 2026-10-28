@@ -1555,8 +1555,8 @@ reddens = [
 [[mutation]]
 name = "the attached row reads a configuration that is not there"
 file = "src/stayfixed/attach/doctor.py"
-before = "    attached = configured(lambda context, config: _attached(context, config, ledger))"
-after = "    attached = lambda context: _attached(context, context.config, ledger)  # noqa: E731"
+before = "    attached = configured(lambda context, config: _attached(context, config, ledger), attach=True)"
+after = "    attached = lambda context: _attached(context, context.attach_config, ledger)  # noqa: E731"
 reddens = [
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
 ]
@@ -1688,3 +1688,74 @@ file = "src/stayfixed/attach/doctor.py"
 before = "    if any(fsops.is_symlink(link) and not fsops.exists(link) for link in composed.iterdir()):"
 after = "    if False:"
 reddens = ["tests/attach/test_doctor.py::test_a_composed_store_whose_link_dangles_warns"]
+
+# A repository with no stayfixed.toml: which overlay project it attaches under
+# (`binding.choose_project`). Each step is a convenience whose anchor is `origin`, and each entry
+# below breaks one decision of the order, or one refusal that names `--project` as the way out.
+# The owner's `--project` wins over everything below it.
+[[mutation]]
+name = "attach ignores --project"
+file = "src/stayfixed/attach/binding.py"
+before = "    if named is not None:\n        return named\n"
+after = "    if False:\n        return named\n"
+reddens = [
+  "tests/attach/test_project_choice.py::test_project_names_the_project_of_a_repository_with_no_stayfixed_toml",
+]
+
+# A re-attach takes the project this machine's binding records, not the remote's name.
+[[mutation]]
+name = "attach forgets this machine's binding"
+file = "src/stayfixed/attach/binding.py"
+before = "    found = bound_project(root)\n    if found is not None:\n        return found.project\n"
+after = "    found = None\n    if found is not None:\n        return found.project\n"
+reddens = [
+  "tests/attach/test_project_choice.py::test_a_later_attach_takes_the_project_this_machines_binding_records",
+]
+
+# The overlay project whose record names this origin, in any of the three spellings, is the one.
+[[mutation]]
+name = "attach finds no overlay project by its remote"
+file = "src/stayfixed/attach/binding.py"
+before = "    return recorded is not None and origin_note(recorded, origin) is None"
+after = "    return False"
+reddens = [
+  "tests/attach/test_project_choice.py::test_the_one_overlay_project_recording_this_origin_is_the_project",
+]
+
+# Two projects claiming one origin are the owner's to choose between.
+[[mutation]]
+name = "attach takes the first of several projects recording its remote"
+file = "src/stayfixed/attach/binding.py"
+before = "    if len(matches) > 1:"
+after = "    if len(matches) > 2:"
+reddens = [
+  "tests/attach/test_project_choice.py::test_two_overlay_projects_recording_this_origin_are_refused_and_nothing_is_written",
+]
+
+# The derived name becomes a directory under the overlay's `projects/`, so it meets the name rule.
+[[mutation]]
+name = "attach takes a derived name the name rule refuses"
+file = "src/stayfixed/attach/binding.py"
+before = "    if not PROJECT_NAME.match(derived):"
+after = "    if False:"
+reddens = [
+  "tests/attach/test_project_choice.py::test_a_derived_name_that_is_no_project_name_is_refused",
+]
+
+# With no origin and no binding nothing names the project, and the directory's name is a guess.
+[[mutation]]
+name = "attach takes the directory's name where nothing names the project"
+file = "src/stayfixed/attach/binding.py"
+before = "    if origin is None:\n        raise Refusal(NO_PROJECT)"
+after = "    if origin is None:\n        return root.name"
+reddens = [
+  "tests/attach/test_project_choice.py::test_no_origin_and_no_binding_is_refused_naming_project",
+]
+
+# A stayfixed.toml names the project, so `--project` beside it is refused rather than ignored.
+[[mutation]]
+name = "attach takes --project beside a stayfixed.toml"
+file = "src/stayfixed/attach/write.py"
+before = "    if project is not None and not chosen:"
+after = "    if False:"
+reddens = ["tests/attach/test_project_choice.py::test_project_beside_a_stayfixed_toml_is_refused"]

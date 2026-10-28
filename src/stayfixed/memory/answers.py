@@ -47,7 +47,9 @@ class Answers:
         and gates the exit code for something the repository did not do wrong.
         """
         if self._store is None:
-            config = context.config
+            # `attach_config`: a checkout attached with no `stayfixed.toml` resolves the store
+            # `attach` composed.
+            config = context.attach_config
             # With no project configuration there is no store to resolve.
             self._store = (
                 None
