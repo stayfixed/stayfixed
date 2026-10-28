@@ -505,3 +505,67 @@ exit 0 by their own `[ -f "$1" ] || exit 0`; on the owner's machine they resolve
 links under `paths.memory` and `~/.claude/projects/<slug>/memory`, then `setup --overlay <root>`
 and `attach` in each checkout. The live desktop worktree session (the delivery plan's D6) is still
 to run with the owner before `0.5.0`.
+
+### Task 4 — P6's exit on the installed `0.6.0`, 2026-10-28
+
+**Not met.** Run with the owner's word on the clone and the fixture split (Step 1), on an isolated
+machine under the session's scratch space, as `tests/fixtures/p6/README.md` describes: `stayfixed
+0.6.0` by `uv tool install`, the plugin from `stayfixed/stayfixed@v0.6.0`, a scratch overlay made by
+`setup --overlay` with four canaries. Two findings stop the exit as d44 states it; everything else
+held.
+
+1. **`attach` needs a `stayfixed.toml`.** d44's oracle is a repository with none, and `0.6.0`'s
+   `attach` refuses one (`… stayfixed.toml does not exist; run \`stayfixed init\` first`, exit 1):
+   it takes the project from `[project] name`, and neither a flag nor the overlay supplies it. No
+   lane plan of this wave covered a checkout without one; every checkout HS2–HS4 and D6 measured
+   holds a committed or owner-held `stayfixed.toml`. With the owner's ruling (option A), the rest
+   ran with an owner-held `stayfixed.toml` in each repository, excluded by hand before the first
+   reading, so `info/exclude` was not empty before `attach`.
+2. **`detach` leaves the checkout's `settings.local.json` behind.** In the public clone, which
+   carried no such file, every `detach` (three runs) left it untracked under `.claude`, holding
+   `{"enabledPlugins": {}, "extraKnownMarketplaces": {}}`: `detach` plans the file's withdrawal
+   before it runs `claude plugin uninstall` and `marketplace remove`, the plan keeps the file
+   because the delivery's entries are still in it, and those calls then leave the two empty objects,
+   which nothing removes once the exclude block is gone. The negation fixture's own `.claude/*`
+   hides the same leftover; on the owner's machine Claude Code's global exclusion of
+   `**/.claude/settings.local.json` would, which is why d44 runs with a `GIT_CONFIG_GLOBAL` of its own.
+
+| Reading | Public clone | Negation fixture |
+|---|---|---|
+| status before `attach` | empty | empty |
+| status after `attach` and one `SessionStart` | empty | empty |
+| status after `detach` | the untracked `settings.local.json` under `.claude` | empty (`.claude/*` hides the same leftover) |
+| `info/exclude` after `attach` vs before | differs | differs |
+| `info/exclude` after `detach` vs before | byte-equal | byte-equal |
+| `check-ignore -v` on the placed paths | `.git/info/exclude` for all three | `.git/info/exclude`, but the fixture's `.gitignore` line `.claude/*` for `settings.local.json` |
+| both rule canaries in `SessionStart` | present | present |
+| `doctor`'s `attached` row | ok | ok |
+
+**The control (Step 3)** reddens the oracle: with a scratch patch in the installed package making
+`attach` write `p6-control-extra.txt`, the fixture's status after `attach` read
+`?? p6-control-extra.txt`. The patch was taken out and the installed module compared equal to the
+source.
+
+**The observables (Step 4),** on the bound clone:
+
+| Clause | Observed |
+|---|---|
+| On the installed `0.6.0` | `command -v stayfixed` resolves to `<home>/.local/bin/stayfixed` → `<home>/.local/share/uv/tools/stayfixed/bin/stayfixed`; the plugin row's `gitCommitSha` is `3072cee`…, version `0.6.0`, the commit `v0.6.0`'s marketplace entry pins |
+| The harness arrives | `claude -p --debug-file`, offline (`ANTHROPIC_BASE_URL=http://127.0.0.1:9`, an invalid key): the log holds the common and project rule canaries (3 lines each) and the rendered plugin's `SessionStart` hook canary (2 lines), and "Loaded 1 skills from plugin overlay-<id>", the canary skill; every API call failed (`ECONNREFUSED`, a bootstrap fetch `401`), none succeeded; `claude` exit 1 |
+| It runs through the overlay | `doctor`: 0 red, 0 warn, `attached` ok; no `docs/memory` link tree; `settings.local.json` holds only `autoMemoryDirectory`, `enabledPlugins` and `extraKnownMarketplaces`; status empty after the session |
+
+**Also met on the way:** with no Python 3.11 or newer on `PATH` (macOS's system `python3` is 3.9),
+the plugin's `run-hook.sh` printed `/usr/bin/python3 is not python 3.11 or newer; continuing open`
+for each `SessionStart` entry and delivered nothing, though the `uv tool` install of the same
+release carries an interpreter that would do. The first run is kept as that evidence; the
+measurement above added Python 3.13 to the isolated `PATH`.
+
+The tracked Claude Code files read before any `claude` run, by sha256: the clone's command files
+`commit-push-pr.md` `15937f2f0449…`, `dedupe.md` `a67ae505d7a1…` and `triage-issue.md`
+`d12820dc097b…`, its plugin marketplace file `663c1abf7f76…` and its `CLAUDE.md` `0fafa0a267c1…`
+(GitHub Actions guidance, nothing a session runs); the fixture's tracked settings file
+`ee6d10349858…` and rule `6b29b5306b79…`.
+
+What closes the exit: `detach` takes back a settings file `attach` created once nothing of its own is
+left in it, and `attach` binds a checkout with no `stayfixed.toml` (the design's "bound by remote");
+a release carrying both, then this task again with no `stayfixed.toml` and an empty `info/exclude`.
