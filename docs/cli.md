@@ -434,7 +434,13 @@ root it cannot enter — ends in exit `0` with one line on stderr that names the
 `continuing open`: **a session never dies of stayfixed's own fault.** `stayfixed hook` exits `0` on
 an internal error of its own for the same reason, so no shipped entry ever blocks a call. Claude
 Code discards stderr on a `0`, so `stayfixed doctor`'s `wrapper` row runs the wrapper and goes red
-on such a line.
+on such a line. Without a usable `python3` neither `doctor` nor any hook can run, so the one entry
+that dispatches `SessionStart` (`hook SessionStart`) also prints, on stdout, the hook answer Claude
+Code shows the person (`systemMessage`) and adds to the model's context (`additionalContext`):
+that stayfixed's hooks are off in this session, because there is no `python3` on `PATH` or the one
+there (its path, each byte but an ASCII letter, a digit, a space and `/._+~-` printed as `?`) is not
+Python 3.11 or newer, and to install Python 3.11 or newer on `PATH`. Every other entry, the six
+memory entries on the same event included, stays silent on stdout.
 A hook that runs past its ten-second `timeout`, or that cannot start at all — the wrapper missing or
 not executable — never reaches the mapping, and Claude Code then carries the tool call out.
 
@@ -3050,7 +3056,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 |---|---|---|
 | `not-initialised` | whether there is a `stayfixed.toml` here, and how much of it a session can use: with none, a warning that the session guards and `doctor` work without one and memory stays the coding agent's own, and that `stayfixed init` adds the rest; with one that loaded with settings ignored or put back to the preset's, a warning naming at most three of their keys and counting the rest, never their values; red only for one a session drops whole, in the words of the session's warning | `stayfixed.toml` |
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
-| `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, or an edited wrapper that still runs, is not reported | `hooks/run-hook.sh` |
+| `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, an edited wrapper that still runs or a changed `scripts/stayfixed` is not reported, and under a root the environment named, where `wrapper` skips, no row reports a missing or edited launcher | `hooks/run-hook.sh` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
 | `hook-entries` | every hook entry, counted by provenance: one that claims the stayfixed marker is counted as stayfixed's in whichever file it sits, and where it sits is not judged | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |

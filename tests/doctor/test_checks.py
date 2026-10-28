@@ -572,12 +572,8 @@ def test_the_wrapper_runs_under_the_variables_the_harness_registry_names(
     assert checks.NAMED_ROOTS == ("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT")
 
 
-def test_the_other_check_this_build_cannot_answer_skips_for_its_own_reason(
-    tmp_path: Path,
-) -> None:
-    # `ci-ref` wants `[ci] ref`, which `init` writes and this fixture does not. Not invented
-    # here: a check that compared a file against itself is worse than one that says it cannot
-    # look.
+def test_ci_ref_skips_where_no_ci_ref_is_recorded(tmp_path: Path) -> None:
+    # `ci-ref` wants `[ci] ref`, which `init` writes and this fixture does not.
     checks = _checks(tmp_path, _initialised(tmp_path))
     assert _by_name(checks, "ci-ref").status == "skip"
 
