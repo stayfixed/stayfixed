@@ -583,7 +583,10 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
 # Fourteen and not twelve since the `memory` row names the settings file that sets the harness's
 # `autoMemoryDirectory`: it asks whether this checkout is a registered worktree (its common and its
 # own git directory) to read the main checkout's settings file, which a linked worktree reads too.
-DOCTOR_LAUNCHES = 14
+#
+# Thirteen and not fourteen since `hook-entries` no longer walks for skills, commands and agents,
+# whose walk asked git's index for the nested skills directories.
+DOCTOR_LAUNCHES = 13
 
 
 def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
@@ -640,11 +643,11 @@ def test_doctor_launches_the_number_of_subprocesses_it_says_it_does(
         True,
     ), attached
     assert len(launched) == DOCTOR_LAUNCHES, launched
-    # And they are the fourteen the paragraph names, not fourteen of something else: one wrapper
-    # probe, and thirteen `git` questions. Asserted by shape rather than by full argv, because
+    # And they are the thirteen the paragraph names, not thirteen of something else: one wrapper
+    # probe, and twelve `git` questions. Asserted by shape rather than by full argv, because
     # each `git` call carries the temporary checkout or overlay it asks about.
     assert sum(1 for argv in launched if argv[0] == str(WRAPPER)) == 1
-    assert sum(1 for argv in launched if argv[0] == "git") == 13
+    assert sum(1 for argv in launched if argv[0] == "git") == 12
 
 
 def test_init_then_the_walkthrough_ends_with_the_rule_in_a_session(tmp_path: Path) -> None:

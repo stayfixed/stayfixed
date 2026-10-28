@@ -221,22 +221,21 @@ class Placed:
 
 
 def placed_entries(document: str) -> list[Placed]:
-    """Every hook entry in the document where it is, in document order, **one element per entry**
-    — `doctor`'s provenance.
+    """Every hook entry in the document, in document order, **one element per entry**: what
+    `doctor` counts.
 
-    One per entry and not one per readable command, and never keyed by id: the position in this
-    list is what the report names, and two entries sharing one id are two entries. So an entry
-    whose `command` is absent, or is neither a string nor an integer, still occupies its place and
-    contributes `""`; an integer, which the walk reads as its text, contributes that text. Either
-    is one `marker_id` reads as unmarked — which it certainly is. Refuses what `owned_ids`
-    refuses, read by the same walk.
+    One per entry and not one per readable command, and never keyed by id: two entries sharing
+    one id are two entries. So an entry whose `command` is absent, or is neither a string nor an
+    integer, is still one and contributes `""`; an integer, which the walk reads as its text,
+    contributes that text. Either is one `marker_id` reads as unmarked — which it certainly is.
+    Refuses what `owned_ids` refuses, read by the same walk.
     """
     return [_placed(entry) for _, _, entry in _read_entries(document)]
 
 
 def _placed(entry: dict[str, Any]) -> Placed:
-    """One entry as `Placed` holds it: one place for every walk, so `placed_entries` and
-    `live_entries` read an entry in the same terms."""
+    """One entry as `Placed` holds it, for every walk, so `placed_entries` and `live_entries`
+    read an entry in the same terms."""
     command = entry.get("command")
     return Placed(command if isinstance(command, str) else "")
 
@@ -245,16 +244,12 @@ def _placed(entry: dict[str, Any]) -> Placed:
 class Walked:
     """What a walk for live hook entries read out of a settings document.
 
-    `entries` holds each entry it read with its place, 1-based, among `places`: every element of
-    every group's `hooks` list, read or skipped, in document order, so a reader names an entry
-    where a person opening the file finds it. `partly` is whether it skipped a part that could
-    hold a command; `hidden`, whether a command claiming the stayfixed marker sits in such a part.
+    `entries` holds each entry it read, in document order. `partly` is whether it skipped a part
+    that could hold a command.
     """
 
-    entries: tuple[tuple[int, Placed], ...]
-    places: int
+    entries: tuple[Placed, ...]
     partly: bool
-    hidden: bool
 
 
 def _admitted(value: object, kind: type, skipped: list[object]) -> bool:
@@ -272,22 +267,6 @@ def _admitted(value: object, kind: type, skipped: list[object]) -> bool:
     return False
 
 
-def _claims_the_marker(skipped: list[object]) -> bool:
-    """Whether any string anywhere inside `skipped` is a command claiming the stayfixed marker,
-    asked without recursion: a skipped part may be nested as deep as the parser follows."""
-    pending = list(skipped)
-    while pending:
-        node = pending.pop()
-        if isinstance(node, str):
-            if marker_id(node) is not None:
-                return True
-        elif isinstance(node, dict):
-            pending.extend(node.values())
-        elif isinstance(node, list):
-            pending.extend(node)
-    return False
-
-
 def live_entries(document: str) -> Walked:
     """Every hook entry a harness runs out of the document, as `placed_entries` places it.
 
@@ -295,16 +274,13 @@ def live_entries(document: str) -> Walked:
     a shape it cannot read; that is the wrong question for which entries are live. What is
     skipped is `_admitted`'s rule. One shape more is set aside without a measurement: an object
     where a group goes that carries a `command` or a `type`, as an entry does, and no `hooks` list
-    -- a reader may run it as an entry, so it is kept with the skipped parts. A command claiming
-    the stayfixed marker in any skipped part is `hidden`, which a reader judges as the
-    conservative answer, not a measured one: whether a harness runs it is not known. Refuses what
+    -- a reader may run it as an entry, so it is kept with the skipped parts. Refuses what
     `placed_entries` refuses above the events -- a document that is not a JSON object, and a
     `hooks` that is not an object -- which was not measured either.
     """
     raw = _entry_document(document)
-    found: list[tuple[int, Placed]] = []
+    found: list[Placed] = []
     skipped: list[object] = []
-    places = 0
     for groups in _hooks_table(raw).values():
         if not _admitted(groups, list, skipped):
             continue
@@ -317,10 +293,9 @@ def live_entries(document: str) -> Walked:
             if not _admitted(entries, list, skipped):
                 continue
             for entry in entries:
-                places += 1
                 if _admitted(entry, dict, skipped):
-                    found.append((places, _placed(entry)))
-    return Walked(tuple(found), places, bool(skipped), _claims_the_marker(skipped))
+                    found.append(_placed(entry))
+    return Walked(tuple(found), bool(skipped))
 
 
 def judged_entries(document: str, *, lenient: bool) -> Walked:
@@ -335,8 +310,7 @@ def judged_entries(document: str, *, lenient: bool) -> Walked:
     """
     if lenient:
         return live_entries(lenient_settings(document))
-    placed = placed_entries(document)
-    return Walked(tuple(enumerate(placed, start=1)), len(placed), partly=False, hidden=False)
+    return Walked(tuple(placed_entries(document)), partly=False)
 
 
 def owned(document: str) -> str:

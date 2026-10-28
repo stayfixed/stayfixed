@@ -52,10 +52,9 @@ def _ledger_state(root: Path) -> AttachLedger | str:
     **Whether it is there is `fsops.names_regular_file`'s answer, and a path it cannot answer
     about is unreadable.** A clone can commit the ledger, or a directory above it, as a symbolic
     link to a name longer than a file name may be. Raised past this function to `_guarded`, the
-    error's warning would stand in for the whole row, so a forged entry beside the link would lose
-    its red in `hook-entries`; read as no ledger, a file that is there would be skipped. A path
-    that names no file — nothing there, a dangling link or a loop, or something other than a
-    regular file — is no ledger.
+    error's warning would stand in for the whole row; read as no ledger, a file that is there
+    would be skipped. A path that names no file — nothing there, a dangling link or a loop, or
+    something other than a regular file — is no ledger.
     """
     from stayfixed.attach.write import ledger
     from stayfixed.config.layout import ATTACH_LEDGER

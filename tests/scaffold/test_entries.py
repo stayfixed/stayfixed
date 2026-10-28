@@ -222,12 +222,9 @@ def _commands(document: str) -> list[str]:
 
 
 def test_every_entry_is_one_command_in_document_order_and_refused_as_owned_ids_refuses() -> None:
-    # `doctor`'s `hook-entries` names an entry by its position in this list, so every entry holds
-    # a place: two entries sharing one id are two, and one whose command is absent or not a string
-    # is `""`, which no marker matches. An integer is read as its text, as every number is here.
-    # Mutation (oracle): `mutations/`'s "doctor counts hook entries by marker id rather than by
-    # position" -> the second `shared` entry vanishes; the entry names the row's own tests, and
-    # this one reddens under it too, measured by hand.
+    # `doctor`'s `hook-entries` counts the entries in this list, so every entry is one: two entries
+    # sharing one id are two, and one whose command is absent or not a string is `""`, which no
+    # marker matches. An integer is read as its text, as every number is here.
     shared = mark("a.sh", "same-id")
     raw = {
         "permissions": {"allow": ["Bash(ls)"]},

@@ -526,10 +526,9 @@ reddens = [
 ]
 
 # `owned_ids` answers ids and events, which no number is part of, so it reads every integer as its
-# text. Read with the interpreter's limit, a committed settings file holding a marked entry and a
-# number past that limit was refused, and `hook-entries` read the file as one it could not judge
-# rather than judging the entry: its red turned into a warning, and the owner's own file beside such
-# a number read as one nothing could account for.
+# text. Read with the interpreter's limit, a committed settings file holding a number past that
+# limit was refused, and `hook-entries` read it as one nothing could account for rather than
+# counting the entries in it.
 [[mutation]]
 name = "the settings engine reads a number past the parser's reach in the document doctor walks"
 file = "src/stayfixed/scaffold/entries.py"
@@ -568,30 +567,11 @@ reddens = [
   "tests/scaffold/test_engine.py::test_a_retired_record_whose_file_is_already_gone_is_dropped[directory-gone]",
 ]
 
-# Positional counting in one line: `owned_ids` answers a `dict[str, str]`, so N entries sharing one
-# id yield one key and the same id under two events keeps only the last -- which deflates the
-# claimed count and inflates `foreign` by exactly the difference. `placed_entries` walks
-# positionally for that reason, and `hook-entries` counts what it answers. The mutation makes the
-# walk key by id instead of counting entries, which is precisely the defect positional counting
-# exists to prevent: the second entry vanishes, so the count is wrong AND the grant comparison never
-# sees the command hung on the borrowed id.
-[[mutation]]
-name = "doctor counts hook entries by marker id rather than by position"
-file = "src/stayfixed/scaffold/entries.py"
-before = "                    found.append((places, _placed(entry)))"
-after = """                    placed = _placed(entry)
-                    here = marker_id(placed.command)
-                    if here is None or here not in {marker_id(seen.command) for _, seen in found}:
-                        found.append((places, placed))"""
-reddens = [
-  "tests/doctor/test_checks.py::test_two_entries_sharing_one_marker_id_are_counted_as_two",
-]
-
 # The entries a harness runs out of a settings file, for `doctor`'s `hook-entries`: Claude Code
 # 2.1.288 (measured on macOS, 2026-10-05) still ran the valid hooks of a file whose `hooks` section
 # held a scalar where an event's list, a group, a group's `hooks` or an entry belongs. Read with
 # the engine's strict walk, one such scalar made the file one the row was blind to, a warning, and
-# a forged entry beside it lost its red. `_admitted` states the rule once, for every place.
+# the entry beside it went uncounted. `_admitted` states the rule once, for every place.
 [[mutation]]
 name = "the live-entry walk refuses a scalar where a list or an object belongs"
 file = "src/stayfixed/scaffold/entries.py"
@@ -607,10 +587,10 @@ after = """
     raise EntriesError("not the kind this place holds")
 """
 reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[event-not-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-not-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[group-hooks-not-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_red[entry-not-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[event-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[group-not-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[group-hooks-not-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_beside_a_malformed_part_the_harness_skips_is_still_counted[entry-not-an-object]",
 ]
 
 # A container in one of those places was not measured, and may hold a command a harness runs: the
@@ -628,54 +608,21 @@ after = """
 """
 reddens = [
   "tests/attach/test_doctor.py::test_a_malformed_part_that_could_hold_a_command_still_leaves_the_file_unaccounted_for",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[group-a-list]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[event-an-object]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[group-a-list]",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[entry-a-list]",
 ]
 
 # Not measured, and read conservatively: an object where a group goes that carries an entry's
-# `command` or `type` and no `hooks` list is kept with the skipped parts, and a command claiming the
-# stayfixed marker in any skipped part is red, since a harness may run what nothing here can check.
+# `command` or `type` and no `hooks` list is kept with the skipped parts, so the row names the file
+# as one it could not account for.
 [[mutation]]
 name = "the live-entry walk reads an entry where a group goes as no entry"
 file = "src/stayfixed/scaffold/entries.py"
 before = '            if "command" in group or "type" in group:'
 after = "            if False:"
 reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
-]
-
-[[mutation]]
-name = "the live-entry walk overlooks a marked command it skipped"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-            if marker_id(node) is not None:
-                return True
-"""
-after = """
-            if False:
-                return True
-"""
-reddens = [
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[event-an-object]",
-  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_is_red_and_never_merely_unread[entry-where-a-group-goes]",
-]
-
-# Every element of an entry list holds a place, so the row names an entry where a person opening
-# the file finds it, scalars beside it included.
-[[mutation]]
-name = "the live-entry walk numbers only the entries it reads"
-file = "src/stayfixed/scaffold/entries.py"
-before = """
-                places += 1
-                if _admitted(entry, dict, skipped):
-"""
-after = """
-                if _admitted(entry, dict, skipped):
-                    places += 1
-"""
-reddens = [
-  "tests/attach/test_doctor.py::test_an_entry_is_named_by_its_place_among_every_element_beside_it",
+  "tests/attach/test_doctor.py::test_a_forged_entry_inside_a_part_the_walk_skips_leaves_the_file_unread[entry-where-a-group-goes]",
 ]
 
 # In the block led by `mutations/`'s "the JSON writer lets an encode past the interpreter's
@@ -707,17 +654,6 @@ before = 'return live_entries(lenient_settings(document))'
 after = 'return live_entries(document)'
 reddens = [
   "tests/attach/test_doctor.py::test_a_byte_that_is_not_utf8_changes_no_entrys_verdict[byte-order-mark]",
-]
-
-# A place is counted across every list in a file, beside `mutations/`'s "the live-entry walk
-# numbers only the entries it reads".
-[[mutation]]
-name = "the live walk numbers each list from one"
-file = "src/stayfixed/scaffold/entries.py"
-before = "            for entry in entries:\n                places += 1\n"
-after = "            places = 0\n            for entry in entries:\n                places += 1\n"
-reddens = [
-  "tests/doctor/test_checks.py::test_an_entry_is_numbered_across_every_list_in_its_file",
 ]
 
 # An artifact the engine cannot read is named relative to the project, its reason in words: the

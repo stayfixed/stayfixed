@@ -879,10 +879,9 @@ reddens = [
   "tests/attach/test_doctor.py::test_a_ledger_on_a_machine_that_records_no_overlay_skips_and_never_reads_as_attached",
 ]
 
-# On a machine that records no overlay, `hook-entries` is the one red row, and only for the entries
-# nothing here vouches for: a second red row would fail the report on the machine's state rather
-# than on anything the repository holds. This entry holds the report-wide assertion; the row's own
-# skip is held by `mutations/`'s "a machine with no overlay recorded is blamed on the repository".
+# On a machine that records no overlay, the `attached` row skips: a red row would fail the report on
+# the machine's state rather than on anything the repository holds. The row's own skip is held by
+# `mutations/`'s "a machine with no overlay recorded is blamed on the repository".
 [[mutation]]
 name = "the attached row reddens a ledger no overlay is recorded to check"
 file = "src/stayfixed/attach/doctor.py"
@@ -992,8 +991,7 @@ reddens = [
 # `project.name` is committed and spells the one free part of the paths read under the overlay's
 # `projects/<name>/`. A path the name rules out is one the overlay has no file at. `doctor` reads
 # such a name's binding record as absent, so the checkout is never bound and is granted what
-# `common/` grants; read as a failure, it turned `hook-entries`' red into a warning on a machine
-# with nothing broken. `attach --check` reads a source under a share the overlay has no directory
+# `common/` grants; read as a failure, it put a warning on a machine with nothing broken. `attach --check` reads a source under a share the overlay has no directory
 # for as absent; read as a failure, it failed on a file no overlay can hold.
 [[mutation]]
 name = "a source the project's name rules out is an overlay that cannot be asked"
@@ -1171,10 +1169,9 @@ reddens = [
 ]
 
 # A committed ledger, or a directory above it, can be a symbolic link to a name longer than a file
-# name may be. Raised past every catch to `_guarded`, `ENAMETOOLONG` puts its warning in place of all
-# of `hook-entries`, so a forged entry beside the link loses its red and the report exits 0.
-# `fsops.names_regular_file` raises it on every interpreter, and the ledger reads as one that cannot
-# be read.
+# name may be. Raised past every catch to `_guarded`, `ENAMETOOLONG` puts its warning in place of the
+# whole row. `fsops.names_regular_file` raises it on every interpreter, and the ledger reads as one
+# that cannot be read.
 [[mutation]]
 name = "a ledger doctor cannot ask about reads as no ledger"
 file = "src/stayfixed/attach/doctor.py"

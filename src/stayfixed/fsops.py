@@ -178,9 +178,9 @@ def utf_8_name(name: str) -> bool:
 # a directory, a symbolic link loop. `Path.is_file()` answers `False` for these, raises most other
 # faults up to Python 3.13 and answers `False` for any from 3.14, and neither will do for a path a
 # clone can commit. A symbolic link to a name longer than a file name may be raises `ENAMETOOLONG`:
-# raised past a caller's catch, it costs a `doctor` row its verdict, so an entry nothing vouches for
-# loses its red beside it; answered `False`, it skips a file that is there. So `stat` is asked,
-# these three are no file, and any other fault is a file the caller cannot read.
+# raised past a caller's catch, it costs a `doctor` row its verdict; answered `False`, it skips a
+# file that is there. So `stat` is asked, these three are no file, and any other fault is a file
+# the caller cannot read.
 NAMES_NO_FILE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
 
 
@@ -360,11 +360,11 @@ REGULAR_READ_LIMIT = 64 * 1024 * 1024
 # A named cap (CONTRIBUTING.md#named-caps): how many directory entries a walk over a repository's
 # tree that looks for something lists, one total across everything that walk lists, before it stops
 # and says it could not tell. One number for every walk that has that answer, each reading it here
-# when it starts: `doctor`'s walk for files whose frontmatter declares hooks and its walk of the
-# note store (`memory.doctor`), and the Python profile's walk for stale bytecode, which runs on a
-# hook's timeout, so the shipped file that changes with it is `hooks/hooks.json`
-# (`profiles/python/hygiene.py` says what was measured against that timeout: listing this many
-# entries took under half a second with a warm cache). `docs/cli.md` states it for both commands.
+# when it starts: `doctor`'s walk of the note store (`memory.doctor`), and the Python profile's
+# walk for stale bytecode, which runs on a hook's timeout, so the shipped file that changes with
+# it is `hooks/hooks.json` (`profiles/python/hygiene.py` says what was measured against that
+# timeout: listing this many entries took under half a second with a warm cache). `docs/cli.md`
+# states it for both commands.
 # The ledger's scan (`ledger.scan`) does not read it: it reads every file under the project's code
 # roots, as git lists them or, where git cannot, as its walk finds them, and a scan that stopped
 # short would pass a reference it never read, so it has no "could not tell" to stop at.

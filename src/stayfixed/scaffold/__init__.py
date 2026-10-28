@@ -1,7 +1,7 @@
 """The scaffold engine: manifest, regions, keyed entries, plan and apply.
 
 Everything a consumer needs is re-exported here, including the primitives other areas reach for
-directly: `judged_entries` for `doctor`'s provenance list, each entry a `Placed`, for
+directly: `judged_entries` for `doctor`'s count of hook entries, each entry a `Placed`, for
 `assess`'s foreign-hook probe, which reads the same walk, and for `attach --check`, which reads
 the settings file `attach` merges into as strictly as the merge does; `owned_ids` for the ids an
 earlier `attach` recorded in its ledger, `mark` for any caller that builds `Template.entries`,
