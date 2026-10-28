@@ -2,6 +2,32 @@
 
 <!-- towncrier release notes start -->
 
+## 0.6.1 (2026-10-28)
+
+### Added
+
+- `stayfixed attach` now binds a repository that has no `stayfixed.toml`, such as a public clone you
+  cannot commit to. The project is the one `--project NAME` names, else the one this machine's binding
+  already records, else the one overlay project whose `project.toml` records the same `origin`, else
+  the last segment of `origin`'s path, lower-cased. A choice that is ambiguous is refused with
+  `--project` as the way out, and `--project` beside a `stayfixed.toml` is refused, since the file
+  names the project.
+
+### Fixed
+
+- A session on a machine without Python 3.11 or newer on `PATH` is now told that stayfixed is off.
+  Every hook used to say why on stderr alone, which neither you nor the model sees, so stayfixed was
+  silently off. Now, when there is no `python3` on `PATH` or the one there is older than 3.11, the
+  `SessionStart` hook shows you, and adds to the model's context, one line saying stayfixed's hooks
+  are off in this session and why, and to install Python 3.11 or newer on `PATH`. Every other hook
+  still exits 0 without a word on stdout.
+- `stayfixed detach` no longer leaves `.claude/settings.local.json` behind in a checkout that had none
+  before `attach`. Claude Code's `plugin uninstall` and `marketplace remove` leave the file holding
+  `enabledPlugins` and `extraKnownMarketplaces`, emptied, and once `detach` took its exclude block
+  away that file showed in `git status` as untracked, unless a global exclude of yours hid it. A file
+  holding only those two empty keys is now removed; one holding anything more stays as it is.
+
+
 ## 0.6.0 (2026-10-28)
 
 ### Upgrading
