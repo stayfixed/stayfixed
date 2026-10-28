@@ -356,7 +356,7 @@ def _files(context: Context) -> Row:
     if root is None:
         return Row(
             SKIP,
-            "the plugin root is not readable from here, so its shipped files cannot be checked "
+            "the plugin root is not readable from here, so its hook wrapper cannot be checked "
             "— and if nothing else finds it either, every hook entry on this machine is silent",
             PLUGIN_ROOT_REMEDY,
         )
