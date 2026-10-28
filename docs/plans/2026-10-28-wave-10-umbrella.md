@@ -164,6 +164,8 @@ graph LR
   BMrun --> RD2
   IS3 --> RD2
   RD1 --> RD2
+  CL9 --> IC
+  DM --> IC
 ```
 
 What each edge carries:
@@ -189,10 +191,11 @@ What each edge carries:
   - the benchmark's cases and raw result;
   - the `docs`/`trail` contract as IS3 left it for #43.
 
-The remaining lanes need no edge:
-- **RD1** depends on nothing and goes first.
-- **IC** depends only on the owner's artwork. It merges before `v0.7.0`, and its README edit
-  rebases on RD1.
+- **CL9, DM → IC.** IC moves the Claude Code pin in `smoke.yml`, whose `doctor` count CL9 changes
+  last, and in `ci.yml`, where DM adds its job ("Directory and launch inputs", item 2). Otherwise IC
+  waits only on the owner's artwork. It merges before `v0.7.0`, and its README edit rebases on RD1.
+
+**RD1** needs no edge: it depends on nothing and goes first.
 
 ## Releases
 
@@ -240,6 +243,8 @@ appended to the group file `scripts/mutation_oracle.py` `GROUP_OF` routes them t
 | `scripts/plugin_tree.py` `PLUGIN_PATHS`, `tests/plugintree.py` `NINE`, `tests/test_neutral.py` `UNDECODABLE`, `.claude-plugin/icon.png` (create) | IC | the icon is the repository's first binary; `tests/test_payload.py` already admits it, and is not loosened |
 | `skills/` | IC (the `attribute-failure` phrasing a hold matched), CL8 (the `doctor` skill's row count) | |
 | `docs/methodology/principles.md` | RD1 | |
+| The Claude Code pin in `.github/workflows/ci.yml` and `.github/workflows/smoke.yml`, and `ci.yml`'s step that validates the rendered tree | IC, after CL9 and DM have merged | the section "Directory and launch inputs", item 2 |
+| `RELEASING.md` | IC (the tracked ref, item 7), then the release tasks | |
 
 **Old spellings** (d3 as amended): there are no users besides the owner, so a pull request that
 renames a key, a command or a flag removes the old spelling in the same pull request, with no alias
@@ -259,7 +264,8 @@ and puts it to the owner with that sentence written.
 ## Lane-plan items
 
 These are what the brainstorm and the two final reviews found that a lane plan must carry and §15.10
-does not spell out. Each lane plan cites the items it takes.
+does not spell out. Each lane plan cites the items it takes, here and in the section "Directory and
+launch inputs".
 
 | Lane | Items |
 |---|---|
@@ -273,6 +279,42 @@ does not spell out. Each lane plan cites the items it takes.
 | BM | Rewrite the side-lanes plan's Lane 2 against the tree: `scripts/release.py check`; entries in `mutations/tooling.toml`; the plugin built with `scripts/plugin_tree.py`; the 512-file limit, which still stands at release (`scripts/release.py` `PLUGIN_FILES_MAX`). **Cases:** `control`, `fabricated-done`, `all-skipped`, `outside-plan`, `stale-green` (a test run, an edit, "done"); the calibration must show a non-zero failure rate *without* the plugin on `stale-green` and `fabricated-done`, or those cases measure nothing. **Isolation:** each repetition gets its own `HOME`, so the baseline arm loads none of the owner's user-scope plugins. **Where:** a GitHub Actions job, the isolated environment the plugin-eval documentation names. **The key** is the repository's first secret, so the job states its anchor: the adversary is a pull request that edits `scripts/bench/` or the workflow and gets it run; the job triggers on `workflow_dispatch` only (never `pull_request` or `pull_request_target`), the secret lives in a GitHub environment whose required reviewer is the owner and whose deployment branches are `dev` only, the job holds `permissions: contents: read`, and the key carries a spend limit at the provider, since `--max-cost-usd` is a flag the run's own code can drop. **Cost:** `--max-cost-usd` on every run; the probe, then the calibration, then the run, each after the owner's yes with its ceiling stated. **Published:** the cases, the raw JSON, the version, the cost and n; no comparison against neighbouring tools. |
 | IC | `.claude-plugin/icon.png` (create) from the owner's artwork: square PNG or JPEG, 512 to 2,048 px, under 2 MB. It is named in `.claude-plugin/plugin.json` (the portal's "No icon" warning reads the manifest). It is the tenth path in `PLUGIN_PATHS` and in `tests/plugintree.py`, and `UNDECODABLE` goes 0 → 1 with its reason. **The 2026-10-15 holds:** four `MCP_FORWARDS_CREDENTIAL_ENV` findings, which were pattern hits on text: `README.md` (a remote host beside the word `env`), a comment's example URL in `src/stayfixed/guards/bgcleanup.py`, the `claude.com` link in `src/stayfixed/guards/commit.py`'s comment, and the `attribute-failure` skill's "pass `--base`" read beside `hooks/run-hook.sh`. Restate each where a restatement clears the match with no loss of meaning. `COMMAND_SCRIPT_NOT_FOLLOWED` on `hooks/run-hook.sh` waits for the reviewer, as the portal allows. The `RUNTIME_FETCH_EXEC` warning's `src/stayfixed/config/loader.py` match was never located: restate nothing there unless the portal names the line. |
 | RD2 | Written over what shipped: the verdict table; the bound; the gate's base read; the `Stop`-hook recipe with its cost; the capability table as CX measured it; a factual neighbours-and-native table (prior art named, "finer-grained"); "What stayfixed sends where" re-read against `tests/outbound/policy.py`; the fixture's commands and the recording; the benchmark's cases and raw result. Human-written with the owner. |
+
+## Directory and launch inputs
+
+Desk research of 2026-10-28 covers four things: Claude Code 2.1.312's plugin platform and the
+directory's submission rules, Codex 0.165.0, the neighbouring tools, and the launch channels. Its
+inputs were read against the tree at `dev` = `9d6ebe0`. Each is a claim the lane measures at its
+start, not a ruling. Three were already met when read:
+
+- `ci.yml` validates the rendered tree with `claude plugin validate --strict`.
+- `README.md`'s sections "What it writes, and where" and "What stayfixed sends where" already name
+  these:
+  - the plugin's wrapper;
+  - `~/.local/share/stayfixed`;
+  - the `autoMemoryDirectory` key `attach` writes into `.claude/settings.local.json`;
+  - the network use.
+- `hooks/hooks.json` has carried the Codex key `additionalContextLimit` since 2026-09-17. The
+  portal Validate of 2026-10-15 therefore read it, and none of its holds named the hooks file.
+
+| # | Input | Goes to | What it carries |
+|---|---|---|---|
+| 1 | The icon | IC | Already IC's row. The portal takes the icon once, at the first Save, and Task 3 already orders Validate before Save. |
+| 2 | The validator's version | IC | `ci.yml` and `smoke.yml` install Claude Code 2.1.261. A validator before 2.1.281 warns `Unknown field` on the directory's listing fields, so `--strict` fails once one is set. `--profile directory` arrived in 2.1.312. IC moves both pins to the version current at its start, at least 2.1.312, and adds `--profile directory` to the existing `--strict` call on the rendered tree. That call reports `ICON_MISSING` until the icon lands, so it lands in the same pull request. IC re-measures the literals the smoke workflow greps under the new version. It is not added to `scripts/release.py` too: CI runs it on every pull request and on the release commit, so a second copy would be a second layer against one threat. |
+| 3 | The repository submitted | Task 3 | Already Task 3: `stayfixed/stayfixed-plugin`. The source repository would be held, with 686 files and two over 256 KiB. |
+| 4 | The policy disclosure | RD2, Task 3 | RD2 re-reads the two README sections above against the directory's list: everything the plugin runs, writes and sends; the settings `attach` writes; Python ≥ 3.11; no Windows. It fills only a gap it finds. Task 3 Step 1 prepares the reviewer's answers. |
+| 5 | An early Validate | IC | Validate saves nothing. The owner runs it on the plugin repository's current release tag at IC's start, and IC fixes what it finds. Task 3's Validate on `v0.7.0` then reads back a known state. If the portal flags `additionalContextLimit`, rendering a Claude-only `hooks/hooks.json` into the plugin tree goes to the owner, priced, since it forks the file both harnesses read. |
+| 6 | Where a listing loads | RD2 | In chat, a listed plugin loads its skills only: no hooks and no CLI. A top-level `bin/` makes chat and Cowork refuse the whole plugin. RD2's listing text says stayfixed is for Claude Code and Codex, and that chat gets the skills alone; the skills are not edited. No lane adds a top-level `bin/`. |
+| 7 | The tracked ref | IC | The owner chooses at IC's start three things: the tag or branch of `stayfixed/stayfixed-plugin` the listing tracks, the push webhook or a scheduled check, and auto-publish on or off. IC writes two facts into `RELEASING.md`: moving the tracked ref publishes, and a failed security scan on one version holds every later one. |
+| 8 | Versions and install lines | release tasks, RD2 | `scripts/release.py` already raises the versions and the marketplace entry's `ref` and `sha`, and checks the README's `@vX.Y.Z` install lines. RD2 adds the one-line install, `claude plugin install stayfixed --marketplace stayfixed/stayfixed@v0.7.0`, with its minimum Claude Code, 2.1.292, stated. Task 2 Step 2's upgrading section tells a `0.6.x` user to add the marketplace again at `@v0.7.0`. |
+| 9 | Two installed copies | RD2 | One README line: install from one source. A marketplace copy and the directory's copy share a name, and only one copy's hooks run. **Dropped:** a `doctor` check for it (w10). |
+| 10 | The CLI under a sandbox that denies reads of `HOME` | BM | Under that sandbox, a `uv tool` `stayfixed` in `~/.local/bin` is unreadable, and a skill that calls it by name fails. The hooks are unaffected, since they run the bundled launcher outside the sandbox. `claude plugin eval`'s sandbox is such a case: BM measures it, and calls the plugin's own launcher from its cases if it must. **Dropped from wave 10**, with the controller filing it in the bug ledger: a `doctor` distinction for it, and pointing the skills at the bundled launcher. The latter changes how the CLI reaches every session. |
+| 11 | `preset`'s picker | RD2 | **Dropped:** `options` on `preset`'s `userConfig`. Claude Code before 2.1.271 could not load the plugin at all, for the sake of a picker. RD2 documents `claude plugin install … --config preset=<value>` and `claude plugin configure`. |
+| 12 | The `Stop` recipe | DM, CX | **Claude Code.** DM's plan already holds this half: the `stop_hook_active` let-through, exit 2 for the gate, and the cap of eight. It uses no `SubagentStop` and gives no guidance, so `additionalContext` and 2.1.311 do not apply. **Codex.** Codex continues a blocked `Stop` with the reason as a new prompt and caps nothing, so there the recipe's let-through is the only bound; CX measures it. **Codex's public directory** reportedly lists no plugin with lifecycle hooks, according to an undated OpenAI page. CX states this in the capability table only from a dated source, and no task submits there. |
+| 13 | `SessionStart` at a cold start | Task 2 | Task 2 Step 3. |
+| 14 | Codex's trust and payloads | CX | **Measured before its tasks:** each with the version and the date. **BR-014.** It holds on 0.165.0: `PostToolUse`'s `tool_response` is a string with no exit code, and Codex has no failure-only event. One route is unmeasured, the hook reading the command's output from the session transcript, and it decides whether a Codex red-run note is possible. **Trust.** Hook trust is keyed by the entry's position and, since 0.164.0, by a hash of the plugin's files, so every release asks a Codex user to approve the hooks again. The README promises nothing else, and no release reorders `hooks/hooks.json`. **The sandbox.** Under `workspace-write`, an `attach` the model runs likely cannot write `<repo>/.codex/rules/`, since `.codex` stays read-only; the denial text is recorded. |
+| 15 | Wording | RD1, RD2 | **Not presented as new:** reading the runner's own report; the base branch's policy. **Avoided:** "blocks done until tests pass" as the headline; general claims about test tampering; "first" and "only"; a bare "proof", "receipt" or "doctor" in a heading; "ledger" without "bug". "Finer-grained" is scoped to the verdicts and their reasons. **Lead with** real `proved`, `not proven` and `refused` output, a closed bug's regression run through `prove`, and a clean `git status`. RD2's neighbours table names Skylos (`skylos done`) as the closest neighbour, and as complementary. |
+| 16 | Launch channels | Launch writing | The section "Launch writing", last item. |
 
 ## Execution contract
 
@@ -375,6 +417,14 @@ this plan, and nothing generated goes into them. The controller supplies, outsid
 - [ ] **Commands:** `prove`'s own commands on a scratch project, then the fixture's once DM merges.
 - [ ] **A factual check of the draft** against the fact pack and the claims to avoid. No rewrite of
   its prose.
+- [ ] **The channels' rules**, as read on 2026-10-28, for the owner's own sequence; no step of this
+  plan waits on it:
+  - Hacker News removes comments that read as machine-written, so the owner types every line posted
+    there.
+  - The benchmark goes out as a normal link to a data piece, not as a Show HN slogan.
+  - Lobsters bars self-promotion in a new user's first 70 days.
+  - The first post goes out on a Tuesday, about two weeks after Task 3's submission, and not in the
+    week of 23–27 November.
 
 `0.6.2` is released before the first text is published. Habr's first article from the owner's
 read-only account goes through the Sandbox, so its publication date is Habr's (w9).
@@ -410,16 +460,27 @@ API.
     frontmatter info line; the 0.3.x record reader and `[deny] retired`);
   - #31's change, if the format changed;
   - #34's new flags;
-  - the `Stop`-hook recipe.
+  - the `Stop`-hook recipe;
+  - for a `0.6.x` user, adding the marketplace again at `@v0.7.0`.
+- [ ] **Step 3:** on the `0.7.0` candidate, start a session at a cold start with `claude --debug`,
+  and read each `SessionStart` entry's duration from the debug log. Paste them. An entry above half
+  its `timeout: 10` goes to the owner before the cut.
 
 ### Task 3: Cut `0.7.0` and submit (controller, with the owner)
 
-- [ ] **Step 1:** the owner cuts `0.7.0` by `RELEASING.md`.
-- [ ] **Step 2:** in the owner's signed-in portal, "Submit a plugin", repository
+- [ ] **Step 1:** the controller drafts, from the tree, the answers the directory's review asks for,
+  and the owner approves them:
+  - **Memory across sessions.** Notes are files the user reviews, in their own overlay. Nothing
+    reaches a session until the user runs `attach`. No conversation content is stored without
+    review.
+  - **Example prompts.** Three that work on a fresh install.
+  - **The sample repository.** The one DM's script builds.
+- [ ] **Step 2:** the owner cuts `0.7.0` by `RELEASING.md`.
+- [ ] **Step 3:** in the owner's signed-in portal, "Submit a plugin", repository
   `stayfixed/stayfixed-plugin`, tag `v0.7.0`, press Validate. Paste the checks, warnings and holds
   into Findings beside the 2026-10-15 run. No Save happens before this step's output is read: the
   listing takes its icon once, at the first Save.
-- [ ] **Step 3:** the owner presses Save and Submit. Record the submission's date and the state the
+- [ ] **Step 4:** the owner presses Save and Submit. Record the submission's date and the state the
   portal shows.
 
 ## Exit
@@ -437,7 +498,7 @@ API.
   - the first lines print a path under the uv tools directory and `0.7.0`;
   - every act passes its own assertion;
   - the script exits 0.
-- [ ] **Step 4: The submission** is filed, per Task 3 Step 3's record.
+- [ ] **Step 4: The submission** is filed, per Task 3 Step 4's record.
 - [ ] **Step 5: The issues.** For each of #31, #32, #33, #34, #37, #43 and #47, read
   `gh issue view <n> --json state,stateReason,comments`, then `gh pr view <m> --json mergedAt,baseRefName`
   for the pull request its closing comment names. GitHub links and closes an issue only from a pull
