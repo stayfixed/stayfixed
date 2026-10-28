@@ -3022,19 +3022,15 @@ file each ask for themselves, which checkout is the main one (`git worktree list
 and settings file the binding's row reads, whether this checkout is a registered worktree (its
 common and its own git directory), which the `memory` row asks to read the main checkout's settings
 file a linked worktree reads too, whether a path `attach` placed is tracked (`git ls-files`) or ignored (`git check-ignore`) and whether a
-tracked file names the delivery (`git grep`), which the binding's row asks of a bound checkout,
-and, for `hook-entries`, which files below the root a nested `.claude/skills` holds (`git
-ls-files`), asked a second time through each submodule's index where a `.gitmodules` sits at or
-above the root. Fourteen of those are measured on a green attached installation with no
-submodules — the wrapper probe and thirteen `git` questions — and fifteen where a `.gitmodules` is
-present; not one of them leaves this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
+tracked file names the delivery (`git grep`), which the binding's row asks of a bound checkout.
+Thirteen of those are measured on a green attached installation — the wrapper probe and twelve
+`git` questions — and not one of them leaves this machine. The `ci-ref` row's `git ls-remote` is one more on a repository that records a
 `[ci] ref` at all, and it is the only one that does leave: it goes through the `Runner` seam,
-which is what lets the case that pins the fourteen answer it in process instead of launching it.
+which is what lets the case that pins the thirteen answer it in process instead of launching it.
 That one is bounded at **30 seconds**, not at the seam's own five minutes (the bound for
 `gh repo create --clone`), so a peer that does not answer cannot turn a one-line diagnostic into a
-five-minute block. Each `git ls-files` question has `gitenv`'s thirty seconds of its own for a
-query over a whole tree, so the two together may take up to a minute; the other `git` questions
-are `gitenv`'s five seconds, and the wrapper probe is this area's own thirty.
+five-minute block. The `git` questions are `gitenv`'s five seconds each, and the wrapper probe is
+this area's own thirty.
 
 **The rendered workflow is read as a regular file, and to a bound.** That path is the
 repository's: a clone chooses what sits at `.github/workflows/stayfixed.yml`. Anything there that
@@ -3056,7 +3052,7 @@ check with `name`, `status`, `detail` and `remedy`, so every remedy is there.
 | `versions` | whether the project's `[stayfixed] version` is the stayfixed running; with no project configuration, which stayfixed runs | `stayfixed.toml`, the package |
 | `files` | the hook wrapper's executable bit, and nothing else: a stale `hooks/hooks.json`, or an edited wrapper that still runs, is not reported | `hooks/run-hook.sh` |
 | `wrapper` | whether the wrapper can actually reach stayfixed on this machine: red when it writes a fault to stderr | one `run-hook.sh --version`, and only under the plugin root this stayfixed is part of |
-| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker named by its file and position: red in a file stayfixed writes (`.claude/settings.local.json`, `~/.claude/settings.json`), where it writes no marked entry, and a warning in any other; and, as one line of information, every skill, command or agent file whose frontmatter declares hooks, which it does not judge | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json`; every `SKILL.md` below a `.claude/skills` anywhere in the tree that git does not ignore, a checked-out submodule's committed files included, and every `*.md` below `.claude/commands` and `.claude/agents` |
+| `hook-entries` | every hook entry, counted by provenance, with any that claims the stayfixed marker named by its file and position: red in a file stayfixed writes (`.claude/settings.local.json`, `~/.claude/settings.json`), where it writes no marked entry, and a warning in any other | `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, and `~/.claude/settings.json` |
 | `budgets` | every budget set above the preset, named raised, and every one set below it, named lowered | `stayfixed.toml`, the machine file, the preset |
 | `preferences` | each personal value, guard switch, preference and session budget a session resolves, with the layer its value came from — the preset, the repository, the overlay's common file (`overlay common`), its file for the project this checkout is bound to (`overlay project`) or the machine file — and the value only where it is a boolean, a number or one of stayfixed's own words; then, as information that never changes the row's status, every note reading the overlay's layers gave — no overlay recorded, a file not there or not loading, a key it cannot use or may not set; red when the machine file does not load, in the words every command refuses it in, which name the file and where the parser stopped; a warning naming the file when a key in it could not be used | `stayfixed.toml`, the preset, the overlay's two `stayfixed.toml` files, the machine file |
 | `cli-path` | whether `stayfixed` resolves on `PATH` | `PATH` |
@@ -3216,80 +3212,6 @@ every element of every group's `hooks` list, in every event, counted in document
 scalars included, so `entry 2 of 2` may be the only entry of the second event's list. Only
 Claude Code's settings files are read this way: `.codex/hooks.json`, which no measurement covers,
 is read as strictly as the merge that rewrites it.
-
-`hook-entries` judges the entries of settings files and nothing else. Three more places a
-repository can commit were measured for whether Claude Code runs a hook from them, and one of the
-three did. What was measured of each, with Claude Code 2.1.288 on macOS (2026-10-06, `claude -p`
-in a scratch project under a configuration directory of its own, with no login, so no model call
-ran):
-
-| Source | What ran |
-|---|---|
-| A plugin a committed `.claude/settings.json` requests, through `extraKnownMarketplaces` (a local directory) and `enabledPlugins` | no hook of the plugin ran, in two sessions, and nothing was installed |
-| A project skill's `SKILL.md` frontmatter `hooks` | none on a plain prompt; its `UserPromptSubmit` hook ran when the prompt invoked the skill by name (`/<skill>`) |
-| A project agent's frontmatter `hooks` | none on a plain prompt, with `--agent <agent>`, or with the committed `agent` setting naming it |
-
-So a skill a repository commits does run its own hooks once it is invoked. `hook-entries` does
-not judge them, and says so, of every file whose frontmatter Claude Code reads for hooks:
-
-- every `SKILL.md` at any depth below the project's `.claude/skills`, and below a `.claude/skills`
-  anywhere else in the tree that git does not ignore, which Claude Code loads once a session reads
-  a file in that directory;
-- every `*.md` at any depth below `.claude/commands`, since a command file accepts a skill's
-  fields;
-- every `*.md` at any depth below `.claude/agents`, since an agent's frontmatter is documented to
-  carry hooks, though none ran in the measurement above.
-
-Each such file whose frontmatter (between a first `---` line and the next) holds a top-level `hooks`
-key is named as one whose hooks the row does not judge, in the row's one line of information, which
-follows its verdict and moves no status and carries no remedy; so is every other finding of this
-walk below. The key is found bare, quoted
-either way (escapes read), behind a tag, an anchor or `? `, or among a flow mapping's top-level keys
-(`{hooks: {...}}`); a `hooks` nested under another key is not one. Claude Code 2.1.293 ends a
-frontmatter at a `---` within a line and reads one indented by tabs throughout (measured); the row
-reads each way. It says a file declares none only for plain YAML it reads exactly: `key: value`
-lines with plain keys, values on the key's line, block scalars, flow lists of scalars (below the
-key, indented deeper), nested lines indented by spaces, `- ` entries, comments, blank lines, in at
-most 10,000 lines ending within the file's first 8,388,608 characters. Any other frontmatter where
-it finds no `hooks`, one with a tag, a merge key, a tab in an indentation, another value over lines,
-a `---` line outside a list or block, NEL, LS or a Unicode blank among others, is named as one it
-cannot tell about. Names are compared without case. Any path the row cannot read, a FIFO
-or a directory it cannot list among them, is named as one it can say nothing of, and
-a path outside the path grammar, every name in it the repository's, as a file whose path the row
-does not print.
-
-The project's own `.claude/skills`, `.claude/commands` and `.claude/agents` are read off the disk.
-The read follows a link inside them while it leads to a directory still inside the checkout, and
-lists a directory a link leads back to, and names a file two paths reach, once. A link whose name
-the row reads as a file, a `*.md` or a `SKILL.md`, is read when it leads to a file inside the
-checkout. A link of either kind that leads out, as a dotfiles setup links `.claude/agents`, is named
-as one that leads out and was not followed, which marks no fault: what it leads to is not
-the repository's, so the row leaves it to you. Only a link to a file the row would not read, a
-skill's `LICENSE` say, is passed over wherever it points, and so are a dangling link and a link that
-loops.
-
-A `.claude/skills` below the root is found by asking git
-(`git ls-files --cached --others --exclude-standard`): the files a clone commits and the untracked
-ones git does not ignore. git lists a link as an entry of its own,
-so a link inside such a directory, such a directory that is a link, and a nested `.claude` that is
-one are read like the project's own. A submodule is one entry to that query, so where a
-`.gitmodules` sits at or above the root, git is asked again through each checked-out submodule's
-index (`git ls-files --cached --recurse-submodules`): what that index holds, staged or committed,
-not a file untracked in a submodule, which git cannot list so.
-
-**A skill inside a directory git ignores is not named**, such as one under `node_modules`: no clone
-carries an ignored file, so it is not the repository's to declare (whether Claude Code loads one is
-unmeasured), and listing those trees would stop the row short in a large checkout. Outside a git
-work tree, or where `git` fails, the row walks the tree instead, following no link but a nested
-`.claude/skills` or `.claude` that is one, never entering `.git`, and passing over a directory it
-cannot list. The reads and that walk list at most 500,000 directory entries in all; past that, the
-row says the walk stopped and it cannot tell of the files past it. In a work tree only the
-project's own three directories, and those links in or above a nested `.claude/skills` lead to,
-count toward it.
-
-Whether the model can invoke a skill, and so run its hooks, without a person asking was not
-measured: no model call ran. The plugin and agent rows share that limit, and say nothing of a
-logged-in session that accepted the repository's trust prompt.
 
 `diagnostics` is the same ruling in the other direction, and is why that row counts rather than
 quotes. Its three fields are stayfixed's own vocabulary *for a log stayfixed wrote*, and the log

@@ -3,10 +3,7 @@
 A core check, listed in `checks.CHECKS` and asked through the run's guard like the others. The walk
 over the settings files and the sentences each kind of finding is told in are one unit that no
 other check reads, so they sit in a module of their own and `checks.py` stays the list of checks
-and the run. It imports nothing of the run's, so `checks.py` can import it without a cycle. The row
-also names, as one line of information, the skill, command and agent files whose frontmatter
-declares hooks, which it does not judge: `doctor.hooked` walks for them and `doctor.frontmatter`
-reads each one's frontmatter, and this module tells what they report.
+and the run. It imports nothing of the run's, so `checks.py` can import it without a cycle.
 
 What it may print is held to `checks.py`'s module docstring, and this row is where that ruling is
 most tempting to break: an entry is named by its file and its position in it, never by the marker
@@ -17,10 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
-from stayfixed import fsops
-from stayfixed.doctor.hooked import Seen, hooked
 from stayfixed.doctor.model import OK, RED, WARN, Context, Row, Status
 from stayfixed.errors import Refusal
 from stayfixed.findings import listed
@@ -112,38 +106,6 @@ def _blind(wheres: list[str]) -> str:
     )
 
 
-def _skill_hooks(wheres: list[str]) -> str:
-    return (
-        f"{len(wheres)} skill, command or agent file(s) declare hooks in their frontmatter, which "
-        f"this row does not judge: {listed(wheres)}"
-    )
-
-
-def _skill_unread(wheres: list[str]) -> str:
-    return (
-        f"{len(wheres)} skill, command or agent path(s) could not be read, so this row cannot say "
-        f"whether what they hold declares hooks: {listed(wheres)}"
-    )
-
-
-def _skill_unparsed(wheres: list[str]) -> str:
-    return (
-        f"{len(wheres)} skill, command or agent file(s) hold a frontmatter this row cannot read "
-        f"whole, so it cannot say whether they declare hooks: {listed(wheres)}"
-    )
-
-
-def _linked_out(wheres: list[str]) -> str:
-    return f"{len(wheres)} path(s) lead out of the checkout and were not followed: {listed(wheres)}"
-
-
-def _skill_untold(wheres: list[str]) -> str:
-    return (
-        f"the walk for skill, command and agent files stopped after {fsops.WALK_ENTRIES:,} "
-        f"directory entries, so this row cannot say whether the files past them declare hooks"
-    )
-
-
 # Each kind of finding, in the order the row tells them: a marked entry in a file stayfixed writes,
 # red; one anywhere else, a warning; a file nested past the parser's reach and a marked command
 # where the walk reads no entry, red in a file stayfixed writes and a warning elsewhere, since a
@@ -180,16 +142,6 @@ _HIDDEN = _Kind(
 )
 _BLIND = _Kind(WARN, 0, _blind, "check that each file named above is readable and is valid JSON")
 _KINDS = (_MARKED, _MARKED_ELSEWHERE, _UNCHECKED, _HIDDEN, _BLIND)
-# What the walk for skill, command and agent files reports of a path, in the words the row's one
-# line of information tells it in (`doctor.hooked`), in that line's order. Information, never a
-# status and never a remedy: this row judges settings files, and such a file's hooks are named.
-_SEEN: dict[Seen, Callable[[list[str]], str]] = {
-    Seen.DECLARES: _skill_hooks,
-    Seen.UNREAD: _skill_unread,
-    Seen.UNPARSED: _skill_unparsed,
-    Seen.LINKED_OUT: _linked_out,
-    Seen.STOPPED: _skill_untold,
-}
 
 
 @dataclass(frozen=True)
@@ -213,17 +165,6 @@ def _gathered(found: Sequence[tuple[_Kind, str, bool]]) -> list[_Finding]:
             status = kind.status if written or kind.elsewhere is None else kind.elsewhere
             gathered.append(_Finding(kind, [where for where, _ in mine], status))
     return gathered
-
-
-def _informed(root: Path) -> str | None:
-    """The row's one line of information: every skill, command or agent path the walk for hooked
-    files reports (`doctor.hooked`), told kind by kind, or `None` where it reports none."""
-    seen: dict[Seen, list[str]] = {}
-    for kind, where in hooked(root):
-        # A walk that stopped names no path, and is told all the same.
-        seen.setdefault(kind, []).extend(() if where is None else (where,))
-    parts = [tell(seen[kind]) for kind, tell in _SEEN.items() if kind in seen]
-    return "; ".join(parts) or None
 
 
 def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
@@ -283,19 +224,17 @@ def _classify(context: Context) -> tuple[int, int, list[_Finding]]:
     return claimed, foreign, _gathered(found)
 
 
-def _told(claimed: int, foreign: int, findings: Sequence[_Finding], informed: str | None) -> Row:
+def _told(claimed: int, foreign: int, findings: Sequence[_Finding]) -> Row:
     """The row for `findings`: every finding's part, in order, after the count; red where any
-    finding is red, a warning where any is one, and "all accounted for" where there is none; then
-    the one line of information, which moves no status; and the remedy of every finding of the
-    row's own status at the highest step among them, each said once."""
+    finding is red, a warning where any is one, and "all accounted for" where there is none; and
+    the remedy of every finding of the row's own status at the highest step among them, each said
+    once."""
     parts = [f"{claimed} stayfixed entr(ies), {foreign} foreign"]
     parts.extend(finding.kind.tell(finding.wheres) for finding in findings)
     statuses = {finding.status for finding in findings}
     status: Status = RED if RED in statuses else WARN if statuses else OK
     if status == OK:
         parts.append("all accounted for")
-    if informed is not None:
-        parts.append(informed)
     own = [finding for finding in findings if finding.status == status]
     step = max((finding.kind.step for finding in own), default=None)
     chosen = (finding.kind.remedy for finding in own if finding.kind.step == step)
@@ -358,13 +297,5 @@ def hook_entries(context: Context) -> Row:
     writes, a warning elsewhere. A number longer than the interpreter converts is not refused at
     all: either walk reads it as its text, and the entries beside it are judged as they would be
     without it.
-
-    **A skill, command or agent file's hooks are information, never judged.** Claude Code runs a
-    hook a committed skill's frontmatter declares once the skill is invoked (`harnesses.CLAUDE`'s
-    `hooked` says what was measured), and this row judges settings files, so it names such files
-    in one line after its verdict, with no status and no remedy of their own: each file whose
-    frontmatter holds a top-level `hooks` key (`doctor.frontmatter`), each whose frontmatter the
-    reader cannot read whole, each path it could not read, each link that leads out of the
-    checkout, which it does not follow, and a walk that stopped at its cap (`_SEEN`).
     """
-    return _told(*_classify(context), _informed(context.root))
+    return _told(*_classify(context))

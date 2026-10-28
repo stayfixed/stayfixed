@@ -3001,22 +3001,6 @@ reddens = [
   "tests/attach/test_detach.py::test_a_settings_write_back_past_the_read_cap_is_refused_and_removes_nothing",
 ]
 
-# The registry states where Claude Code reads Markdown whose frontmatter can declare hooks, and
-# `hook-entries` walks what it states: commands and agents declare hooks as skills do.
-[[mutation]]
-name = "hook-entries reads no command or agent file"
-file = "src/stayfixed/harnesses.py"
-before = """
-        Hooked(f"{CLAUDE_DIR}/commands", None),
-        Hooked(f"{CLAUDE_DIR}/agents", None),
-"""
-after = """
-"""
-reddens = [
-  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_information_naming_it[command]",
-  "tests/doctor/test_checks.py::test_a_command_agent_or_nested_skill_declaring_hooks_is_information_naming_it[agent]",
-]
-
 # At a terminal an empty `HOME` names no home, where `Path.home` answers `/`: `attach` there aimed the
 # harness memory link at `/.claude/...` and ended in an internal error on a read-only root.
 [[mutation]]

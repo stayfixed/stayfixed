@@ -20,8 +20,7 @@ README's table of what each agent enforces is held equal to these values by a te
 measurement that moves a tier is one edit here.
 
 A new harness is a value with a positive `detects`, its project-root and plugin-root variables,
-its `render`, its settings files, the places it reads hooks out of a Markdown frontmatter, and
-its `reach`. What follows still lives outside the registry,
+its `render`, its settings files and its `reach`. What follows still lives outside the registry,
 spelled for Claude Code or Codex, and a harness that differs from both in any of it is an edit
 there too. `tests/test_harnesses.py` holds the list to the code: every string in a module of the
 package that names a harness is pardoned there, each pardon by one of these items or as prose.
@@ -77,10 +76,10 @@ package that names a harness is pardoned there, each pardon by one of these item
   harness whose payload differs is an edit to each.
 
 Elsewhere, code that needs a harness fact asks this registry: `doctor` walks every value's
-`settings` and `local_settings` for hook entries and every value's `hooked` places for skills,
-commands and agents, reads `CLAUDE.settings` for the machine's settings file and the plugin-root
-variables off every value; `setup` reads the machine's settings file off `CLAUDE.settings` too;
-and `attach` merges into the one file `CLAUDE.local_settings` names.
+`settings` and `local_settings` for hook entries, reads `CLAUDE.settings` for the machine's
+settings file and the plugin-root variables off every value; `setup` reads the machine's settings
+file off `CLAUDE.settings` too; and `attach` merges into the one file `CLAUDE.local_settings`
+names.
 
 A name `[stayfixed] agents` lists and no harness answers to is counted, never refused and never
 printed: the list is repository-authored, and a project may name a harness a later stayfixed
@@ -146,18 +145,6 @@ class Reach:
 
 
 @dataclass(frozen=True)
-class Hooked:
-    """A directory whose Markdown files' YAML frontmatter a harness reads for hooks, relative to a
-    project root: the one name such a file has at any depth below it (`SKILL.md`), or `None` for
-    every name ending in `.md`, and whether the harness also reads the directory below the root,
-    under any directory of the tree."""
-
-    directory: str
-    name: str | None
-    nested: bool = False
-
-
-@dataclass(frozen=True)
 class Harness:
     name: str
     marker_dir: str
@@ -183,9 +170,6 @@ class Harness:
     detects: Callable[[Mapping[str, str], Mapping[str, Any] | None], bool] | None = None
     # The profile, and the repository-relative path of its rules file.
     render_profile: Callable[[Profile, str], Rendition] | None = None
-    # Where this harness reads Markdown whose frontmatter can declare hooks, which `doctor`'s
-    # `hook-entries` row names and does not judge.
-    hooked: tuple[Hooked, ...] = ()
 
 
 def hook_specific_output(event_name: str, context: str, notice: str) -> str:
@@ -292,16 +276,6 @@ CLAUDE = Harness(
     ),
     render_profile=_claude_rule,
     plugin_root_env="CLAUDE_PLUGIN_ROOT",
-    # A skill's frontmatter can declare hooks, and Claude Code ran one so declared once the skill
-    # was invoked (2.1.288, measured 2026-10-06); a command file accepts a skill's fields, and an
-    # agent's frontmatter is documented to carry hooks, though none ran in that measurement.
-    # Skills are also read from a `.claude/skills` below the project root, once a session reads a
-    # file in that directory.
-    hooked=(
-        Hooked(f"{CLAUDE_DIR}/skills", "SKILL.md", nested=True),
-        Hooked(f"{CLAUDE_DIR}/commands", None),
-        Hooked(f"{CLAUDE_DIR}/agents", None),
-    ),
 )
 # Codex reads `AGENTS.md` from the root down and no other instruction file, and follows no
 # import; `.codex/rules` holds command-execution policy, not instructions. The region is how a
@@ -335,8 +309,6 @@ CODEX = Harness(
     detects=_codex_detects,
     # Codex sets Claude Code's name for it too (`_codex_detects`).
     plugin_root_env="PLUGIN_ROOT",
-    # No place where Codex reads hooks out of a Markdown frontmatter was measured, so none is
-    # stated, and `hook-entries` reads no Codex skill.
 )
 # Claude Code's hook schema is the de-facto one, which other harnesses imitate, so it answers
 # whatever no other value claims and detects nothing of its own.
