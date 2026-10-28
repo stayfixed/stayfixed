@@ -4,8 +4,8 @@
 > implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking. **The wave is the dispatch
 > unit, not the task:** one implementer per lettered wave, with every task inside it keeping its own
 > failing test, verification and commit. Each wave is one pull request into `dev`, with one final
-> review (section "Execution contract" below, item 4). The section "Execution contract" is the
-> wave-10 umbrella plan's, verbatim.
+> review (the umbrella's "Execution contract", item 4). This plan cites that section by path and
+> does not copy it.
 
 **Goal:** remove four controls that fail the design rule. Each pull request deletes the control
 together with its tests, documentation rows and mutation entries, and leaves `src` smaller.
@@ -46,7 +46,12 @@ consumed: C1 (configuration: CL9 removes the preset's `[deny] retired`), C5 (the
 `release.py hashes` is a repository script, not a command, and `doctor`'s rows change). Out:
 - every other back-compat branch the survey found (in `src/stayfixed/attach/write.py`, `src/stayfixed/attach/exclude.py`,
   `src/stayfixed/scaffold/engine.py` before the ledger, `src/stayfixed/project/uninstall.py`, `src/stayfixed/project/footprint.py`,
-  `src/stayfixed/memory/index.py`, `src/stayfixed/assess/state.py`, `src/stayfixed/ledger/register.py`), which is filed, not cut;
+  `src/stayfixed/memory/index.py`, `src/stayfixed/assess/state.py`, `src/stayfixed/ledger/register.py`). The criterion: this lane
+  cuts the four sites §15.10 decision 4 names, which the design weighed one by one; the survey found
+  these eight after the decision, and none was weighed against a user other than the owner. They are
+  named in this plan's Findings for a later cut, not judged here. The one overlap is
+  `engine.py`'s record-less retired branch, whose overlay-only part Task 8 removes and whose project
+  part stays;
 - `src/stayfixed/assess/probes.py`'s `foreign-hooks` probe, which shares the marker rule CL8 removes from `doctor`.
   CL8's pull request names it for the owner and does not touch it.
 
@@ -77,85 +82,11 @@ re-measures its own part before its first edit and stops on a mismatch.
 
 ## Execution contract
 
-The wave-10 umbrella plan's "Execution contract", verbatim:
-
-1. **The wave is the dispatch unit.**
-   - Waves are lettered and own a run of continuously numbered tasks.
-   - Each dispatched wave gets one implementer and no review of its own: the pull request's final
-     review is the review.
-   - Every task keeps its own failing test, verification and commit.
-   - A fix round goes to the same implementer while its context allows, else to a fresh agent with
-     the review package.
-   - Every subagent runs on Opus (`model: opus`).
-2. **Every implementer brief says:**
-   - Report a mismatch with the tree instead of guessing.
-   - Run a command and paste what it printed before writing any claim about it.
-   - Run focused tests while iterating and at each commit. Before each push, run once:
-     - `uv run pytest -n auto --cov --cov-fail-under=92`, with `uv run python scripts/release.py check`;
-     - the suite again on Python 3.13 (`uv run --python 3.13 pytest -n auto`), the oracle's
-       interpreter in CI, since a local uv Python is often newer than any CI leg (CI holds 3.11.4
-       and the rest).
-   - A plan's predicted mutation outcome is a hypothesis: design your own if it does not redden,
-     and paste the raw output either way.
-   - Take no line numbers from the plan.
-   - This brief is a message, not a file, so cite only the plan.
-   - Write nothing under the repository but the task's files; use `<scratchpad>/<wave>-<role>/`.
-   - Never run a script you did not write, and read `git diff --stat` before committing.
-   - Run the static checks at CI's scope: `uv run ruff check .`, `uv run ruff format --check .`,
-     `uv run mypy`.
-   - Do not use the Agent tool, and do not run `git checkout`, `restore`, `stash` or `clean`.
-   - Start a long run in the background and wait on its own output, never with `pgrep`.
-3. **Every reviewer brief adds:**
-   - Run every command yourself, and never use the Agent tool.
-   - Do not run `git checkout`, `restore`, `stash` or `clean`.
-   - What already passed, by sha and suite; run only the test that decides a finding you suspect.
-   - No citation may point at a brief, a dispatch or a report.
-   - What later tasks own.
-4. **One final review per pull request**, with two read-only seats: correctness, and "who does this
-   refuse, and what can be deleted".
-   - A security seat joins only when the diff touches an anchor repository bytes cannot move (CI's
-     base read, the binding id in the git common directory, repository-path containment, the exclude
-     ordering).
-   - Reviewers give findings only, with no replacement text. A separate triage sends on only
-     correctness and requirement gaps.
-   - Then one scoped re-review of the fixes, and stop: no per-wave reviews, and no minor finding
-     rides a round.
-5. **The lifecycle matrix**, walked at pre-flight like a task and again by the correctness seat:
-   every configuration key the pull request adds or removes × every change of configuration (set a
-   value, change it, unset it, move a path, a step that fails part-way, `uninstall`) × only the
-   layers the key's class admits. Each cell states its expected outcome. The class-table test holds
-   where a key may be set, and a command that reads no configuration walks no layer.
-6. **The parallelism map.**
-   - Read-only seats run beside each other and beside the implementer.
-   - Writers of one worktree serialise.
-   - One heavy local run (the full suite, the mutation oracle) at a time per host.
-   - No local full run while the same branch's CI runs.
-7. **Templates.**
-   - A fix brief enumerates the sibling instances of the defect's class only to delete them or fold
-     them into one rule, never to extend a refusal list.
-   - After a simplification ruling, it carries a net budget: `src` below zero, tests and mutation
-     entries at zero or less, never met by deleting a test that holds behaviour.
-   - A new defect found during a cut is filed in the ledger, not fixed, unless the fix deletes code.
-   - A security ruling names its minimal preconditions, its anchor's provenance (who can write the
-     bytes it trusts), and one legitimate user it must not refuse.
-8. **Verification.**
-   - The controller re-verifies only heads it pushes or merges.
-   - It re-derives the pull request's body from the diff before every push.
-   - It takes the run id from `gh pr checks` and waits with `gh run watch <run-id> --exit-status`
-     until every job has ended, before reporting a pull request done. Never a `head_sha` query,
-     which finds no run for a pull request's merge ref.
-9. **Second finding at one seam.** At the second review finding that points at the same function,
-   reader or boundary, the next step is a redesign of that seam put to the owner, not a third patch.
-   A second bypass of the same refusal list counts as the same seam.
-10. **Mutation entries.** A new entry only for a branch that decides a verdict, a containment or a
-    data-loss path. Other assertions need neither an entry nor a "why none" sentence. Deleting a
-    control deletes its entries.
-11. **Net size in every report.** Every review package and every lane report prints
-    `git diff --shortstat <base> HEAD -- src tests mutations docs`. A lane plan states its expected
-    dispatch count and size before its first dispatch.
+The wave-10 umbrella plan's section "Execution contract" (`docs/plans/2026-10-28-wave-10-umbrella.md`)
+binds this lane. The controller copies the relevant part into every brief.
 
 **This lane's size:**
-- four implementer dispatches (waves A–D), and two review seats plus one re-review per pull request;
+- four implementer dispatches (waves A–D), and one more in D for Task 9, and two review seats plus one re-review per pull request;
 - expected net size: `src` about −1,500 lines (CL8 alone about −1,100), tests about −2,000, mutation
   entries about −170, docs about −250. No wave's `src` or tests net is positive.
 
@@ -189,8 +120,9 @@ that pins it.
 2. **A green `files` row now proves less.** The row tests only the executable bit. A stale
    `hooks.json`, or an edited wrapper that still runs, is no longer reported. Task 2 states this in
    `docs/cli.md`, and the pull request's "What is lost" section says it.
-3. **A caller that passes an out-of-range timeout is now handed to the platform.** The platform's own
-   limit (360 minutes for a job on a hosted runner) bounds it. Task 3's test pins that the value
+3. **A caller that passes an out-of-range timeout is now handed to the platform.** The runner's own
+   limit bounds it: 360 minutes for a job on a GitHub-hosted runner, up to five days on a
+   self-hosted one. Task 3's test pins that the value
    reaches the job as given.
 4. **A 0.3.x `trust.json` now refuses instead of reading as empty.** Task 6 pins the refusal and its
    message. The controller checks first that the owner's machines hold a version-1 record.
@@ -273,6 +205,10 @@ that pins it.
 - Produces: `_files` returns SKIP when the plugin root is unreadable, RED when `hooks/run-hook.sh`
   is not executable, and OK otherwise.
 
+- [ ] **Step 0: Confirm what `wrapper` reports.** Read `_wrapper` and answer whether it reports a
+  partially updated plugin (a new `hooks/hooks.json` beside an old wrapper, or the reverse).
+  Expected: no. It runs `run-hook.sh --version` and reads only the exit code and stderr, which a
+  partially updated plugin passes. The pull request then says that no row reports one.
 - [ ] **Step 1: Write the failing tests.**
   - In `tests/doctor/test_checks.py`, make `_planted_plugin` plant the wrapper alone.
   - Add `test_files_is_ok_for_an_executable_wrapper_with_no_release_record`. It asserts status `OK`
@@ -414,14 +350,16 @@ including that the `wrapper` row still reports a missing or unreadable launcher.
   - "hook-entries says nothing of a marked command the walk skipped".
 
 **Interfaces:**
-- Produces: an entry carrying stayfixed's marker is counted as stayfixed's wherever it sits, with no
-  red and no warning about where it sits. Foreign entries are counted and named as today.
+- Produces: the marker classification goes with the red. `hook-entries` counts the entries of every
+  settings file with no claim about who wrote them: no current release writes a marked entry, so a
+  marker is the file's word alone, and a count of "stayfixed's entries" would vouch for a cloned
+  repository's hook. This agrees with `src/stayfixed/assess/probes.py`'s `foreign-hooks` probe.
+  **Amended 2026-10-28** on the plan's final review; the first text kept the split and counted a
+  marked entry as stayfixed's anywhere.
 - Consumes: Task 4.
 
-- [ ] **Step 1: Write the failing test.** Add
-  `test_a_marked_entry_in_any_settings_file_is_counted_and_not_red` to `tests/doctor/test_checks.py`:
-  a marked entry in a file stayfixed does not write gives status OK and is counted among stayfixed's
-  entries.
+- [ ] **Step 1: Write the failing test.** In `tests/doctor/test_checks.py`, a marked entry in a file
+  stayfixed does not write gives status OK, and the row's text claims no entry as stayfixed's.
 - [ ] **Step 2: Run and watch it fail.** Run `uv run pytest -q tests/doctor/test_checks.py -k marked_entry`.
   Expected: FAIL, since the row is red today.
 - [ ] **Step 3: Delete the provenance branches and their tests and mutation entries.**
@@ -439,7 +377,7 @@ including that the `wrapper` row still reports a missing or unreadable launcher.
 
 ---
 
-## Wave D — Tasks 6–8 (CL9, branch `cleanup/back-compat`, after Wave C has merged)
+## Wave D — Tasks 6–9 (CL9, branch `cleanup/back-compat`, after Wave C has merged)
 
 **Pre-flight (controller, before dispatch):** read the `version` key of `trust.json` beside the
 owner's machine file on each of the owner's machines, and paste it. Expected: `1`. A flat map, with
@@ -526,7 +464,10 @@ owner's word.
     import;
   - `src/stayfixed/overlay/layout.py`: `RETIRED_MEMORY_README`;
   - `src/stayfixed/overlay/upgrade.py`: `shipped = [*templates(), *retired()]` becomes `templates()`;
-  - `src/stayfixed/scaffold/engine.py`: the record-less retired branch;
+  - `src/stayfixed/scaffold/engine.py`: in `_plan_retired`'s `record is None` branch, the
+    `template.shipped` digest test and the `template.remedy` suffix, which only the overlay's table
+    feeds. The branch's "no record, so leave the file alone" return stays: `src/stayfixed/project/templates.py`
+    `retired_stub` and `src/stayfixed/project/uninstall.py` reach it with `shipped` empty;
   - `src/stayfixed/scaffold/model.py`: `Template.shipped` and `Template.remedy`, only if nothing
     else reads them;
   - `docs/cli.md`: the `overlay upgrade` paragraph about four removed files.
@@ -560,6 +501,32 @@ owner's word.
   - `doctor`'s 16 rows;
   - the preset's removed key;
   - that the owner deletes the four retired overlay files by hand if they are still there.
+
+### Task 9: Fold `doctor`'s `files` row into `wrapper`
+
+The owner's ruling on the plan's final review: after Task 2, `files` checks one thing, the
+wrapper's executable bit, which `wrapper` already reports under the root this process derived (a
+wrapper without `+x` cannot be run). `files` adds something only under a root the environment named,
+where `wrapper` skips. Folding it here makes Wave D's count change once, 17 → 15.
+
+**Files:**
+- Modify: `src/stayfixed/doctor/checks.py` (`_files` and its `CHECKS` entry; `_wrapper`'s named-root
+  branch), every pin of 16 rows (as Task 7 lists them), `docs/cli.md`, the fragment
+- Test: `tests/doctor/test_checks.py`, `tests/doctor/test_command.py`
+- Mutations: `mutations/doctor.toml` (the `files` entries; one for the moved bit check),
+  `mutations/repository.toml` (the two count anchors)
+
+**Interfaces:**
+- Produces: `doctor` reports 15 rows and `CHECKS` has 10. Under a named root `wrapper` is RED with
+  `chmod +x` for a wrapper without the bit, and the SKIP it is today otherwise.
+- Consumes: Tasks 7 and 8.
+
+- [ ] **Step 1: Write the failing test** for the named-root RED, and move the count assertion to 15.
+- [ ] **Step 2: Run and watch it fail.**
+- [ ] **Step 3: Delete `_files`, its tests and entries; move the bit check into `_wrapper`'s
+  named-root branch; move every pin to 15.**
+- [ ] **Step 4: Run and watch it pass**, with the oracle whole.
+- [ ] **Step 5: Commit:** `refactor(doctor): fold the files row into wrapper`, and edit the fragment.
 
 **Before the push (Wave D):** as for Wave A. Then open the pull request.
 
