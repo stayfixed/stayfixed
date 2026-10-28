@@ -334,8 +334,8 @@ reddens = [
 [[mutation]]
 name = "the public-anchor walk's exemption swallows the package"
 file = "tests/test_public_anchors.py"
-before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
-after = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py", "src")'
+before = 'EXEMPT = (".claude-plugin/icon.png", "docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = (".claude-plugin/icon.png", "docs/plans", "tests/test_public_anchors.py", "src")'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
 ]
@@ -343,8 +343,8 @@ reddens = [
 [[mutation]]
 name = "the public-anchor walk reads its own planted examples"
 file = "tests/test_public_anchors.py"
-before = 'EXEMPT = ("docs/plans", "tests/test_public_anchors.py")'
-after = 'EXEMPT = ("docs/plans",)'
+before = 'EXEMPT = (".claude-plugin/icon.png", "docs/plans", "tests/test_public_anchors.py")'
+after = 'EXEMPT = (".claude-plugin/icon.png", "docs/plans")'
 reddens = [
   "tests/test_public_anchors.py::test_the_citation_walk_reads_every_tracked_file_but_the_exemptions",
 ]

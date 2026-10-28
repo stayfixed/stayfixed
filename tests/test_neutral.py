@@ -33,10 +33,11 @@ from tests.gitfixture import needs_git, run_git
 ROOT = Path(__file__).resolve().parents[1]
 THIS = Path(__file__).resolve()
 FULL_TABLE_TREES = ("src", "tests", "scripts")
-# How many tracked files the walk is allowed to skip for being undecodable. Zero, measured: this
-# repository ships no binary. A file that changes it is a deliberate edit here and not a case
-# that quietly stopped being checked.
-UNDECODABLE = 0
+# How many tracked files the walk is allowed to skip for being undecodable. One, measured: the
+# plugin directory's listing icon, `.claude-plugin/icon.png`, is this repository's only binary.
+# A file that changes it is a deliberate edit here and not a case that quietly stopped being
+# checked.
+UNDECODABLE = 1
 # Only for the fallback walk in an unpacked sdist, where `git ls-files` cannot answer.
 FALLBACK_EXCLUDED = {
     ".git",
