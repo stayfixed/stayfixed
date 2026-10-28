@@ -15,9 +15,8 @@ from pathlib import Path
 
 from stayfixed.attach.binding import Binding, read_binding
 from stayfixed.attach.permissions import PermissionDiff, codex_rules
-from stayfixed.attach.write import gates, main_checkout_of, plan_writes
+from stayfixed.attach.write import configured, gates, main_checkout_of, plan_writes
 from stayfixed.config.owner import Owner
-from stayfixed.config.session import command_config
 from stayfixed.result import Result
 
 
@@ -27,6 +26,7 @@ def check(
     store: Path | None,
     machine: Path | None,
     owner: Owner | None = None,
+    project: str | None = None,
 ) -> Result:
     """`attach --check`: the binding and the diff, with nothing written, read in the main checkout
     as `attach` reads it, whichever worktree this runs from.
@@ -40,10 +40,11 @@ def check(
     gates and plans the run's writes (`gates`, `plan_writes`), so a refusal or failure there ends
     this command with the run's code and line: each of them was once left out here, and `--check`
     answered clean over a checkout the run then stopped on. `owner` is the owner's layer the
-    command resolved (`config.loader.loads`' own).
+    command resolved (`config.loader.loads`' own), and `project` is `--project`, which names the
+    project of a repository with no `stayfixed.toml` as the run's does (`write.configured`).
     """
     root = main_checkout_of(root)
-    config = command_config(root, machine=machine, owner=owner)
+    config = configured(root, project, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     diff = gates(root, config, binding)
     plan_writes(root, config, binding, diff)
