@@ -2785,7 +2785,7 @@ reddens = [
 
 # Every document that counts `doctor`'s rows is held to the report's count.
 [[mutation]]
-name = "the reference counts the doctor rows it had before retired-deny"
+name = "the reference counts one doctor row more than the report has"
 file = "docs/cli.md"
 before = 'Sixteen checks over one installation.'
 after = 'Seventeen checks over one installation.'

@@ -14,7 +14,7 @@ description: Diagnose a stayfixed installation — hooks, memory store, budgets,
    information, an environment variable that is set and ignored.
 2. Relay each finding with the remedy the report names, verbatim. Do not change settings or
    hook entries on the user's behalf — name the command that would.
-3. A `skip` is not a fault, and it is not always harmless either. Ten checks skip on a
+3. A `skip` is not a fault, and it is not always harmless either. Nine checks skip on a
    state of the machine or of the repository: `wrapper` and `files`
    when no plugin root can be vouched for,
    `attached` when no overlay is recorded or the overlay cannot be asked, `pre-commit` with no

@@ -2430,8 +2430,8 @@ Code reads from every worktree, and — in the overlay — `projects/<name>/proj
 records no remote, this project's note directories,
 `projects/<name>/memory/MEMORY.md` when the store has none yet (rendered as `stayfixed memory
 index` renders it, so the store's index link never dangles and `memory index --check` passes right after
-a first attach in an overlay this release rendered, and in an older one once `overlay upgrade` has
-run on it, because it removes the `common/memory/README.md` 0.1.x shipped unless it was edited).
+a first attach in an overlay this release rendered, and in an older one once its owner has deleted
+by hand the `common/memory/README.md` 0.1.x shipped, which the note reader reads as a note).
 It runs no program in the overlay: its commit-time secret scan is `setup --overlay`'s, which makes
 or records the overlay, and where that scan is missing `doctor`'s `pre-commit` row says it is not
 installed. The ledger is the only record

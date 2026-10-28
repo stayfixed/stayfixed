@@ -472,6 +472,17 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_settings_file_holding_a_number_past_the_parsers_reach_is_read_for_its_entries[.claude/settings.json]",
 ]
 
+# A retired file that is gone and unrecorded, listed among the unchanged, told the owner on every
+# later run that a file no longer there was unchanged.
+[[mutation]]
+name = "a retired file that is gone and unrecorded is reported unchanged"
+file = "src/stayfixed/scaffold/engine.py"
+before = "        # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,"
+after = "        unchanged.append(template.id)"
+reddens = [
+  "tests/scaffold/test_engine.py::test_a_retired_artifact_gone_and_unrecorded_is_neither_planned_nor_unchanged",
+]
+
 # A retired artifact whose file was already gone read as unchanged and kept its record for good:
 # every later run passed over it again, and an overlay's memory README never got its successor.
 [[mutation]]

@@ -929,8 +929,7 @@ _DOCTOR_COUNTS = {
 def test_every_document_counts_the_rows_the_report_has() -> None:
     # The count was written in five places and held in none: a row added to the report left four
     # documents and the smoke workflow saying the old number. Mutation (`mutations/`'s "the
-    # reference counts the doctor rows it had before retired-deny"): `docs/cli.md` says
-    # seventeen.
+    # reference counts one doctor row more than the report has"): `docs/cli.md` says seventeen.
     from stayfixed.doctor.checks import CHECKS
     from stayfixed.doctor.registry import contributions
 

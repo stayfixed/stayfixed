@@ -590,8 +590,8 @@ def _plan_retired(
             actions.append(Action(Verb.REMOVE, template.id, target, None, ALREADY_GONE, record))
             return
         # Gone and unrecorded: nothing of it is left to plan or to report. Listed as unchanged,
-        # it told the owner every run after its removal that the file the release notes say was
-        # removed is "unchanged", and counted it, and a fresh overlay that never had it the same.
+        # it told the owner every run after its removal that the file was "unchanged", and
+        # counted it.
         return
     if location is Location.LOCAL:
         # No manifest record exists for a local artifact, so it is judged by `ours_locally`: the
