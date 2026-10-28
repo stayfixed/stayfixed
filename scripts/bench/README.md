@@ -98,8 +98,9 @@ uv run python scripts/bench/bench.py report "$BENCH/run"
   configuration takes its own `--out`. Three error results in a row (a usage limit among them)
   stop the run, and each is counted as incomplete, never as a pass or a failure.
 
-A Sonnet 5.5 repetition cost between 0.06 and 0.15 USD at list price on Claude Code 2.1.312, at
-`--effort high` and at `--effort low` alike; a Haiku 5.5 repetition at `--effort low`, under 0.01.
+A Sonnet 5.5 repetition cost between 0.06 and 0.17 USD at list price on Claude Code 2.1.312, at
+`--effort high` and at `--effort low` alike; a Haiku 5.5 repetition at `--effort low`, 0.004 to
+0.011.
 A resumed turn reports the session's cost so far, so a repetition is charged its last figure.
 
 ## What it publishes
