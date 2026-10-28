@@ -1737,7 +1737,7 @@ reddens = [
 [[mutation]]
 name = "the release smoke calls the alias a 0.x release does not have"
 file = ".github/workflows/smoke-release.yml"
-before = "    uses: stayfixed/stayfixed/.github/workflows/check.yml@v0.3.1"
+before = "    uses: stayfixed/stayfixed/.github/workflows/check.yml@v0.6.0"
 after = "    uses: stayfixed/stayfixed/.github/workflows/check.yml@v1"
 reddens = [
   "tests/test_fixtures.py::test_the_release_smoke_calls_the_release_this_tree_carries",

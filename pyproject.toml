@@ -1,6 +1,6 @@
 [project]
 name = "stayfixed"
-version = "0.3.1"
+version = "0.6.0"
 description = "A methodology harness for coding agents: a bug ledger that lives in the repository, working memory whose notes count once reviewed, and fail-closed guards, packaged as one plugin for Claude Code and Codex."
 readme = "README.md"
 requires-python = ">=3.11"
