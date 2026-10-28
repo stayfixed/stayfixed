@@ -189,8 +189,9 @@ lists an agent with an unsandboxed shell as out of scope.
 Exits `2` if `trust.json` exists and is not a record this stayfixed reads — not JSON, not UTF-8, a
 later version, no `version`, a `version` that is neither `1` nor later (`0`, `"1"`, `true`), or a
 version-1 record that is not whole: a key besides `version` and `approvals`, an approval that is not
-an object of four text fields, or one approval named twice. It holds every project's approval on
-the machine, so nothing will overwrite a file it could not read — repair or delete it; for a record of a later version, which a later stayfixed
+an object of four text fields, or one approval named twice. It may hold every project's approval
+on the machine, so nothing will overwrite a file it could not read — delete it to start a new
+record, or repair it if it is one; for a record of a later version, which a later stayfixed
 wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
 release's approvals.
 

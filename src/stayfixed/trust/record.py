@@ -10,7 +10,7 @@ names its kind, its subject, the digest approved and when it was recorded:
 **Absent and unreadable are not the same answer.** An absent file is the ordinary state of a fresh
 machine and holds no approval. A file that is there and is not a version-1 record — not JSON, not
 UTF-8, a later version, no version, an approval missing a field — refuses with
-`UnreadableTrust`, and nothing here overwrites it: it holds every project's approval on the
+`UnreadableTrust`, and nothing here overwrites it: it may hold every project's approval on the
 machine, and reading it as empty would let the next write persist the loss.
 
 Every write replaces the whole file through `fsops` in one atomic step. No lock is taken: two
@@ -39,8 +39,8 @@ NO_HOME = (
     "keep one beside that file, which no hook reads"
 )
 # The close of every refusal of a record that is there and cannot be read.
-_HOLDS = "it holds every project's approval on this machine, so nothing here will overwrite it"
-_KEPT = f"{_HOLDS} — repair or delete it"
+_HOLDS = "it may hold every project's approval on this machine, so nothing here will overwrite it"
+_KEPT = f"{_HOLDS} — delete it to start a new record, or repair it if it is one"
 # A record a later stayfixed wrote is met after a downgrade, where deleting it would destroy the
 # later release's approvals: the remedy is the later release.
 LATER_VERSION = (
