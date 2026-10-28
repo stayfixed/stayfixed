@@ -40,7 +40,7 @@ overlay's files could not give and what `resolve` refused; no warning carries th
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
@@ -64,6 +64,7 @@ from stayfixed.config.loader import (
     load,
     loads,
     loads_noting,
+    preset_defaults,
     preset_named,
     read_document,
 )
@@ -199,19 +200,34 @@ def session_config(root: Path | None, *, machine: Path | None = None) -> Session
     return _resolved(_read(root, path), overlays, notes)
 
 
-def command_config(root: Path, *, machine: Path | None, owner: Owner | None = None) -> Config:
+def command_config(
+    root: Path,
+    *,
+    machine: Path | None,
+    owner: Owner | None = None,
+    unnamed: Callable[[], str] | None = None,
+) -> Config:
     """The `Config` a command acts on: `loader.loads`', which refuses what it cannot use, with the
     keys `RESOLVED` names taken from the resolution `session_config` builds, overlay layers and
-    all, so a command acts on what a session runs on; `doctor` names the layers' notes."""
+    all, so a command acts on what a session runs on; `doctor` names the layers' notes.
+
+    With no `stayfixed.toml` it is `load`'s refusal, unless the caller can name the project
+    itself (`unnamed`, asked only then: `attach`'s choice): the configuration is then the preset's
+    (`loader.preset_defaults`) under the same resolution, the overlay's project layer read for
+    that name."""
     text = read_document(root)
-    if text is None:
-        return load(root, machine=machine, owner=owner)
-    config = loads(text, root, machine=machine, owner=owner)
     path = machine if machine is not None else machine_config_path()
-    raw = tomllib.loads(text)
+    if text is not None:
+        config = loads(text, root, machine=machine, owner=owner)
+        raw, project = tomllib.loads(text), None
+    elif unnamed is None:
+        return load(root, machine=machine, owner=owner)
+    else:
+        project = unnamed()
+        config, raw = preset_defaults(project), {}
     preset = preset_named(raw)
     held = resolve_owner(path, preset=preset) if owner is None else rebased(owner, preset)
-    overlays, notes = overlay_layers.read(root, machine=path)
+    overlays, notes = overlay_layers.read(root, machine=path, project=project)
     resolved = _resolved(SessionConfig(config, held, document=raw), overlays, notes).config
     return config if resolved is None else resolved
 

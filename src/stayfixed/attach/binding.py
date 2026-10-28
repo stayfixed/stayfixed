@@ -20,7 +20,8 @@ The third rule is a write and lives in `write.py`.
 **Whether a checkout is bound is this machine's answer, not the overlay's.** The binding is the id
 in the checkout's git common directory and the machine's record of it (`stayfixed.binding`); the
 overlay's `projects/<name>/project.toml` keeps the remote and the first attach's date for the
-owner to read, and decides nothing.
+owner to read, and never decides whether a checkout is bound; for a repository with no
+`stayfixed.toml`, its remote is one way the project is chosen (`choose_project`).
 
 **The two remotes on a `Binding` are repository-authored bytes** (principle 5), and nothing
 here puts either into a refusal message or a `Result.data`. They reach a line only inside
@@ -31,6 +32,7 @@ here puts either into a refusal message or a `Result.data`. They reach a line on
 from __future__ import annotations
 
 import errno
+import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,10 +42,10 @@ from stayfixed.binding import bound_project
 from stayfixed.config.loader import load
 from stayfixed.config.overlay import overlay_root
 from stayfixed.config.reading import UNPARSEABLE, toml_position
-from stayfixed.config.schema import Config
+from stayfixed.config.schema import NAME_RULE, PROJECT_NAME, Config
 from stayfixed.errors import Failure, Refusal
 from stayfixed.fsops import said
-from stayfixed.gitenv import origin_remote
+from stayfixed.gitenv import origin_remote, repository_name
 from stayfixed.memory.api import (
     BOUND,
     PROJECT_RECORD,
@@ -55,6 +57,7 @@ from stayfixed.memory.api import (
     permitted_roots,
     read_binding_record,
 )
+from stayfixed.printed import quoted
 
 # The binding's states are `memory.store`'s (`BINDING_STATES`), and so is the one classifier that
 # decides between them (`binding_state`): this module answered the same question with a copy of
@@ -356,6 +359,93 @@ def _bound(root: Path, config: Config, overlay: Path) -> Binding:
     note = origin_note(against, origin) if state == BOUND or against is not None else None
     earlier = found.project if found is not None else None
     return Binding(project, overlay, store, origin, recorded, state, note, earlier, fault)
+
+
+# How `choose_project` chose, each said on the attach screen after the project's name.
+NAMED = "named by --project"
+BOUND_HERE = "as this machine's binding names it"
+BY_REMOTE = "found in the overlay by its remote"
+FROM_REMOTE = "taken from the remote's name"
+# The refusals of a repository whose project nothing names, each with `--project` as the way out.
+# Every name in them is the overlay's, the owner's own, or one `origin` spells, printed quoted.
+NO_PROJECT = (
+    "this repository has no stayfixed.toml and no `origin` remote, and this machine binds it to no "
+    "project, so nothing names the project to attach it to; name one with `--project`"
+)
+SEVERAL_PROJECTS = (
+    "the overlay records this checkout's origin for {count} projects, {names}; choose one with "
+    "`--project`"
+)
+NOT_A_NAME = (
+    "the name this checkout's origin ends in cannot be a project's ({rule}); name the project "
+    "with `--project`"
+)
+ANOTHER_REMOTE = (
+    "the overlay's project {name}, which this checkout's origin is named after, records another "
+    "remote; name the project with `--project`"
+)
+NAMED_BY_FILE = (
+    "--project names the project of a repository with no stayfixed.toml, and this one's "
+    "[project] name names it already"
+)
+
+
+def choose_project(root: Path, named: str | None, *, machine: Path | None) -> tuple[str, str]:
+    """The project a repository with no `stayfixed.toml` attaches under, and how it was chosen:
+    `named` (`--project`, held to the name rule by the parser), else the project this machine's
+    binding records for the checkout, else the one overlay project whose record names `origin`
+    (compared as `memory.store.origin_note` compares remotes), else `origin`'s own name
+    (`gitenv.repository_name`) held to the name rule, unless the overlay records that project
+    with another remote. Every refusal names `--project`.
+
+    **A convenience and not a gate.** A clone whose `origin` claims one of the owner's
+    repositories is bound to that project, and the anchor is `origin`, which whoever cloned set:
+    the owner who runs `attach` reads the project and the origin on its screen.
+    """
+    if named is not None:
+        return named, NAMED
+    found = bound_project(root)
+    if found is not None:
+        return found.project, BOUND_HERE
+    origin = origin_remote(root)
+    if origin is None:
+        raise Refusal(NO_PROJECT)
+    overlay = overlay_root(machine)
+    if overlay is None:
+        raise Refusal(NO_OVERLAY)
+    matches = [name for name in _projects(overlay) if _records(overlay, name, origin)]
+    if len(matches) > 1:
+        names = ", ".join(quoted(name) for name in matches)
+        raise Refusal(SEVERAL_PROJECTS.format(count=len(matches), names=names))
+    if matches:
+        return matches[0], BY_REMOTE
+    derived = repository_name(origin)
+    if not PROJECT_NAME.match(derived):
+        raise Refusal(NOT_A_NAME.format(rule=NAME_RULE))
+    recorded = _recorded(overlay, derived)
+    if recorded is not None and origin_note(recorded, origin) is not None:
+        raise Refusal(ANOTHER_REMOTE.format(name=quoted(derived)))
+    return derived, FROM_REMOTE
+
+
+def _projects(overlay: Path) -> list[str]:
+    """The names under the overlay's `projects/` that can be a project's, sorted; none where it
+    cannot be listed."""
+    try:
+        names = os.listdir(overlay / PROJECTS)
+    except OSError:
+        return []
+    return sorted(name for name in names if PROJECT_NAME.match(name))
+
+
+def _records(overlay: Path, project: str, origin: str) -> bool:
+    """Whether the overlay's record for `project` names `origin`'s repository. A record that
+    cannot be read names none: it binds nothing, and `_bound` says why when it is the one."""
+    try:
+        recorded = _recorded(overlay, project)
+    except UnreadableRecord:
+        return False
+    return recorded is not None and origin_note(recorded, origin) is None
 
 
 def read_binding(

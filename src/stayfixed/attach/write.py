@@ -51,13 +51,19 @@ import datetime
 import json
 import os
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from stayfixed import fsops, tomlout
 from stayfixed.attach import exclude
-from stayfixed.attach.binding import Binding, read_binding, refuse_unless_share_can_exist
+from stayfixed.attach.binding import (
+    NAMED_BY_FILE,
+    Binding,
+    choose_project,
+    read_binding,
+    refuse_unless_share_can_exist,
+)
 from stayfixed.attach.permissions import (
     CODEX_RULES,
     LOCAL_SETTINGS,
@@ -212,6 +218,9 @@ class Attached:
     binding: str
     origin: str | None = None
     project: str = ""
+    # How the project was chosen for a repository with no `stayfixed.toml` (`choose_project`'s
+    # phrase), and `None` where the file names it.
+    chosen: str | None = None
     added: Carried = Carried()
     removed: Carried = Carried()
     allow_added: tuple[str, ...] = ()
@@ -774,6 +783,8 @@ class AttachPlan:
     rules: tuple[tuple[str, str], ...]
     # What the rendered plugin carries, read from the overlay (`render.read_parts`).
     parts: dict[str, Part]
+    # How the project was chosen where no `stayfixed.toml` names it (`configured`).
+    chosen: str | None = None
 
 
 def attach(
@@ -783,6 +794,7 @@ def attach(
     machine: Path | None,
     runner: Runner,
     owner: Owner | None = None,
+    project: str | None = None,
 ) -> Attached:
     """Bind this repository to the overlay, merge the allow rules it grants, render and install
     its executable parts, and compose its notes.
@@ -819,10 +831,11 @@ def attach(
 
     `runner` is keyword-**required** rather than defaulted so that no test can reach a real
     `claude`. `owner` is the owner's layer the command resolved, which the one load
-    takes (`config.loader.loads`' own).
+    takes (`config.loader.loads`' own). `project` is `--project`, which names the project of a
+    repository with no `stayfixed.toml` (`configured`).
     """
     main = main_checkout_of(root)
-    planned = _plan(main, store=store, machine=machine, owner=owner)
+    planned = _plan(main, store=store, machine=machine, owner=owner, project=project)
     return _carry_out(main, planned, machine=machine, runner=runner, owner=owner)
 
 
@@ -848,12 +861,32 @@ def gates(root: Path, config: Config, binding: Binding) -> PermissionDiff:
     return diff
 
 
+def configured(
+    root: Path, project: str | None, *, machine: Path | None, owner: Owner | None
+) -> tuple[Config, str | None]:
+    """The run's one `Config`, and how its project was chosen where the repository has no
+    `stayfixed.toml` (`binding.choose_project`, asked only then), else `None`. `project` is
+    `--project`, refused beside the file, which names the project already."""
+    chosen: list[str] = []
+
+    def unnamed() -> str:
+        name, how = choose_project(root, project, machine=machine)
+        chosen.append(how)
+        return name
+
+    config = command_config(root, machine=machine, owner=owner, unnamed=unnamed)
+    if project is not None and not chosen:
+        raise Refusal(NAMED_BY_FILE)
+    return config, chosen[0] if chosen else None
+
+
 def _plan(
     root: Path,
     *,
     store: Path | None,
     machine: Path | None,
     owner: Owner | None,
+    project: str | None,
 ) -> AttachPlan:
     """Every read, decode and check `attach` makes, in the order `attach` enumerates them, and
     nothing written: what it returns is all `_carry_out` may act on. `gates` and `plan_writes` are
@@ -862,10 +895,10 @@ def _plan(
     # One load for the whole run, handed to `read_binding` rather than left for it to make a
     # second of: a `--check` that read two documents reports the wrong thing, while an `attach`
     # that reads two writes under the wrong one.
-    config = command_config(root, machine=machine, owner=owner)
+    config, chosen = configured(root, project, machine=machine, owner=owner)
     binding = read_binding(root, store=store, machine=machine, config=config)
     diff = gates(root, config, binding)
-    return plan_writes(root, config, binding, diff)
+    return replace(plan_writes(root, config, binding, diff), chosen=chosen)
 
 
 def refuse_unless_share_holds(binding: Binding, config: Config) -> None:
@@ -968,8 +1001,9 @@ def _carry_out(
     bound = record(root, binding.project, binding.remote)
     _record_project(binding, bound.origin)
     # The mode, resolved again now that the binding is recorded: the overlay's project layer is
-    # read for a bound checkout only, so a first attach's plan could not see a mode set there.
-    config = command_config(root, machine=machine, owner=owner)
+    # read for a bound checkout only, so a first attach's plan could not see a mode set there. A
+    # repository with no `stayfixed.toml` has it read for the project chosen (`configured`).
+    config = command_config(root, machine=machine, owner=owner, unnamed=lambda: binding.project)
     memory = config.memory.mode == OVERLAY_MODE
     if memory:
         refuse_unless_share_holds(binding, config)
@@ -1019,6 +1053,7 @@ def _carry_out(
         short(id),
         origin=None if binding.remote is None else without_userinfo(binding.remote),
         project=binding.project,
+        chosen=planned.chosen,
         added=after.without(before),
         removed=before.without(after),
         allow_added=planned.diff.added_allow,

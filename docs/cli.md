@@ -66,7 +66,7 @@ Three things hold everywhere:
 - [`stayfixed upgrade [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-upgrade---dry-run---force-path---root-path---machine-path)
 - [`stayfixed uninstall [--dry-run] [--force PATH]… [--root PATH] [--machine PATH]`](#stayfixed-uninstall---dry-run---force-path---root-path---machine-path)
 - [`stayfixed overlay upgrade [--root PATH] [--dry-run]`](#stayfixed-overlay-upgrade---root-path---dry-run)
-- [`stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---check---root-path---machine-path)
+- [`stayfixed attach [--store PATH] [--project NAME] [--check] [--root PATH] [--machine PATH]`](#stayfixed-attach---store-path---project-name---check---root-path---machine-path)
 - [`stayfixed detach [--root PATH] [--machine PATH]`](#stayfixed-detach---root-path---machine-path)
 - [`stayfixed setup [--preset NAME] [--plugin NAME …] [--home PATH] [--machine PATH] [--overlay VALUE]`](#stayfixed-setup---preset-name---plugin-name----home-path---machine-path---overlay-value)
 - [`stayfixed setup --git-hooks [--uninstall] [--root PATH]`](#stayfixed-setup---git-hooks---uninstall---root-path)
@@ -366,7 +366,7 @@ prints no warning, and records once per session, in the diagnostics log below, t
 runs without some of its configuration (`config-fallback`).
 
 **The overlay's rules.** In a checkout this machine binds to an overlay project
-([`attach`](#stayfixed-attach---store-path---check---root-path---machine-path)), `SessionStart`
+([`attach`](#stayfixed-attach---store-path---project-name---check---root-path---machine-path)), `SessionStart`
 carries the overlay's standing rules — every `*.md` file in `common/claude/rules/` and
 `projects/<name>/claude/rules/` whose frontmatter has no `paths:` key, common first and the
 project's second, each in name order, a project file replacing the common file of its name —
@@ -2306,7 +2306,7 @@ by the containment walk.
 
 ---
 
-## `stayfixed attach [--store PATH] [--check] [--root PATH] [--machine PATH]`
+## `stayfixed attach [--store PATH] [--project NAME] [--check] [--root PATH] [--machine PATH]`
 
 Binds this repository to your private overlay, renders the hooks, skills and agents you keep there
 into a local plugin and installs it, and, in overlay mode, points the harness at the composed store
@@ -2317,7 +2317,7 @@ project's own notes, and the allow rules you keep in the overlay are merged into
 
 **`--store` is optional, and names one directory and nothing else:**
 `<overlay>/projects/<project name>/memory`, where `<project name>` is the `[project] name` in this
-repository's `stayfixed.toml`; without it that directory is derived from the overlay the machine
+repository's `stayfixed.toml`, or the project chosen below where it has none; without it that directory is derived from the overlay the machine
 records, and passing it changes nothing. The overlay root itself is **not** taken from that path —
 it comes from the `[overlay] root` your machine configuration records, which `stayfixed setup`
 writes. A `--store` anywhere else is refused (`2`), including a directory elsewhere under the same
@@ -2334,6 +2334,35 @@ overlay whose root, or whose `projects/`, is there and is not a directory is ref
 damaged, by `--check` as well, with that path named and the overlay's repair as the way out; no name
 is blamed for it, and `stayfixed doctor`'s `attached` row warns about the same path rather than
 offering to remove the ledger.
+
+**A repository with no `stayfixed.toml` attaches too**, so a public clone you cannot commit to can
+be bound to your overlay. Its project — the directory under the overlay's `projects/` it is bound
+to — is chosen, by `attach` and `--check` alike, in this order:
+
+1. `--project NAME`, held to the rule `[project] name` is held to (one lowercase path segment:
+   lowercase letters, digits, `.`, `_` and `-`, led by a letter or digit), which the parser
+   refuses (`2`) without echoing the value;
+2. the project this machine's binding records for the checkout, so a re-attach needs no flag;
+3. the one overlay project whose `projects/<name>/project.toml` records this checkout's `origin`,
+   compared as the binding's `origin` note compares remotes (below: the three spellings of one
+   repository are one), which is how a second machine finds the project the first one attached;
+   two or more such projects are refused (`2`), naming them, with `--project` to choose;
+4. otherwise the last segment of `origin`'s path, `.git` taken off and lower-cased
+   (`https://example.com/Owner/Widget-Kit.git` is `widget-kit`), refused (`2`) where that is not a
+   project name, or where the overlay's `projects/<that name>/project.toml` records another
+   remote.
+
+With no `origin` and neither of the first two, it is refused (`2`). Every refusal names `--project`
+as the way out. The attach screen's binding line says which way the project was chosen — `named by
+--project`, `as this machine's binding names it`, `found in the overlay by its remote` or `taken
+from the remote's name` — beside the project and the origin, which is what you read: matching by
+remote is a convenience, and a clone whose `origin` claims one of your repositories is bound to that
+project. The configuration it acts on is the preset's, under your overlay's `common/stayfixed.toml`
+and `projects/<name>/stayfixed.toml`, the latter read for the chosen project from the first attach,
+and the machine file, as a session resolves its preferences; so `memory.mode` is the preset's,
+`harness`, unless an overlay file sets `overlay`. Where the repository has a `stayfixed.toml`, its
+`[project] name` names the project and nothing above applies; `--project` beside it is refused
+(`2`).
 
 **The notes are composed only in overlay mode; the rest is delivered whatever the mode.** A
 `stayfixed.toml` whose `memory.mode` is not `overlay` keeps its notes elsewhere, so for it `attach`
@@ -2427,7 +2456,9 @@ screen or in the note naming both remotes, and before it is recorded; an ssh URL
 **Reads** the overlay's `common/claude/permissions.json`, `common/claude/hooks.json` and the files
 under `common/claude/skills/` and `common/claude/agents/` (dot-named ones left out), this
 project's `projects/<name>/claude/` equivalents, the overlay's `common/codex/` and
-`projects/<name>/codex/` rules, and this repository's existing `.claude/settings.local.json`.
+`projects/<name>/codex/` rules, and this repository's existing `.claude/settings.local.json`; for a
+repository with no `stayfixed.toml` whose project neither `--project` nor this machine's binding
+names, every `projects/<name>/project.toml` in the overlay.
 `.claude/settings.json` — the committed one — is read for **nothing**: it is repository-controlled,
 and the repository never grants a capability.
 
