@@ -53,6 +53,7 @@ def test_every_case_has_its_reference_edits(bench: ModuleType) -> None:
         "all-skipped",
         "outside-plan",
         "stale-green",
+        "stale-green-2",
     }
     assert all("fix" in case.references for case in counted)
 
