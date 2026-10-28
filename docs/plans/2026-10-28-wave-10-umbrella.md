@@ -196,6 +196,12 @@ Two releases, each cut on `origin/main` from `dev` by `RELEASING.md`, which also
   behaviour. A lane pull request that merged into `dev` before the cut ships in it too, so the
   controller reads `git log v0.6.0..origin/dev` at the cut. Any behaviour change found there is the
   owner's call: wait, or ship.
+
+  **Amended 2026-10-28.** P6's exit check on `0.6.0` found that `attach` refuses a repository with
+  no `stayfixed.toml`. The fix (the project found by its remote, else named from the remote's path)
+  is wave 9's, and wave 10 does not plan it. If it is cut as `0.6.1` before RD1 merges, this plan's
+  docs release is `0.6.2`, and every `0.6.1` in it reads as that release. If RD1 merges first, both
+  ship together in `0.6.1`, and the fix is the one behaviour change Step 1 of Task 1 reports.
 - **`v0.7.0`.** Cut once every lane has merged. It carries the icon, and the directory submission
   goes in with it.
 
