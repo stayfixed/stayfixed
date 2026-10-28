@@ -3395,8 +3395,8 @@ project whose own gates need longer adds one line under its `with:`:
       timeout-minutes: 30
 ```
 
-The value is handed to the runner as given, and the platform's own job limit bounds it (360 minutes
-on a hosted runner). The caller file is pull-request content, so that line is one a pull request
+The value is handed to the runner as given, and the runner's own job limit bounds it: 360 minutes
+on a GitHub-hosted runner, up to five days on a self-hosted one. The caller file is pull-request content, so that line is one a pull request
 can edit, and a bound here would stop nobody while refusing a legitimate long caller. What a pull
 request cannot do through the input is turn running out into a pass: a job that runs out of time is
 cancelled, and a required check that was cancelled has not passed.
@@ -3404,7 +3404,7 @@ cancelled, and a required check that was cancelled has not passed.
 **What the input does not bound.** The rest of the caller file is pull-request content as well, and
 runs as the pull request wrote it: a matrix around the call runs this job once per leg, each leg
 with a limit of its own, and a `uses:` pointed at another workflow runs none of this file, under
-whatever limit that workflow sets, up to the platform's own 360 minutes. That is a change to
+whatever limit that workflow sets, up to the runner's own. That is a change to
 `.github/`, and under the settings below a code owner reviews it before it merges — not before it
 runs, since a pull request's run starts before any review.
 
