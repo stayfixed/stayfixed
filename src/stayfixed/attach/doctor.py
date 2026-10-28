@@ -635,6 +635,6 @@ def register() -> Contribution:
 
     ledger = _Ledger()
     # `configured`: which store, which tree and whether the overlay is consulted at all are the
-    # project's file's to say, so with none the row skips.
-    attached = configured(lambda context, config: _attached(context, config, ledger))
+    # configuration `attach` acted on (`Context.attach_config`), so with none the row skips.
+    attached = configured(lambda context, config: _attached(context, config, ledger), attach=True)
     return Contribution(checks=(("attached", attached),))

@@ -2,6 +2,32 @@
 
 <!-- towncrier release notes start -->
 
+## 0.6.1 (2026-10-28)
+
+### Added
+
+- `stayfixed attach` now binds a repository that has no `stayfixed.toml`, such as a public clone you
+  cannot commit to. The project is the one `--project NAME` names, else the one this machine's binding
+  already records, else the one overlay project whose `project.toml` records the same `origin`, else
+  the last segment of `origin`'s path, lower-cased. A choice that is ambiguous is refused with
+  `--project` as the way out, and `--project` beside a `stayfixed.toml` is refused, since the file
+  names the project.
+
+### Fixed
+
+- A session on a machine without Python 3.11 or newer on `PATH` is now told that stayfixed is off.
+  Every hook used to say why on stderr alone, which neither you nor the model sees, so stayfixed was
+  silently off. Now, when there is no `python3` on `PATH` or the one there is older than 3.11, the
+  `SessionStart` hook shows you, and adds to the model's context, one line saying stayfixed's hooks
+  are off in this session and why, and to install Python 3.11 or newer on `PATH`. Every other hook
+  still exits 0 without a word on stdout.
+- `stayfixed detach` no longer leaves `.claude/settings.local.json` behind in a checkout that had none
+  before `attach`. Claude Code's `plugin uninstall` and `marketplace remove` leave the file holding
+  `enabledPlugins` and `extraKnownMarketplaces`, emptied, and once `detach` took its exclude block
+  away that file showed in `git status` as untracked, unless a global exclude of yours hid it. A file
+  holding only those two empty keys is now removed; one holding anything more stays as it is.
+
+
 ## 0.6.0 (2026-10-28)
 
 ### Upgrading
@@ -13,13 +39,21 @@
 
   1. Before upgrading, run `stayfixed detach` in a checkout an earlier release attached from a linked
      worktree: its ledger is that worktree's, which this release no longer reads.
-  2. Upgrade the command with `uv tool upgrade stayfixed`. A plugin added from the marketplace at an
-     earlier release's tag, such as `@v0.3.1`, cannot be added again at the new one (Claude Code
-     refuses a source that differs from the one its settings record), so remove the marketplace,
-     which uninstalls the plugin and its saved options, and add it again:
+  2. Upgrade the command with `uv tool install --force 'stayfixed==0.6.0'`. `uv tool upgrade
+     stayfixed` keeps the version an install was pinned to, so a command installed as
+     `stayfixed==0.3.1` stays at 0.3.1 under it (`~/.local/share/uv/tools/stayfixed/uv-receipt.toml`
+     shows the pin). A plugin added from the marketplace at an earlier release's tag, such as
+     `@v0.3.1`, cannot be added again at the new one (Claude Code refuses a source that differs from
+     the one its settings record), so remove the marketplace, which uninstalls the plugin and its
+     saved options, and add it again:
      `/plugin marketplace remove stayfixed-marketplace`, then
      `/plugin marketplace add stayfixed/stayfixed@v0.6.0` and
      `/plugin install stayfixed@stayfixed-marketplace`.
+     If you installed the overlay itself as a plugin, as 0.3.x's `overlay init` told you to,
+     uninstall it and remove its marketplace too, or its hooks run beside the ones `attach` now
+     delivers: `claude plugin uninstall stayfixed-overlay-<owner>@stayfixed-overlay-marketplace-<owner>`,
+     then `claude plugin marketplace remove stayfixed-overlay-marketplace-<owner>`. Keep the
+     overlay's `.claude-plugin/` until every machine that installs from it has moved.
   3. Add `stayfixed-overlay.toml` at the overlay's root, holding `requires = ">=0.1.0"` and
      `layout = 1`, then run `stayfixed overlay upgrade --root <overlay>`, with `--dry-run` first,
      which removes the overlay's retired `hooks/hooks.json` or names it where you edited it.
