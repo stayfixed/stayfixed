@@ -52,10 +52,6 @@ JUDGE = "The configuration and the built-in gates"
 CUSTOM = "The project's own gates"
 PROOF = "stayfixed runs at all"
 BASE_STEP = "The base ref and the project root"
-BOUND_STEP = "The time limit is inside its bounds"
-# The job's time limit, in minutes: the least and the most a caller may pass, and what it gets
-# when it passes nothing. `docs/cli.md#the-reusable-workflow` says why these three.
-TIMEOUT_LEAST, TIMEOUT_MOST, TIMEOUT_DEFAULT = 5, 60, 15
 
 BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
@@ -104,11 +100,6 @@ GATE_ARGUMENTS = (
 # inputs, and whether it may fail or be skipped (a key the list does not carry).
 STEPS: list[dict[str, Node]] = [
     {
-        "name": BOUND_STEP,
-        "env": {"TIMEOUT_MINUTES": "${{ inputs.timeout-minutes }}"},
-        "run": SCRIPT,
-    },
-    {
         "name": "The caller's repository",
         "uses": "actions/checkout",
         "with": {"path": "project", "fetch-depth": "0", "persist-credentials": "false"},
@@ -154,15 +145,6 @@ STEPS: list[dict[str, Node]] = [
 # `sitecustomize.py` at start-up — and every such line is a line this list does not carry.
 CHECKOUT_STEP = "The checkout is the commit this workflow file is at"
 SCRIPTS: dict[str, list[str]] = {
-    BOUND_STEP: [
-        'case "$TIMEOUT_MINUTES" in',
-        "[5-9]|[1-5][0-9]|60) ;;",
-        "*)",
-        'echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"',
-        "exit 1",
-        ";;",
-        "esac",
-    ],
     CHECKOUT_STEP: [
         'expected="$(git -C stayfixed rev-parse --verify --quiet "$EXPECTED^{commit}")" || { echo'
         " \"::error::the workflow's own ref '$EXPECTED' names no commit in the checkout\";"
@@ -444,7 +426,7 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     steps = _steps()
     names = [_name(step) for step in steps]
     # Every step's keys, whole and in order: a step that may fail or may be skipped carries a
-    # key the list does not, and a step with no name is a tenth step. Mutation (declared): such
+    # key the list does not, and a step with no name is a ninth step. Mutation (declared): such
     # a step before the proof step.
     found = [(_name(step), list(step)) for step in steps]
     assert found == [(_name(step), list(step)) for step in STEPS], found
@@ -453,76 +435,23 @@ def test_one_job_whose_judging_steps_may_not_fail_and_run_in_order() -> None:
     # run last.
     assert names.index(PROOF) < names.index(BASE_STEP) < names.index(JUDGE) < names.index(CUSTOM)
     assert names[-2:] == [JUDGE, CUSTOM], names
-    # And the time limit is judged before anything else runs, the checkouts included: a value
-    # outside its bounds fails the job in seconds, under the default bound, having fetched and
-    # run nothing.
-    assert names[0] == BOUND_STEP, names
-
-
-# The job's bound as `check.yml` spells it: the caller's value when it is inside the bounds, and
-# the default otherwise, so the expression can yield nothing but a number from the least to the
-# most. An expression that yields something the platform does not read as a number is an error
-# that fails the job before it starts ("Unexpected value"), which is closed too; this shape never
-# reaches that, and never hands the platform a number outside the range. A fraction inside it is
-# handed over as it is, and the bound step then fails the job under that bound.
-_BOUND = re.compile(
-    r"\$\{\{ inputs\.timeout-minutes >= (\d+) && inputs\.timeout-minutes <= (\d+) "
-    r"&& inputs\.timeout-minutes \|\| (\d+) \}\}"
-)
 
 
 @needs_workflow
-def test_the_job_s_time_limit_is_an_input_the_expression_holds_inside_its_bounds() -> None:
-    # The caller file is pull-request content, so `timeout-minutes:` is a value a pull request
-    # can move. What it may move is a bounded limit: the input is a number, its default is the
-    # bound the job had when it had no input, and the job's `timeout-minutes` reads it only
-    # between the least and the most, the default standing in for anything else. Mutation
-    # (declared): the expression's upper bound becomes 600, so a pull request could buy ten
-    # runner-hours per run of this job.
+def test_the_job_s_time_limit_is_the_input_as_given() -> None:
+    # The caller file is pull-request content, so a bound on the input stops nobody and refuses a
+    # legitimate long caller; the platform's own job limit bounds whatever is passed.
     inputs = _workflow()["on"]
     assert isinstance(inputs, dict), inputs
     call = inputs["workflow_call"]
     assert isinstance(call, dict) and isinstance(call["inputs"], dict), call
     declared = call["inputs"]["timeout-minutes"]
     assert isinstance(declared, dict), declared
-    assert declared["type"] == "number", declared
-    assert declared["default"] == str(TIMEOUT_DEFAULT), declared
-    bound = _job(CHECK_WORKFLOW, GATES)["timeout-minutes"]
-    assert isinstance(bound, str), bound
-    match = _BOUND.fullmatch(bound)
-    assert match is not None, bound
-    assert tuple(int(n) for n in match.groups()) == (TIMEOUT_LEAST, TIMEOUT_MOST, TIMEOUT_DEFAULT)
-    assert TIMEOUT_LEAST <= TIMEOUT_DEFAULT <= TIMEOUT_MOST
-
-
-def _bound_step(value: str) -> tuple[int, str]:
-    """The bound step's script, out of the shipped file, with the value the runner would put in
-    its `env:` for a caller's `timeout-minutes:`."""
-    done = subprocess.run(
-        ["bash", "-e", "-c", step_script(CHECK_WORKFLOW, BOUND_STEP)],
-        capture_output=True,
-        text=True,
-        check=False,
-        env={"PATH": "/usr/bin:/bin", "TIMEOUT_MINUTES": value},
-    )
-    return done.returncode, done.stdout + done.stderr
-
-
-@needs_smoke_workflow
-def test_a_real_run_passes_the_time_limit_a_value_of_its_own() -> None:
-    # The cases here hold the expression's text and run the bound step's script; neither proves
-    # that the platform takes a value a caller passed, through the expression, as the job's bound.
-    # Every caller `init` writes passes none, so only the smoke's own call of this file can: it
-    # passes a value inside the bounds that is not the default. Mutation (declared): the smoke
-    # call passes the default, and no run takes a caller's value any more.
-    document = load(SMOKE_WORKFLOW.read_text(encoding="utf-8"))
-    assert isinstance(document, dict) and isinstance(document["jobs"], dict), document
-    job = document["jobs"]["same-repository-form"]
-    assert isinstance(job, dict) and job["uses"] == "./.github/workflows/check.yml", job
-    passed = job["with"]
-    assert isinstance(passed, dict) and isinstance(passed["timeout-minutes"], str), passed
-    value = int(passed["timeout-minutes"])
-    assert TIMEOUT_LEAST <= value <= TIMEOUT_MOST and value != TIMEOUT_DEFAULT, value
+    assert (declared["type"], declared["default"]) == ("number", "15"), declared
+    assert _job(CHECK_WORKFLOW, GATES)["timeout-minutes"] == "${{ inputs.timeout-minutes }}"
+    names = [_name(step) for step in _steps()]
+    assert names[0] == "The caller's repository", names
+    assert "The time limit is inside its bounds" not in names, names
 
 
 def _demanded_summary(step_name: str, output: str) -> str:
@@ -558,35 +487,6 @@ def test_the_smoke_job_demands_the_summary_the_exfiltration_scenario_prints_over
     exfil = scriptload.load(scriptload.SCRIPTS / "smoke_exfiltration.py", "smoke_exfiltration")
     expected = f"{exfil.EXPECTED_ROWS} row(s), 0 failure(s)"
     assert _demanded_summary("The clone-to-exfiltration scenario", "hostile.out") == expected
-
-
-@needs_bash
-@needs_workflow
-@pytest.mark.parametrize(
-    "value", [str(TIMEOUT_LEAST), str(TIMEOUT_DEFAULT), "30", str(TIMEOUT_MOST)]
-)
-def test_a_time_limit_inside_its_bounds_passes_the_bound_step(value: str) -> None:
-    code, printed = _bound_step(value)
-    assert code == 0, printed
-    assert "::error::" not in printed, printed
-
-
-@needs_bash
-@needs_workflow
-@pytest.mark.parametrize(
-    "value",
-    [str(TIMEOUT_LEAST - 1), str(TIMEOUT_MOST + 1), "0", "-5", "7.5", "", "1E+21", "05", "600"],
-)
-def test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs(value: str) -> None:
-    # The expression already keeps the job's bound inside the range whatever the caller passed,
-    # so a value outside it would otherwise run silently under the default: the caller asked for
-    # something it did not get. It fails instead, closed, as the first step, naming the range
-    # and not the value. A fraction, an exponent, a sign, a leading zero and nothing at all are
-    # each a spelling the runner could hand the step, and none is digits from 5 to 60.
-    # Mutations (declared): the pattern admits anything; the refusal stops exiting.
-    code, printed = _bound_step(value)
-    assert code == 1, printed
-    assert "::error::timeout-minutes: must be a whole number of minutes from 5 to 60" in printed
 
 
 @needs_workflow
