@@ -1555,8 +1555,8 @@ reddens = [
 [[mutation]]
 name = "the attached row reads a configuration that is not there"
 file = "src/stayfixed/attach/doctor.py"
-before = "    attached = configured(lambda context, config: _attached(context, config, ledger))"
-after = "    attached = lambda context: _attached(context, context.config, ledger)  # noqa: E731"
+before = "        if config is None:\n            return Row(SKIP, NO_CONFIG_SKIP)"
+after = "        if False:\n            return Row(SKIP, NO_CONFIG_SKIP)"
 reddens = [
   "tests/doctor/test_checks.py::test_a_repository_without_a_configuration_skips_only_the_rows_that_read_one",
 ]

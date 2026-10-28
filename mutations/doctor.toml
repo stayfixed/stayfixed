@@ -2605,3 +2605,15 @@ reddens = [
   "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[.claude/settings.json]",
   "tests/doctor/test_checks.py::test_a_marked_entry_is_red_only_in_a_file_stayfixed_writes_and_named_by_its_place[.codex/hooks.json]",
 ]
+
+# A checkout this machine binds with no stayfixed.toml is judged by `attached` and the note store on
+# the configuration `attach` acted on (`Context.attach_config`): with none, both rows said nothing of
+# a delivery and a composed store that were in place.
+[[mutation]]
+name = "doctor judges a bound checkout with no stayfixed.toml on no configuration"
+file = "src/stayfixed/doctor/model.py"
+before = "            if bound is None:\n                return None"
+after = "            if True:\n                return None"
+reddens = [
+  "tests/attach/test_project_choice.py::test_doctor_judges_a_checkout_attached_with_no_stayfixed_toml_on_what_attach_used",
+]

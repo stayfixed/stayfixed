@@ -18,11 +18,13 @@ import pytest
 from stayfixed import binding
 from stayfixed.attach.binding import BOUND_HERE, BY_REMOTE, FROM_REMOTE, NAMED
 from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.doctor.api import NO_CONFIG_SKIP, OK, SKIP, Check, run_checks
 from stayfixed.memory.api import PROJECT_RECORD, PROJECTS
 from stayfixed.overlay.api import COMMON_CLAUDE, COMMON_CODEX, COMMON_MEMORY
 from stayfixed.printed import quoted
 from tests.attach.test_binding import _machine, _project_and_store
 from tests.attach.test_write import SETTINGS
+from tests.doctor.test_checks import _env
 from tests.gitfixture import git
 from tests.runners import Recorder, claude_code
 from tests.snapshot import assert_snapshot_changed, assert_snapshot_unchanged, snapshot
@@ -281,3 +283,42 @@ def test_attach_then_detach_leaves_a_repository_with_no_stayfixed_toml_as_it_was
     assert invoke(["detach", *_flags(root, machine)]) == 0
     assert_snapshot_unchanged(root, before)
     assert git(root, "status", "--porcelain", "-uall").strip() == ""
+
+
+def _doctor(tmp_path: Path, root: Path, machine: Path) -> dict[str, Check]:
+    rows = run_checks(root, home=None, machine=machine, runner=Recorder(), env=_env(tmp_path))
+    return {row.name: row for row in rows}
+
+
+def test_doctor_judges_a_checkout_attached_with_no_stayfixed_toml_on_what_attach_used(
+    tmp_path: Path,
+) -> None:
+    # The rows about what `attach` delivered read the configuration `attach` acted on, for the
+    # project this machine's binding names: skipped for want of a file, they said nothing of a
+    # delivery and a composed store that are both in place. Mutation: `mutations/`'s "doctor
+    # judges a bound checkout with no stayfixed.toml on no configuration".
+    root, overlay, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
+    (overlay / PROJECTS / "widget").mkdir(parents=True)
+    (overlay / PROJECTS / "widget" / "stayfixed.toml").write_text(
+        '[memory]\nmode = "overlay"\n', encoding="utf-8"
+    )
+    assert invoke(["attach", *_flags(root, machine)]) == 0
+    rows = _doctor(tmp_path, root, machine)
+    assert (rows["attached"].status, rows["attached"].detail) == (
+        OK,
+        "attached; the delivery is in place; autoMemoryDirectory points the harness at the "
+        "composed store; the binding is bound",
+    )
+    assert rows["memory"].status == OK
+    assert "the store does not resolve" not in rows["memory"].detail
+    assert "store the composed store under the data directory" in rows["memory"].detail
+
+
+def test_doctor_reads_an_unbound_checkout_with_no_stayfixed_toml_as_it_did(tmp_path: Path) -> None:
+    # Nothing on this machine binds the checkout, so there is no project to build a configuration
+    # for: the rows skip and answer as they did before `attach` could bind such a checkout.
+    root, _, machine = _clone(tmp_path, origin="git@example.com:o/widget.git")
+    rows = _doctor(tmp_path, root, machine)
+    assert (rows["attached"].status, rows["attached"].detail) == (SKIP, NO_CONFIG_SKIP)
+    assert rows["memory"].status == OK
+    assert "no store: memory is the harness's own" in rows["memory"].detail

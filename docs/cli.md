@@ -3172,7 +3172,10 @@ second state arm of its own — a plugin built before the release record existed
 it says so rather than comparing anything.
 And four rows read the project configuration and skip, in one sentence, when there is none to
 read — no `stayfixed.toml`, or one a session drops whole: `budgets`, `ci-ref`, `attached` and
-`bundles`. `memory` reads the resolution a session reads and answers without one.
+`bundles`. `memory` reads the resolution a session reads and answers without one. A checkout with
+no `stayfixed.toml` that this machine binds is the one exception for `attached` and for the note
+store `memory` reads: both are judged on the configuration `attach` acted on there, the
+preset's under the overlay's layers for the project the binding record names.
 
 **A `skip` does not mean there is nothing to do.** Seven of the twenty-two arms carry a remedy:
 the two plugin-root skips, `wrapper`'s named-root skip, `attached`'s no-overlay and

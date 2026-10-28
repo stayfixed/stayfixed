@@ -631,10 +631,17 @@ def _binding_answer(context: Context, config: Config, ledger: _Ledger, main: Pat
 
 def register() -> Contribution:
     """The `attached` row, with one `_Ledger` per report."""
-    from stayfixed.doctor.api import Contribution, configured
+    from stayfixed.doctor.api import NO_CONFIG_SKIP, SKIP, Contribution, Row
 
     ledger = _Ledger()
-    # `configured`: which store, which tree and whether the overlay is consulted at all are the
-    # project's file's to say, so with none the row skips.
-    attached = configured(lambda context, config: _attached(context, config, ledger))
+
+    # Which store, which tree and whether the overlay is consulted at all are the configuration
+    # `attach` acted on (`Context.attach_config`): the project's file, or, for a checkout this
+    # machine binds with no file, what `attach` built for it. With neither the row skips.
+    def attached(context: Context) -> Row:
+        config = context.attach_config
+        if config is None:
+            return Row(SKIP, NO_CONFIG_SKIP)
+        return _attached(context, config, ledger)
+
     return Contribution(checks=(("attached", attached),))

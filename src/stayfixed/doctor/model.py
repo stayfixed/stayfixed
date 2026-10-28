@@ -18,11 +18,12 @@ from functools import cached_property
 from pathlib import Path
 from typing import Final, Literal
 
+from stayfixed.binding import bound_project
 from stayfixed.config.overlay import overlay_root as recorded_overlay_root
 from stayfixed.config.reading import MachineConfigError
 from stayfixed.config.schema import Config
-from stayfixed.config.session import SessionConfig
-from stayfixed.errors import Failure, Refusal
+from stayfixed.config.session import SessionConfig, command_config
+from stayfixed.errors import Failure, Refusal, resolved_or_none
 from stayfixed.runner import Runner
 
 OK: Final = "ok"
@@ -150,6 +151,30 @@ class Context:
             return MachineUnread(str(exc))
         except (Failure, Refusal, OSError):
             return None
+
+    @cached_property
+    def attach_config(self) -> Config | None:
+        """`config`, or, in a checkout with no `stayfixed.toml` that this machine binds, the
+        configuration `attach` acts on there (`config.session.command_config`, for the project the
+        binding record names): the rows about what `attach` delivered — `attached` and the note
+        store — judge such a checkout on what `attach` used. Every other row reads `config`. An
+        unbound checkout with no file, and one whose file does not load, have none, as before; a
+        resolution that fails is none too (`errors.resolved_or_none`), resolved once a report."""
+        if self.config is not None:
+            return self.config
+
+        def built() -> Config | None:
+            bound = bound_project(self.root)
+            if bound is None:
+                return None
+            return command_config(
+                self.root,
+                machine=self.machine,
+                owner=self.session.owner,
+                unnamed=lambda: bound.project,
+            )
+
+        return resolved_or_none(built)
 
 
 @dataclass(frozen=True)
