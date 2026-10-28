@@ -101,7 +101,7 @@ Event bundles stay in the overlay and never reach the core. The articles are the
 - **Issues.** Seven are open: #31 (retitled to the adoption-stage decision), #32, #33, #34, #37, #43
   and #47.
 
-**Drift since, at `dev` = `7f24fb59` (wave 9 closed, #141).** `0.6.1` is released (`54b5d5c8`,
+**Drift since, at `dev` = `7f24fb5` (wave 9 closed, #141).** `0.6.1` is released (`54b5d5c`,
 tag `v0.6.1`): it carries `attach`'s fix (#137) and not RD1, and the README says "Released as
 0.6.1". `hooks/hashes.json` changed again (#135, the `run-hook.sh` digest), and `docs/cli.md`,
 `mutations/doctor.toml`, `mutations/repository.toml`, `mutations/attach.toml`,
@@ -448,7 +448,7 @@ API.
   - an issue resolved by a statement rather than code (possible for #32 and #43) names the pull
     request or Findings section that holds the statement;
   - for an issue a lane returned to the owner (IS3's #37 item), the owner's recorded ruling instead.
-- [ ] **Step 6:** record in Findings the counts before (at `7f24fb59`, `dev` as wave 9 closed) and after (at
+- [ ] **Step 6:** record in Findings the counts before (at `7f24fb5`, `dev` as wave 9 closed) and after (at
   `0.7.0`):
   - hook entries by event;
   - `doctor` rows;
