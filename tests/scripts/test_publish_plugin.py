@@ -2,7 +2,7 @@
 pushed to the plugin's own repository, and nothing else.
 
 Every case starts from `tests/plugintree.py`'s `tool_source`: one commit holding a file under each
-of the plugin's nine paths, this branch's `scripts/plugin_tree.py` and `src/stayfixed`, and a
+of the plugin's ten paths, this branch's `scripts/plugin_tree.py` and `src/stayfixed`, and a
 marketplace pinning the plugin commit its tree makes, tagged `v1.2.3` (annotated). The default one
 is built once per session and cloned per case; a case that changes the tag's own code patches its
 clone, or builds its own when the pin has to change with it. A bare repository in `tmp_path` stands
@@ -39,9 +39,9 @@ from stayfixed.runner import Completed, subprocess_runner
 from tests.gitfixture import git, git_bytes, needs_git, run_git
 from tests.plugintree import (
     MARKETPLACE,
-    NINE,
     PLUGIN_FILES,
     REPOSITORY,
+    TEN,
     commit,
     hashed,
     literal,
@@ -264,7 +264,7 @@ def patched(old: bytes, new: bytes) -> bytes:
     return SCRIPT.replace(old, new)
 
 
-def manifest_of(root: Path, tag: str = TAG, paths: tuple[str, ...] = NINE) -> str:
+def manifest_of(root: Path, tag: str = TAG, paths: tuple[str, ...] = TEN) -> str:
     """The manifest of `paths` at `tag`, computed by the test from git's own listing and blobs:
     the format line, then `<mode> <sha256> <path>` per file, by path."""
     rows = []
@@ -742,16 +742,16 @@ def test_a_tool_file_that_is_not_regular_is_refused(source: Path, tmp_path: Path
 
 def test_the_tag_s_own_plugin_tree_builds_the_commit(tmp_path: Path) -> None:
     # Mutation (declared): `mutations/`'s "the publisher runs the checkout's plugin_tree.py" ->
-    # the checkout's copy reads nine paths, so its commit is not the pin and the run is rejected
+    # the checkout's copy reads ten paths, so its commit is not the pin and the run is rejected
     # when the commit is built, before any manifest is compared.
-    ten = (*NINE, "commands")
+    eleven = (*TEN, "commands")
     script = patched(b'    "LICENSE",\n)', b'    "LICENSE",\n    "commands",\n)')
     extra = {"commands/a.md": (b"# a command\n", "100644")}
-    source = tool_source(tmp_path, plugin_tree=script, extra=extra, paths=ten)
+    source = tool_source(tmp_path, plugin_tree=script, extra=extra, paths=eleven)
     scratch = tmp_path / "scratch"
     done, _ = publish(source, bare_remote(tmp_path), scratch, yes=False)
     assert (done.outcome, done.commit) == ("would-push", pinned_at(source, TAG))
-    expected = manifest_of(source, TAG, ten)
+    expected = manifest_of(source, TAG, eleven)
     assert (scratch / "plugin-tree.txt").read_text(encoding="utf-8") == expected
     line = "100644 dcf4a2ae11e48a937801393a5a5521068b50366476f099740f5576f081a659a2 commands/a.md\n"
     assert line in expected
@@ -995,7 +995,7 @@ def test_a_manifest_changed_after_the_commit_is_rejected_by_the_read_back(
 
     remote = bare_remote(tmp_path)
     runner = runner_for(source, after=edit)
-    with pytest.raises(Rejected, match=r"\.claude-plugin/plugin\.json") as rejected:
+    with pytest.raises(Rejected, match=r"\.claude-plugin/icon\.png") as rejected:
         publish(source, remote, tmp_path / "scratch", runner=runner)
     assert "nothing was pushed" in str(rejected.value)
     assert refs(remote) == {}
