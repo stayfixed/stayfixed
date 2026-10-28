@@ -190,8 +190,8 @@ Exits `2` if `trust.json` exists and is not a record this stayfixed reads — no
 later version, no `version`, a `version` that is neither `1` nor later (`0`, `"1"`, `true`), or a
 version-1 record that is not whole: a key besides `version` and `approvals`, an approval that is not
 an object of four text fields, or one approval named twice. Nothing will overwrite a file it
-could not read: one that does not parse may hold every project's approval, so repair or delete it,
-and delete any other to start a new record; for a record of a later version, which a later
+could not read: one that does not parse may hold every project's approval, so repair or delete it;
+repair any other that holds approvals you want to keep, or delete it to start a new record; for a record of a later version, which a later
 stayfixed wrote and is met after a downgrade, update stayfixed instead, since deleting it would
 destroy that release's approvals.
 

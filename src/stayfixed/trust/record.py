@@ -48,8 +48,8 @@ LATER_VERSION = (
     f"wrote; {_HOLDS} — update stayfixed to read it"
 )
 NOT_A_RECORD = (
-    "{path} is not a version-1 trust record, and nothing here will overwrite it; delete it to "
-    "start a new record"
+    "{path} is not a version-1 trust record, and nothing here will overwrite it; repair it if it "
+    "holds approvals you want to keep, or delete it to start a new record"
 )
 # A write to the record that was refused the way an agent's sandbox refuses one (`boundary`'s
 # docstring): run from an agent's shell, nothing it asks of the record can be written.

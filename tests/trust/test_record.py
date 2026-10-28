@@ -49,8 +49,8 @@ def test_a_flat_map_with_no_version_is_refused_and_kept(tmp_path: Path) -> None:
     with pytest.raises(UnreadableTrust) as caught:
         recorded(machine(tmp_path))
     assert str(caught.value) == (
-        f"{path} is not a version-1 trust record, and nothing here will overwrite it; delete it to "
-        "start a new record"
+        f"{path} is not a version-1 trust record, and nothing here will overwrite it; repair it "
+        "if it holds approvals you want to keep, or delete it to start a new record"
     )
     with pytest.raises(UnreadableTrust):
         approve_all(machine(tmp_path), "reviewed", {"/n": "e"}, now=T0)
