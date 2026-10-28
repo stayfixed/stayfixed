@@ -169,11 +169,8 @@ promote`](#stayfixed-memory-promote-note----changed), of kind `reviewed`, one pe
 
 **The record** is the machine's one record of approvals, of every kind. It is versioned: a JSON
 object holding `version` (`1`) and `approvals`, each with its `kind`, `subject`, `digest` and
-`approved_at`. The flat map `0.3.x` wrote, a store's path to its digest, approved whole stores,
-which nothing asks about any more, so it is read as holding no approval and the first write
-replaces it; a `0.3.x` reading a version-1 record finds no approval in it. Every write replaces the whole file in one atomic step, and no lock
-is taken: two commands writing at once each replace it whole, the last one wins, and neither leaves
-it torn.
+`approved_at`. Every write replaces the whole file in one atomic step, and no lock is taken: two
+commands writing at once each replace it whole, the last one wins, and neither leaves it torn.
 
 **What an approval holds against.** Repository bytes: stayfixed never writes `trust.json` from
 what a repository holds, and a clone, a pull or a pull request does not reach it, since it lies
@@ -189,11 +186,10 @@ Code loads the first as instructions and can load the second, through an import 
 instructions setting (read in the documentation, not measured). [SECURITY.md](../SECURITY.md)
 lists an agent with an unsandboxed shell as out of scope.
 
-Exits `2` if `trust.json` exists and is neither a record this stayfixed reads nor `0.3.0`'s flat
-map — not JSON, not UTF-8, a later version, a `version` that is neither `1` nor later (`0`, `"1"`,
-`true`), an `approvals` with no `version`, or a version-1 record that is not whole: a key besides
-`version` and `approvals`, an approval that is not an object of four text fields, or one approval
-named twice. It holds every project's approval on the machine, so nothing will overwrite a file
+Exits `2` if `trust.json` exists and is not a record this stayfixed reads — not JSON, not UTF-8, a
+later version, no `version`, a `version` that is neither `1` nor later (`0`, `"1"`, `true`), or a
+version-1 record that is not whole: a key besides `version` and `approvals`, an approval that is not
+an object of four text fields, or one approval named twice. It holds every project's approval on the machine, so nothing will overwrite a file
 it could not read — repair or delete it; for a record of a later version, which a later stayfixed
 wrote and is met after a downgrade, update stayfixed instead, since deleting it would destroy that
 release's approvals.

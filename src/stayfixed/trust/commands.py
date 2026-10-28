@@ -28,7 +28,7 @@ def _machine(args: argparse.Namespace) -> Path | None:
 def run_list(args: argparse.Namespace) -> Result:
     approvals = record.recorded(_machine(args))
     lines = [
-        f"{kind} {_shown(subject)}: approved {approval.approved_at or 'before 0.4.0'}"
+        f"{kind} {_shown(subject)}: approved {approval.approved_at or 'at no recorded time'}"
         for (kind, subject), approval in sorted(approvals.items())
     ]
     rows = [

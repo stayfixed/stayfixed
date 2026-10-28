@@ -1,6 +1,5 @@
 """The machine's one trust record (`src/stayfixed/trust/record.py`): a versioned document of kinds
-and subjects beside the machine file, which reads the flat map `0.3.x` wrote as holding no approval
-and which `0.3.x` reads the same way."""
+and subjects beside the machine file."""
 
 from __future__ import annotations
 
@@ -37,44 +36,22 @@ T0 = datetime(2026, 10, 16, 9, 30, tzinfo=UTC)
 APPROVAL = {"kind": "memory", "subject": "/s", "digest": "d", "approved_at": ""}
 
 
-def legacy_reader(path: Path) -> dict[str, str]:
-    """`0.3.0`'s reader of the record, copied as a literal: its filter keeps the entries whose
-    value is a string, which is every approval it can interpret."""
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    return {k: v for k, v in raw.items() if isinstance(v, str)}
-
-
 def machine(tmp_path: Path) -> Path:
     return tmp_path / "config.toml"
 
 
-def test_a_0_3_record_holds_no_approval_and_the_first_write_replaces_it(tmp_path: Path) -> None:
-    # Every entry of `0.3.x`'s flat map approved a whole store, which nothing asks about since,
-    # so an upgrade reads none of them and is never refused over the file it left; the first write
-    # is a version-1 record of what this release approved.
-    (tmp_path / RECORD).write_text(json.dumps({"/s": "d", "/t": "e"}), encoding="utf-8")
-    assert recorded(machine(tmp_path)) == {}
-    approve_all(machine(tmp_path), "reviewed", {"/n": "e"}, now=T0)
-    written = json.loads((tmp_path / RECORD).read_text(encoding="utf-8"))
-    assert written == {
-        "version": VERSION,
-        "approvals": [
-            {
-                "kind": "reviewed",
-                "subject": "/n",
-                "digest": "e",
-                "approved_at": "2026-10-16T09:30:00+00:00",
-            }
-        ],
-    }
-
-
-def test_0_3_0s_reader_sees_no_approval_in_a_version_1_record(tmp_path: Path) -> None:
-    # Downgrading: a `0.3.0` reading the record this release wrote reads no approval and asks again,
-    # never a stale one. No mutation of the source reaches it — it is a property of the record's
-    # shape against a reader frozen in `0.3.0` — so the shape is held exactly in the test above.
-    approve_all(machine(tmp_path), "memory", {"/s": "d"}, now=T0)
-    assert legacy_reader(tmp_path / RECORD) == {}
+def test_a_flat_map_with_no_version_is_refused_and_kept(tmp_path: Path) -> None:
+    # A flat map of paths to digests is no version-1 record, so it refuses as any other non-record
+    # does; read as empty, the next write would replace it.
+    path = tmp_path / RECORD
+    document = json.dumps({"/s": "d", "/t": "e"})
+    path.write_text(document, encoding="utf-8")
+    with pytest.raises(UnreadableTrust) as caught:
+        recorded(machine(tmp_path))
+    assert str(caught.value) == NOT_A_RECORD.format(path=path)
+    with pytest.raises(UnreadableTrust):
+        approve_all(machine(tmp_path), "reviewed", {"/n": "e"}, now=T0)
+    assert path.read_text(encoding="utf-8") == document
 
 
 @pytest.mark.parametrize(
@@ -123,13 +100,11 @@ def test_an_unreadable_record_refuses_and_is_never_overwritten(
 ) -> None:
     # Each arm of the version-1 reader has a case of its own: every other version-1 record in the
     # suite is one `approve_all` wrote, and it can write none of these. Only a version above this
-    # one sends its reader to a later stayfixed, and an object holding `approvals` is never
-    # `0.3.0`'s flat map. Mutations (`mutations/`'s "a trust record of a later version is read as
-    # empty" -> version 2 reads as no approval and the write replaces it; "a trust record of any
-    # other version is sent to a later stayfixed" -> `bool`, `version-0`, `negative` and `text` say
-    # `LATER_VERSION`; "a trust record with approvals and no version reads as 0.3.0's flat map" ->
-    # `no-version` reads as no approval and the next write erases it; "an approval over an
-    # unreadable trust record writes the record anyway" -> the write replaces every case; "a trust
+    # one sends its reader to a later stayfixed. Mutations (`mutations/`'s "a trust record of a
+    # later version is read as empty" -> version 2 reads as no approval and the write replaces it;
+    # "a trust record of any other version is sent to a later stayfixed" -> `bool`, `version-0`,
+    # `negative` and `text` say `LATER_VERSION`; "an approval over an unreadable trust record
+    # writes the record anyway" -> the write replaces every case; "a trust
     # record's approvals that are not a list read as none" -> `approvals-not-a-list` reads as no
     # approval; "a trust record with a stray key is read" -> `stray-key` reads; "a trust record's
     # digest that is not a string is read" -> `digest-not-a-string` reads as a lapsed approval; "a

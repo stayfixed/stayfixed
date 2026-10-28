@@ -4044,15 +4044,6 @@ reddens = [
   "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[text]",
 ]
 
-[[mutation]]
-name = "a trust record with approvals and no version reads as 0.3.0's flat map"
-file = "src/stayfixed/trust/record.py"
-before = '    if "version" not in raw and "approvals" not in raw:'
-after = '    if "version" not in raw:'
-reddens = [
-  "tests/trust/test_record.py::test_an_unreadable_record_refuses_and_is_never_overwritten[no-version]",
-]
-
 # A version-1 record is held whole: anything but exactly its two keys, a list of approvals, and
 # each approval an object of four strings named once refuses, never reads as part of a record.
 [[mutation]]

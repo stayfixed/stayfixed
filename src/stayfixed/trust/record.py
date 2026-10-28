@@ -7,15 +7,9 @@ names its kind, its subject, the digest approved and when it was recorded:
                     "kind": "memory", "subject": "/home/me/project/.stayfixed/memory"}],
      "version": 1}
 
-`0.3.x` kept a flat object instead, a store's resolved path to its digest. Every entry of one
-approved a whole store, which no release after it asks about, so such a file is read as holding no
-approval, and the first write replaces it with a version-1 record. `0.3.x`'s own reader keeps only
-the entries whose value is a string, and a version-1 record has none, so a `0.3.x` that meets one
-reads no approval and asks again, never an approval it would misread.
-
 **Absent and unreadable are not the same answer.** An absent file is the ordinary state of a fresh
-machine and holds no approval. A file that is there and is neither a version-1 record nor `0.3.0`'s
-flat map — not JSON, not UTF-8, a later version, an approval missing a field — refuses with
+machine and holds no approval. A file that is there and is not a version-1 record — not JSON, not
+UTF-8, a later version, no version, an approval missing a field — refuses with
 `UnreadableTrust`, and nothing here overwrites it: it holds every project's approval on the
 machine, and reading it as empty would let the next write persist the loss.
 
@@ -53,7 +47,7 @@ LATER_VERSION = (
     "{path} is a trust record of a version this stayfixed does not read, which a later stayfixed "
     f"wrote; {_HOLDS} — update stayfixed to read it"
 )
-NOT_A_RECORD = "{path} is neither a trust record nor the flat map 0.3.0 wrote; " + _KEPT
+NOT_A_RECORD = "{path} is not a version-1 trust record; " + _KEPT
 # A write to the record that was refused the way an agent's sandbox refuses one (`boundary`'s
 # docstring): run from an agent's shell, nothing it asks of the record can be written.
 SANDBOXED = SANDBOX_REFUSED.format(
@@ -66,7 +60,7 @@ SANDBOXED = SANDBOX_REFUSED.format(
 @dataclass(frozen=True)
 class Approval:
     """One approval: what was approved (`kind`, `subject`), the digest it held, and when it was
-    recorded, in ISO 8601 (empty for one `0.3.0` recorded, which kept no time)."""
+    recorded, in ISO 8601."""
 
     kind: str
     subject: str
@@ -80,7 +74,7 @@ class SandboxedWrite(Refusal):
 
 
 class UnreadableTrust(Refusal):
-    """`trust.json` exists and is neither a version-1 record nor `0.3.0`'s flat map.
+    """`trust.json` exists and is not a version-1 record.
 
     A refusal and not a `Failure`: a reader answers a record it cannot read as holding no
     approval, and a broken file must never be answered that way twice — once by reporting the
@@ -123,12 +117,6 @@ def recorded(machine: Path | None) -> dict[tuple[str, str], Approval]:
     # past the parser or holding an integer longer than it converts is valid JSON that
     # `json.loads` meets with no `JSONDecodeError`. Each sentence is this record's refusal.
     raw = json_object(text, str(path), error=lambda reason: UnreadableTrust(f"{reason}; {_KEPT}"))
-    if "version" not in raw and "approvals" not in raw:
-        # `0.3.x`'s flat map, whose store approvals nothing reads any more. A store's key is a
-        # resolved absolute path, so no store is named `version` or `approvals`, and an object
-        # holding either is a record, read whole or refused: read as a flat map,
-        # `{"approvals": [...]}` was no approval, and the next write erased it.
-        return {}
     return _approvals(raw, path)
 
 
