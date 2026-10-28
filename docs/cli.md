@@ -2631,7 +2631,9 @@ read again once they ran: while a name under either key names a `stayfixed-deliv
 whatever the calls exited with and whether or not the binding id can be read, `detach` fails (`1`)
 naming the key and never the id; the exclude block, the ledger and
 the render directory are kept, so the file stays hidden, and running `detach` again finishes the
-withdrawal. In a linked worktree of a bare repository git names no main checkout, `attach` installed
+withdrawal. The calls leave `enabledPlugins` and `extraKnownMarketplaces` behind, emptied; a file
+holding those and nothing else is removed, and one holding anything more stays as it is. In a
+linked worktree of a bare repository git names no main checkout, `attach` installed
 nothing there, and `detach` withdraws that checkout's own parts with no `claude plugin` call. A
 render directory that cannot be removed fails (`1`) the same way, with the ledger kept. An allow
 rule Claude Code added to `.claude/settings.local.json` — the one a "don't ask again" answer writes

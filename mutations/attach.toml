@@ -1621,6 +1621,26 @@ reddens = [
   "tests/attach/test_detach.py::test_a_detach_that_cannot_read_the_id_keeps_a_settings_file_naming_a_delivery_hidden",
 ]
 
+# Claude Code's calls leave the two plugin keys behind, emptied; a settings file holding only those
+# goes, or it is the trace `git status` shows once the exclude block does. One holding more stays.
+[[mutation]]
+name = "detach keeps the settings file Claude Code's calls emptied"
+file = "src/stayfixed/attach/write.py"
+before = "        fsops.remove_within(main, LOCAL_SETTINGS)"
+after = "        pass"
+reddens = [
+  "tests/attach/test_detach.py::test_a_round_trip_through_claude_codes_calls_leaves_the_checkout_as_it_was",
+]
+
+[[mutation]]
+name = "detach removes a settings file whatever it holds"
+file = "src/stayfixed/attach/write.py"
+before = "        key in (ENABLED_PLUGINS, KNOWN_MARKETPLACES) and value == {}"
+after = "        True"
+reddens = [
+  "tests/attach/test_detach.py::test_a_settings_file_holding_anything_besides_the_emptied_maps_stays",
+]
+
 # The attach screen names this checkout's origin; a token in its userinfo is taken out first.
 [[mutation]]
 name = "the attach screen names an origin's credentials"
