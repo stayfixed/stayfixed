@@ -653,7 +653,17 @@ def test_git_log_all_on_a_repository_with_no_commit_answers_zero(tmp_path: Path)
     assert (done.returncode, done.stdout) == (0, "")
 
 
-@pytest.mark.parametrize("shape", ["byte-order-mark", "scalar-event"])
+# A scalar where the `hooks` section expects an event's list, a group, a group's `hooks` list or
+# an entry: nothing in it is a command anything could run.
+SCALARS = {
+    "scalar-event": '"notalist"',
+    "group-not-an-object": "[5]",
+    "group-hooks-not-a-list": '[{"hooks": "x"}]',
+    "entry-not-an-object": '[{"hooks": ["str"]}]',
+}
+
+
+@pytest.mark.parametrize("shape", ["byte-order-mark", *SCALARS])
 def test_a_foreign_entry_in_a_file_claude_code_runs_is_named(tmp_path: Path, shape: str) -> None:
     # Claude Code 2.1.288 was measured running the hooks of a file with a leading byte-order mark
     # or a misplaced scalar (macOS, 2026-10-05), so the probe names the foreign entry in each rather
@@ -663,7 +673,11 @@ def test_a_foreign_entry_in_a_file_claude_code_runs_is_named(tmp_path: Path, sha
     root = _repo(tmp_path, 'agents = ["claude"]')
     plain = _settings("echo foreign")
     bom = chr(0xFEFF)
-    text = plain[:-2] + ', "Stop": "notalist"}}' if shape == "scalar-event" else bom + plain
+    text = (
+        bom + plain
+        if shape == "byte-order-mark"
+        else plain[:-2] + f', "Stop": {SCALARS[shape]}}}}}'
+    )
     _write(root, ".claude/settings.json", text)
     assert _shapes(_items(root, tmp_path, "foreign-hooks")) == [
         ("foreign-hooks", (".claude/settings.json",))
@@ -674,6 +688,9 @@ def test_a_foreign_entry_in_a_file_claude_code_runs_is_named(tmp_path: Path, sha
     "stop",
     [
         pytest.param('{"x": []}', id="event-an-object"),
+        pytest.param('[[{"hooks": []}]]', id="group-a-list"),
+        pytest.param('[{"hooks": {"x": {}}}]', id="hooks-an-object"),
+        pytest.param('[{"hooks": [[]]}]', id="entry-a-list"),
         pytest.param(
             '[{"type": "command", "command": "echo hidden"}]', id="entry-where-a-group-goes"
         ),
@@ -682,11 +699,12 @@ def test_a_foreign_entry_in_a_file_claude_code_runs_is_named(tmp_path: Path, sha
 def test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found(
     tmp_path: Path, stop: str
 ) -> None:
-    # An object where an event's list goes, and an entry where a group goes, were not measured and
-    # could hold a command, so the walk skips each and says so: the probe names the foreign entry
-    # it did read and says it could not look at the rest. Mutations (declared): the probe drops the
-    # walk's word that it skipped a part, the walk skips a container without saying so, or it
-    # reads an entry where a group goes as no entry -> only the foreign entry is named.
+    # A container where an event's list, a group, a group's `hooks` list or an entry goes, and an
+    # entry where a group goes, were not measured and could hold a command, so the walk skips each
+    # and says so: the probe names the foreign entry it did read and says it could not look at the
+    # rest. Mutations (declared): the probe drops the walk's word that it skipped a part, the walk
+    # skips a container at any level without saying so, or it reads an entry where a group goes
+    # as no entry -> only the foreign entry is named.
     root = _repo(tmp_path, 'agents = ["claude"]')
     plain = _settings("echo foreign")
     _write(root, ".claude/settings.json", plain[:-2] + ', "Stop": ' + stop + "}}")

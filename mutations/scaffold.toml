@@ -529,6 +529,9 @@ after = """
 """
 reddens = [
   "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[scalar-event]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[group-not-an-object]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[group-hooks-not-a-list]",
+  "tests/assess/test_probes.py::test_a_foreign_entry_in_a_file_claude_code_runs_is_named[entry-not-an-object]",
 ]
 
 # A container in one of those places was not measured, and may hold a command a harness runs: the
@@ -546,6 +549,38 @@ after = """
 """
 reddens = [
   "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[event-an-object]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[group-a-list]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[hooks-an-object]",
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[entry-a-list]",
+]
+
+# Each level asks `_admitted`, which keeps what it skips: a level that asked `isinstance` alone
+# would skip a container there and say nothing of it.
+[[mutation]]
+name = "the live-entry walk skips a container where a group goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "            if not _admitted(group, dict, skipped):"
+after = "            if not isinstance(group, dict):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[group-a-list]",
+]
+
+[[mutation]]
+name = "the live-entry walk skips a container where a group's hooks list goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "            if not _admitted(entries, list, skipped):"
+after = "            if not isinstance(entries, list):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[hooks-an-object]",
+]
+
+[[mutation]]
+name = "the live-entry walk skips a container where an entry goes without saying so"
+file = "src/stayfixed/scaffold/entries.py"
+before = "                if _admitted(entry, dict, skipped):"
+after = "                if isinstance(entry, dict):"
+reddens = [
+  "tests/assess/test_probes.py::test_a_part_of_a_settings_file_the_walk_skipped_is_could_not_look_beside_what_it_found[entry-a-list]",
 ]
 
 # Not measured, and read conservatively: an object where a group goes that carries an entry's
