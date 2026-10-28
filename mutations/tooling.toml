@@ -1693,45 +1693,6 @@ reddens = [
   "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[custom]",
 ]
 
-# The reusable workflow's time limit is the caller's to move, and the caller is pull-request
-# content: the expression reads the caller's value only inside 5 to 60, so the input cannot give
-# one run of this job more than an hour.
-[[mutation]]
-name = "the reusable workflow's time limit reaches ten hours"
-file = ".github/workflows/check.yml"
-before = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 60 && inputs.timeout-minutes || 15 }}"
-after = "    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 600 && inputs.timeout-minutes || 15 }}"
-reddens = [
-  "tests/test_check_workflow.py::test_the_job_s_time_limit_is_an_input_the_expression_holds_inside_its_bounds",
-]
-
-# A value outside the range would otherwise run silently under the default the expression stands
-# in for it: the caller asked for a bound it did not get. The first step refuses it.
-[[mutation]]
-name = "the time limit's bound step admits any value"
-file = ".github/workflows/check.yml"
-before = "            [5-9]|[1-5][0-9]|60) ;;"
-after = "            *) ;;"
-reddens = [
-  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[4]",
-  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
-  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[7.5]",
-]
-
-[[mutation]]
-name = "the time limit's refusal stops failing the job"
-file = ".github/workflows/check.yml"
-before = """
-              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
-              exit 1
-"""
-after = """
-              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
-"""
-reddens = [
-  "tests/test_check_workflow.py::test_a_time_limit_outside_its_bounds_fails_the_job_before_anything_runs[61]",
-]
-
 # RELEASING.md's last step dispatches the release smoke at every release, and a job naming a tag
 # that does not exist fails the whole dispatch before any job runs: during `0.x` that is `v1`.
 [[mutation]]

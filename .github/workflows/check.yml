@@ -55,7 +55,7 @@ on:
         type: string
         default: ""
       timeout-minutes:
-        description: "the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, and a job that runs out of time is cancelled, which is not a pass"
+        description: "the job's time limit in minutes, handed to the runner as given"
         type: number
         default: 15
 
@@ -65,40 +65,11 @@ permissions:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    # **Through this input the bound is the caller's to move, inside a fixed range.** The caller
-    # file is pull-request content, so `timeout-minutes:` is a value a pull request can set. The
-    # expression reads it only from 5 to 60 and stands 15, the default, in for anything else, so
-    # the platform is never handed a bound outside the range, and the first step below fails the
-    # job when the value was outside it, rather than run it under a bound the caller did not ask
-    # for. 5 is the least a healthy run needs: two full-depth checkouts, an interpreter and two
-    # gate runs on a cold runner. 60 is the most this input lets one run of this job spend. It
-    # bounds this job and nothing else in the caller file: a matrix around the call runs one
-    # such job per leg, and a `uses:` pointed elsewhere runs no job of this file at all, which
-    # is a change to `.github/` for code-owner review at merge (docs/cli.md, "The time limit is
-    # bounded"). A job that runs out is cancelled, and a cancelled check has not passed.
-    timeout-minutes: ${{ inputs.timeout-minutes >= 5 && inputs.timeout-minutes <= 60 && inputs.timeout-minutes || 15 }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
         shell: bash
     steps:
-      - name: The time limit is inside its bounds
-        # First, before anything is fetched, so a caller learns the range rather than meeting a
-        # bound it did not ask for; the value is never echoed. The pattern admits the whole
-        # numbers 5 to 60 spelled in digits and nothing else, as the runner renders the value: a
-        # sign, an exponent, an empty value and a fraction rendered with its point are refused. A
-        # fraction inside the range is the job's bound by then, and fails here; one the runner
-        # renders as a whole number (fifteen significant digits: 5.000000000000001 is 5) passes,
-        # and its bound is inside the range either way.
-        env:
-          TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
-        run: |
-          case "$TIMEOUT_MINUTES" in
-            [5-9]|[1-5][0-9]|60) ;;
-            *)
-              echo "::error::timeout-minutes: must be a whole number of minutes from 5 to 60"
-              exit 1
-              ;;
-          esac
       - name: The caller's repository
         # `fetch-depth: 0` is not a convenience: the base ref, the merge bases `plan check` and
         # `bugs check` read and the commit range `commit check` reads all come out of this

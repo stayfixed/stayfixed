@@ -3362,7 +3362,7 @@ as the check is required on the gate branch only.
 | `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
 | `python-version` | `"3.13"` | the interpreter stayfixed runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
-| `timeout-minutes` | `15` | the job's time limit, a whole number of minutes from 5 to 60; any value the runner does not render as a whole number from 5 to 60 fails the job in its first step, before anything is checked out |
+| `timeout-minutes` | `15` | the job's time limit in minutes, handed to the runner as given |
 
 The caller's job needs `contents: read`. That is the default, so the lines above are enough —
 but a caller that sets `permissions:` at workflow level replaces the default rather than adding
@@ -3385,7 +3385,7 @@ and, on a pull request that moves `[ci] ref`, one listing of stayfixed's public 
 It is one job because a job is billed by the whole minute: a push costs one runner-minute, not
 one per gate. Its check, in the caller `init` writes, is `check / gates`.
 
-**The time limit is bounded, and running out still fails.** The job is cancelled after
+**The time limit is the caller's, and running out still fails.** The job is cancelled after
 `timeout-minutes`, 15 unless the caller passes another. The caller `init` writes passes none; a
 project whose own gates need longer adds one line under its `with:`:
 
@@ -3395,16 +3395,11 @@ project whose own gates need longer adds one line under its `with:`:
       timeout-minutes: 30
 ```
 
-The range is fixed at 5 to 60, in this file and not in yours. 5 is the least a healthy run needs —
-two full-depth checkouts, an interpreter and two gate runs on a runner that has cached nothing —
-and 60 is the most this input lets one run of the job spend of your runner time. The caller file is
-pull-request content, so that line is one a pull request can edit, and this is what it can move
-through the input: this job's limit, anywhere from 5 to 60, in every run the pull request starts —
-one per push, and one per edit of its title, description or base. Through the input it cannot
-remove the limit, raise it past 60, or turn running out into a pass: a job that runs out of time is
-cancelled, and a required check that was cancelled has not passed. Any value the runner does not
-render as a whole number from 5 to 60 fails the job in its first step rather than being quietly
-replaced, and whatever was passed, the limit the job runs under stays inside the range.
+The value is handed to the runner as given, and the platform's own job limit bounds it (360 minutes
+on a hosted runner). The caller file is pull-request content, so that line is one a pull request
+can edit, and a bound here would stop nobody while refusing a legitimate long caller. What a pull
+request cannot do through the input is turn running out into a pass: a job that runs out of time is
+cancelled, and a required check that was cancelled has not passed.
 
 **What the input does not bound.** The rest of the caller file is pull-request content as well, and
 runs as the pull request wrote it: a matrix around the call runs this job once per leg, each leg
