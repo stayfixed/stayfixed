@@ -162,27 +162,27 @@ def test_a_package_that_publishes_an_api_py_is_held_to_it_without_being_an_area(
     ruled = _ruled_packages(source)
 
     crossings, offences = _boundary_offences(
-        "doctor/checks.py", "from stayfixed.release.hashes import digests\n", ruled
+        "doctor/checks.py", "from stayfixed.release.pins import released\n", ruled
     )
     assert offences == [
-        "doctor/checks.py:1 imports stayfixed.release.hashes",
-        "doctor/checks.py:1 imports stayfixed.release.hashes.digests",
+        "doctor/checks.py:1 imports stayfixed.release.pins",
+        "doctor/checks.py:1 imports stayfixed.release.pins.released",
     ]
     crossings, offences = _boundary_offences(
-        "scripts/release.py", "from stayfixed.release.hashes import write_record\n", ruled
+        "scripts/release.py", "from stayfixed.release.pins import tag_for\n", ruled
     )
     assert offences == [
-        "scripts/release.py:1 imports stayfixed.release.hashes",
-        "scripts/release.py:1 imports stayfixed.release.hashes.write_record",
+        "scripts/release.py:1 imports stayfixed.release.pins",
+        "scripts/release.py:1 imports stayfixed.release.pins.tag_for",
     ]
 
     # The published spelling is a crossing and not an offence: the arm that fails if the
     # package is refused outright instead of being held to its surface.
     crossings, offences = _boundary_offences(
-        "scripts/release.py", "from stayfixed.release.api import digests\n", ruled
+        "scripts/release.py", "from stayfixed.release.api import tag_for\n", ruled
     )
     assert crossings == [
         "scripts/release.py -> stayfixed.release.api",
-        "scripts/release.py -> stayfixed.release.api.digests",
+        "scripts/release.py -> stayfixed.release.api.tag_for",
     ]
     assert not offences

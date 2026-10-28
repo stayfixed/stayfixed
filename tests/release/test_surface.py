@@ -12,25 +12,9 @@ import stayfixed.release.api as release
 
 def test_the_surface_carries_what_every_consumer_reaches_for() -> None:
     # An equality and not a subset, for the reason tests/doctor/test_surface.py gives: a subset
-    # lets an export arrive unnoticed. `doctor` reads the record's readers and the pins;
-    # `scripts/check_artifacts.py` reads `HASHED_FILES` and `RECORD`; and `scripts/release.py`,
-    # which writes the record and checks the version, reads `FORMAT`, `tag_for` and `PACKAGE`
-    # besides. Writing the record is the script's and is not on the surface at all.
+    # lets an export arrive unnoticed. `doctor` reads the pins, and `scripts/release.py`, which
+    # checks the version, reads `tag_for` and `PACKAGE`.
     required = {
-        # what the record covers, and where it lives. This comment used to say `doctor` names
-        # the file it compared; it does not, it says "beside `hooks/run-hook.sh`" in prose, so
-        # the test was enforcing a dead export against a false premise until the artifact
-        # checker stopped spelling all four paths by hand.
-        "HASHED_FILES",
-        "RECORD",
-        # the number the record's writer stamps and its reader accepts
-        "FORMAT",
-        # the two answers about a record: what is there, and what was recorded
-        "digests",
-        "read_record",
-        # "present and not a record" is a distinct answer from "absent" — absent skips in
-        # `doctor` and unreadable must be red — so the consumer needs the class to branch on.
-        "UnreadableRecord",
         # which commit a release is: `init` writes the pin, `doctor`'s `ci-ref` row
         # judges it
         "Pin",

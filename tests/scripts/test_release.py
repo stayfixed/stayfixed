@@ -1,13 +1,9 @@
 """`scripts/release.py`: this repository's own release discipline, driven through `main(argv)`.
 
-The three commands used to be the installed CLI's `release` group, and they only ever checked
-the stayfixed repository itself; the exit codes and the `--json` shapes are the ones that group
-had, and these tests are what holds them. The half of the release record that shipped code reads
-— `HASHED_FILES`, `digests`, `read_record` and what it raises — stays in `stayfixed.release`,
-and `tests/release/test_hashes.py` holds it, its happy path included: what `digests` computes,
-and that no record reads as `None` and a record as the digests it names. What is here is the
-writer and the drift check. towncrier is a development dependency and is *invoked*, never
-imported; the argv is the contract, and a stub records it.
+The commands used to be the installed CLI's `release` group, and they only ever checked the
+stayfixed repository itself; the exit codes and the `--json` shapes are the ones that group had,
+and these tests are what holds them. towncrier is a development dependency and is *invoked*,
+never imported; the argv is the contract, and a stub records it.
 
 Every message that tells the reader which command to run again is asserted against the command
 written out, `uv run python scripts/release.py …`, and never through the script's own
@@ -20,14 +16,12 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from stayfixed.errors import Failure, Refusal
 from stayfixed.jsonobject import DEPTH_CAP, NESTED
-from stayfixed.release.api import HASHED_FILES, RECORD, digests, read_record
 from stayfixed.runner import NOT_FOUND, Completed, subprocess_runner
 from tests.cli import subparsers
 from tests.gitfixture import git, git_bytes, needs_git
@@ -41,7 +35,6 @@ from tests.plugintree import (
     plugin_tree_id,
     write,
 )
-from tests.release.test_hashes import hashed_plugin, recorded
 from tests.runners import Recorder
 from tests.scriptload import release as _script
 from tests.scriptload import without_stayfixed
@@ -677,8 +670,7 @@ def _at(tmp_path: Path, version: str) -> Path:
 
 # A file under each of the plugin's nine paths (`tests/plugintree.py`'s `NINE`) that `repo` does
 # not already write: the two manifests and `src/stayfixed/__init__.py` are version sources it
-# writes. Not `hooks/run-hook.sh`, whose presence beside the other two recorded files would ask the
-# fixture for a release record.
+# writes.
 BESIDE_THE_SOURCES = {
     path: PLUGIN_FILES[path]
     for path in (
@@ -916,7 +908,6 @@ def test_a_tag_whose_pin_is_the_plugin_commit_passes(tmp_path: Path) -> None:
         kinds, _ = release.checked_by_kind(root, tag="v1.2.3")
         assert kinds == {
             "version drift": [],
-            "release record drift": [],
             "plugin tree count": [],
             "plugin pin": [],
         }
@@ -1261,13 +1252,13 @@ def test_pin_twice_writes_the_same_file(tmp_path: Path) -> None:
 
 def test_every_command_opens_its_own_help_with_what_it_does() -> None:
     # The installed CLI's frame copies each command's `help=` into its description; this script
-    # has its own parser and no frame, so `hashes --help` opened with `usage:` and went straight
+    # has its own parser and no frame, so `notes --help` opened with `usage:` and went straight
     # to the options. Mutation (declared): a command registered without `description=` ->
     # reddens naming it.
     groups = subparsers(release.parser())
     assert groups is not None
     listed = {action.dest: action.help for action in groups._choices_actions}
-    assert sorted(groups.choices) == ["check", "hashes", "notes", "pin"]
+    assert sorted(groups.choices) == ["check", "notes", "pin"]
     for name, sub in groups.choices.items():
         # Not vacuous: a command registered with neither sentence has `None` for both, and the
         # equality below holds. Mutation (declared): `mutations/`'s "the release script
@@ -1299,34 +1290,6 @@ def test_the_cli_refuses_notes_under_a_version_that_is_not_the_projects(
     argv = ["notes", "--version", "1.3.0", "--root", str(root)]
     assert release.main(argv) == 2
     assert "set the version everywhere first" in capsys.readouterr().err
-
-
-def test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_record(
-    tmp_path: Path,
-) -> None:
-    # `--root` defaults to `.`, so this gate runs in other people's repositories, and plenty of
-    # them have a `hooks/` directory — the first spelling of the guard asked exactly that and
-    # told them a record they never had was missing. Asked of the recorded files themselves
-    # now. Mutation (declared): probe `hooks/` again -> this reddens.
-    root = _repo(tmp_path)
-    (root / "hooks").mkdir()
-    (root / "hooks" / "hooks.json").write_text("{}\n", encoding="utf-8")
-    assert release.check(root) == []
-
-
-def test_a_tree_that_ships_every_recorded_file_is_told_when_the_record_is_missing(
-    tmp_path: Path,
-) -> None:
-    # The other direction, and the one the record exists for: a tree that carries the three
-    # files the harness executes is a tree that owes a record of them. Without this the guard
-    # above could be narrowed to `if False` and nothing would notice.
-    root = _repo(tmp_path)
-    for relative in HASHED_FILES:
-        (root / relative).parent.mkdir(parents=True, exist_ok=True)
-        (root / relative).write_text(f"# {relative}\n", encoding="utf-8")
-    assert release.check(root) == [
-        f"{RECORD} is missing; run `uv run python scripts/release.py hashes`"
-    ]
 
 
 def test_collect_still_reads_the_package_version_beside_the_repository_constants() -> None:
@@ -1385,175 +1348,6 @@ def test_a_missing_towncrier_names_the_dependency_group(tmp_path: Path) -> None:
             draft=False,
             runner=Recorder(code=NOT_FOUND, stderr="boom"),
         )
-
-
-# --- The release record: writing it, and the drift between it and the tree ----------------------
-
-
-def test_a_written_record_has_no_drift_and_one_changed_byte_is_named(tmp_path: Path) -> None:
-    # Mutation (declared): `drift` compares the record against itself -> the second
-    # assertion reddens (no drift after the edit).
-    root = hashed_plugin(tmp_path)
-    release.write_record(root)
-    assert release.drift(root) == []
-    (root / "hooks" / "run-hook.sh").write_text("# changed\n", encoding="utf-8")
-    assert release.drift(root) == [
-        f"{RECORD} does not match hooks/run-hook.sh; run `uv run python scripts/release.py hashes`"
-    ]
-
-
-def test_the_record_is_json_with_a_format_and_one_digest_per_file(tmp_path: Path) -> None:
-    # What the record holds is `digests`, which `tests/release/test_hashes.py` pins to the full
-    # sha256 of each file; this holds that the writer records it, in the shape the shipped reader
-    # reads back.
-    root = hashed_plugin(tmp_path)
-    release.write_record(root)
-    document = json.loads((root / RECORD).read_text(encoding="utf-8"))
-    assert document["format"] == 1
-    assert set(document["files"]) == set(HASHED_FILES)
-    assert document["files"] == digests(root)
-    assert read_record(root) == digests(root)
-
-
-def test_the_tests_record_builder_writes_what_the_release_script_writes(tmp_path: Path) -> None:
-    # The shipped reader's tests, `doctor`'s among them, build their records with
-    # `tests.release.test_hashes.recorded` rather than by loading this script, so the two are a
-    # second spelling of one format and are held to each other here, byte for byte.
-    # Mutation (declared): `mutations/`'s "the release script writes its record in another
-    # layout".
-    by_script = hashed_plugin(tmp_path / "script")
-    by_tests = hashed_plugin(tmp_path / "tests")
-    release.write_record(by_script)
-    written = recorded(by_tests).read_bytes()
-    assert (by_script / RECORD).read_bytes() == written
-
-
-def test_no_record_and_a_missing_file_are_both_drift(tmp_path: Path) -> None:
-    root = hashed_plugin(tmp_path)
-    assert release.drift(root) == [
-        f"{RECORD} is missing; run `uv run python scripts/release.py hashes`"
-    ]
-    release.write_record(root)
-    (root / "scripts" / "stayfixed").unlink()
-    assert release.drift(root) == [f"{RECORD} names scripts/stayfixed, which is not in the tree"]
-
-
-@pytest.mark.parametrize(
-    "body",
-    [b"{not json\n", b'{"format": 1, "files": {"hooks/hooks.json": "\xff\xfe"}}\n'],
-    ids=["not-json", "not-utf8"],
-)
-def test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean(
-    tmp_path: Path, body: bytes
-) -> None:
-    # A corrupt record is never read as no drift. It is drift like any other, naming the record
-    # and the command that writes it again: let out as the reader's `UnreadableRecord`, it was
-    # `stayfixed: failed:` on stderr, a third spelling of a record problem, and `--json` lost the
-    # object both commands otherwise print. Mutation: `mutations/`'s "a record that cannot be read
-    # leaves the drift check as a failure".
-    root = hashed_plugin(tmp_path)
-    (root / RECORD).write_bytes(body)
-    [problem] = release.drift(root)
-    assert problem.startswith(f"{RECORD} is ")
-    assert problem.endswith("; run `uv run python scripts/release.py hashes`")
-
-
-# Each way the tree and its record disagree, and what both commands then say of it.
-RECORD_PROBLEMS = {
-    "missing": (
-        lambda root: (root / RECORD).unlink(),
-        f"{RECORD} is missing; run `uv run python scripts/release.py hashes`",
-    ),
-    "a-file-gone": (
-        lambda root: (root / "hooks" / "run-hook.sh").unlink(),
-        f"{RECORD} names hooks/run-hook.sh, which is not in the tree",
-    ),
-    "a-file-edited": (
-        lambda root: (root / "hooks" / "run-hook.sh").write_text("# edited\n", encoding="utf-8"),
-        f"{RECORD} does not match hooks/run-hook.sh; run `uv run python scripts/release.py hashes`",
-    ),
-    "not-a-record": (
-        lambda root: (root / RECORD).write_text("[]\n", encoding="utf-8"),
-        f"{RECORD} is present and is not a format-1 record; run "
-        "`uv run python scripts/release.py hashes`",
-    ),
-}
-
-
-@pytest.mark.parametrize(("spoil", "problem"), RECORD_PROBLEMS.values(), ids=RECORD_PROBLEMS)
-def test_both_commands_spell_a_record_problem_one_way(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    spoil: Callable[[Path], object],
-    problem: str,
-) -> None:
-    # `check` said "version drift" of a record no version disagrees with, `hashes --check` said
-    # "release record drift" of the same state, and a record that was not one was `stayfixed:
-    # failed:`. One spelling now, on stdout, from both, with the exit code and the remedy as they
-    # were. Mutation: `mutations/`'s "the release check reports a record problem as version drift".
-    root = hashed_plugin(_repo(tmp_path))
-    release.write_record(root)
-    spoil(root)
-    for argv in (["check"], ["hashes", "--check"]):
-        assert release.main([*argv, "--root", str(root)]) == 1
-        captured = capsys.readouterr()
-        assert (captured.out, captured.err) == (f"release record drift: {problem}\n", "")
-
-
-def test_the_cli_writes_the_record_and_check_exits_one_on_drift(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The command's argv wiring: that `--check` reaches `drift` and that the bare form writes.
-    # No subprocess anywhere — this command reads and hashes files and nothing else.
-    root = hashed_plugin(tmp_path)
-    assert release.main(["hashes", "--check", "--root", str(root)]) == 1
-    # stdout: a finding is returned, as every stayfixed command returns one.
-    assert "is missing" in capsys.readouterr().out
-    assert release.main(["hashes", "--root", str(root)]) == 0
-    assert (root / RECORD).is_file()
-    assert release.main(["hashes", "--check", "--root", str(root)]) == 0
-    (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
-    assert release.main(["hashes", "--check", "--root", str(root)]) == 1
-    assert "hooks/hooks.json" in capsys.readouterr().out
-
-
-def test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The same invariant `check` states above, and the reason these commands stopped raising
-    # `Failure` to report a finding: the frame drops `Result.data` for a `Failure`, so the
-    # machine-readable object changed shape on exactly the condition a consumer runs this to
-    # detect.
-    #
-    # Mutation (declared): the drift arm returns `{}` for its data -> the key sets differ.
-    root = hashed_plugin(tmp_path)
-    assert release.main(["hashes", "--root", str(root)]) == 0
-    capsys.readouterr()
-    assert release.main(["hashes", "--check", "--root", str(root), "--json"]) == 0
-    on_success = json.loads(capsys.readouterr().out)
-    (root / "hooks" / "hooks.json").write_text("# moved\n", encoding="utf-8")
-    assert release.main(["hashes", "--check", "--root", str(root), "--json"]) == 1
-    on_drift = json.loads(capsys.readouterr().out)
-
-    assert set(on_success) == set(on_drift) == {"summary", "problems", "files"}
-    assert on_success["problems"] == []
-    assert on_drift["problems"] == [
-        f"{RECORD} does not match hooks/hooks.json; run `uv run python scripts/release.py hashes`"
-    ]
-    assert on_drift["files"] == sorted(HASHED_FILES)
-
-
-def test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all(tmp_path: Path) -> None:
-    # A record that names two of three files is a record saying "this is what the release
-    # shipped" while naming less than it did, and every reader of it afterwards reports drift
-    # against a claim nobody meant to make. Refused at the moment of writing, where the tree
-    # can still be fixed — and nothing is written. Mutation (declared): drop the length check
-    # -> a partial record lands and both assertions redden.
-    root = hashed_plugin(tmp_path)
-    (root / "hooks" / "hooks.json").unlink()
-    with pytest.raises(Failure, match=re.escape("hooks/hooks.json")):
-        release.write_record(root)
-    assert not (root / RECORD).exists(), "a refusal wrote a partial record anyway"
 
 
 def test_run_without_its_package_it_refuses_with_exit_2_and_says_to_use_uv(tmp_path: Path) -> None:

@@ -1836,37 +1836,6 @@ reddens = [
   "tests/scripts/test_release.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
 ]
 
-# `drift` walks the tree and the record and compares them. Compare the record to itself and every
-# answer is "no drift" — the shape the `files` check skipped for years rather than ship, because a
-# check that compares a file against itself is worse than none.
-[[mutation]]
-name = "the release record is compared against itself"
-file = "scripts/release.py"
-before = "    actual = digests(root)\n    problems = ["
-after = "    actual = recorded\n    problems = ["
-reddens = ["tests/scripts/test_release.py::test_a_written_record_has_no_drift_and_one_changed_byte_is_named"]
-
-# A record naming two of three files says "this is what the release shipped" while naming less
-# than it did. Refused where the tree can still be fixed, and nothing is written.
-[[mutation]]
-name = "a partial release record is written instead of refused"
-file = "scripts/release.py"
-before = "    if len(found) != len(HASHED_FILES):"
-after = "    if False:"
-reddens = ["tests/scripts/test_release.py::test_a_tree_missing_a_shipped_file_cannot_be_recorded_at_all"]
-
-# The release script's `check --root` defaults to `.` and may run in other repositories. The
-# first spelling of this guard asked whether a `hooks/` directory existed, which plenty of
-# projects have, and told them a record they never had was missing.
-[[mutation]]
-name = "release check asks for a hooks directory instead of the recorded files"
-file = "scripts/release.py"
-before = "    if (root / RECORD).is_file() or all((root / name).is_file() for name in HASHED_FILES):"
-after = '    if (root / "hooks").is_dir():'
-reddens = [
-  "tests/scripts/test_release.py::test_a_project_with_its_own_hooks_directory_is_not_told_about_a_release_record",
-]
-
 # The release check's `--tag` derived the drift message with `tag.split("v", 1)[-1]`, so
 # `--tag 1.2.3` reported `tag 1.2.3 names 1.2.3` — two identical strings asserted to disagree.
 [[mutation]]
@@ -2274,31 +2243,6 @@ reddens = [
   "tests/scripts/test_release.py::test_a_path_source_is_refused_as_the_plugin_folder_it_used_to_be",
 ]
 
-# A record problem is spelled one way by both commands: `check` said "version drift" of a record no
-# version disagrees with, and a record that is not one left `drift` as a `Failure`, a third
-# spelling on stderr with `--json`'s object lost.
-[[mutation]]
-name = "the release check reports a record problem as version drift"
-file = "scripts/release.py"
-before = "        kinds[RECORD_DRIFT] = drift(root)"
-after = "        kinds[VERSION_DRIFT] += drift(root)"
-reddens = [
-  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[missing]",
-  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[a-file-gone]",
-  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[a-file-edited]",
-]
-
-[[mutation]]
-name = "a record that cannot be read leaves the drift check as a failure"
-file = "scripts/release.py"
-before = "    except UnreadableRecord as exc:\n        return [f\"{exc}; run `{COMMAND} hashes`\"]"
-after = "    except UnreadableRecord:\n        raise"
-reddens = [
-  "tests/scripts/test_release.py::test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean[not-json]",
-  "tests/scripts/test_release.py::test_a_record_that_cannot_be_read_is_drift_naming_it_and_never_reads_clean[not-utf8]",
-  "tests/scripts/test_release.py::test_both_commands_spell_a_record_problem_one_way[not-a-record]",
-]
-
 # --- The release script returns its findings as every command does ---------------------------
 # While these were the installed CLI's `release` group, it was the one area reporting a finding
 # by raising `Failure`, and the cost was in `--json`: the frame (which the script still runs
@@ -2312,15 +2256,6 @@ before = "        return Result(summary, data, exit_code=1)"
 after = "        return Result(summary, {}, exit_code=1)"
 reddens = [
   "tests/scripts/test_release.py::test_the_json_object_has_the_same_shape_whether_or_not_there_is_drift",
-]
-
-[[mutation]]
-name = "release hashes --check's drift arm carries no data again"
-file = "scripts/release.py"
-before = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)'
-after = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), {}, exit_code=1)'
-reddens = [
-  "tests/scripts/test_release.py::test_the_check_json_object_has_the_same_shape_whether_or_not_there_is_drift",
 ]
 
 # In the block led by `mutations/`'s "the TOML readers answer a document nested past the parser as
@@ -2384,16 +2319,6 @@ reddens = [
   "tests/scripts/test_release.py::test_a_version_source_of_the_wrong_shape_is_reported_by_name[marketplace-plugins-string]",
 ]
 
-# The repository's own record of its shipped files is held clean by one test and shown able to fail
-# by another: a copy of it with one digest changed must exit 1, or the check that keeps it current
-# could pass anything.
-[[mutation]]
-name = "hashes --check exits clean on a drifted record"
-file = "scripts/release.py"
-before = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=1)'
-after = '            return Result(f"{RECORD_DRIFT}: " + "; ".join(problems), data, exit_code=0)'
-reddens = ["tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check"]
-
 # Every message that sends the reader back to the release script names the command to run. The
 # tests used to build the expected text from the script's own `COMMAND`, so the script could tell
 # its reader to run a command that no longer exists and every assertion agreed with it; they now
@@ -2406,7 +2331,6 @@ after = 'COMMAND = "uv run stayfixed release"'
 reddens = [
   "tests/scripts/test_release.py::test_a_tag_with_pending_fragments_is_refused",
   "tests/scripts/test_release.py::test_a_version_that_is_not_the_projects_is_refused_before_anything_runs",
-  "tests/test_manifests.py::test_a_drifted_record_fails_the_hashes_check",
 ]
 
 # The fifth place the release check is spelled, and the one run last before a tag: the other four
@@ -2461,17 +2385,6 @@ file = "scripts/release.py"
 before = '        return sub.add_parser(name, help=sentence, description=sentence, epilog=JSON_EPILOG)'
 after = '        return sub.add_parser(name, help=sentence, epilog=JSON_EPILOG)'
 reddens = ["tests/scripts/test_release.py::test_every_command_opens_its_own_help_with_what_it_does"]
-
-# The shipped reader's tests build their records with a fixture of their own instead of loading
-# the release script, and that fixture writes exactly what the script writes.
-[[mutation]]
-name = "the release script writes its record in another layout"
-file = "scripts/release.py"
-before = '    body = json.dumps({"format": FORMAT, "files": found}, indent=2, sort_keys=True) + "\n"'
-after = '    body = json.dumps({"format": FORMAT, "files": found}, indent=4, sort_keys=True) + "\n"'
-reddens = [
-  "tests/scripts/test_release.py::test_the_tests_record_builder_writes_what_the_release_script_writes",
-]
 
 # A command registered with neither sentence, `help=None` explicitly, has `None` for both, and an
 # equality between the two holds over nothing.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import tomllib
 from collections.abc import Iterable
 from pathlib import Path
@@ -10,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from stayfixed import __version__
-from stayfixed.release.api import HASHED_FILES, RECORD
 from tests.plugintree import PLUGIN_URL
 from tests.scriptload import release
 
@@ -74,38 +72,8 @@ def test_codex_manifest_carries_no_hooks_or_skills_key() -> None:
 
 
 def test_the_repository_passes_release_check(capsys: pytest.CaptureFixture[str]) -> None:
-    # Through the script's own `main`, as CI runs it: the version sources agree, and the record
-    # of the shipped files is current.
+    # Through the script's own `main`, as CI runs it: the version sources agree.
     assert release().main(["check", "--root", str(ROOT)]) == 0, capsys.readouterr().out
-
-
-def test_the_repository_itself_carries_a_current_release_record() -> None:
-    # The release record is kept true on every commit and not only at a tag, which is what makes it
-    # a record anyone has watched fail. A change to the wrapper, to `hooks/hooks.json` or to
-    # `scripts/stayfixed` that forgot `scripts/release.py hashes` reddens here and in the gate.
-    assert release().drift(ROOT) == []
-
-
-def test_a_drifted_record_fails_the_hashes_check(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The test above holds the committed record clean; this one holds that the same check can
-    # say otherwise about it. A copy of the repository's shipped files and its record, with one
-    # recorded digest changed, exits 1 naming that file and no other.
-    #
-    # Mutation (declared): `hashes --check` exits clean on a drifted record -> exit 0, and this
-    # reddens.
-    for relative in (*HASHED_FILES, RECORD):
-        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / relative, tmp_path / relative)
-    record = json.loads((tmp_path / RECORD).read_text(encoding="utf-8"))
-    record["files"]["hooks/hooks.json"] = "0" * 64
-    (tmp_path / RECORD).write_text(json.dumps(record), encoding="utf-8")
-    assert release().main(["hashes", "--check", "--root", str(tmp_path), "--json"]) == 1
-    problems = json.loads(capsys.readouterr().out)["problems"]
-    assert problems == [
-        f"{RECORD} does not match hooks/hooks.json; run `uv run python scripts/release.py hashes`"
-    ]
 
 
 def test_no_top_level_bin_directory() -> None:

@@ -527,10 +527,8 @@ def test_doctor_is_green_on_the_attached_fixture(tmp_path: Path) -> None:
     # Green meaning: no `red`, and the only `skip` is `ci-ref`, which skips on a state this
     # fixture is in rather than on a limit of the build: it records no `[ci] ref`, because no
     # released tag matches the stayfixed running here for `init` to have pinned.
-    # `files` is not among them: the release ships `hooks/hashes.json`, and this walk runs
-    # against the checkout, so the row compares the three shipped files against the record
-    # committed beside them and is green. A `files` back in this list means the
-    # record went stale — `uv run python scripts/release.py hashes` is what refreshes it.
+    # `files` is not among them: this walk runs against the checkout, whose wrapper is
+    # executable.
     walk = _install_path(tmp_path)
     rows = _doctor(walk)
     assert [row["name"] for row in rows if row["status"] == RED] == []

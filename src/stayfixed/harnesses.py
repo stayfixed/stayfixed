@@ -35,8 +35,7 @@ package that names a harness is pardoned there, each pardon by one of these item
   expands to `/hooks/run-hook.sh` and exits 127, which Claude Code reads as a non-blocking
   error, so no guard runs and nothing says so.
 - `hooks/run-hook.sh` takes the directory it enters from `CLAUDE_PROJECT_DIR`, else from `git`,
-  before any Python runs, so another root variable is an edit to its `root=` line and to the digest
-  `hooks/hashes.json` records for it (`scripts/release.py hashes`).
+  before any Python runs, so another root variable is an edit to its `root=` line.
 - `hooks.api.DATA_ROOT_VARIABLES` names the variables the sink and `doctor` find the harness's
   data root by.
 - `doctor` runs the wrapper for its `wrapper` row under `CLAUDE`'s two root variables whichever

@@ -1,9 +1,8 @@
 # Releasing stayfixed
 
-Version discipline itself is enforced — `scripts/release.py check` cross-checks seven sources, a
-tag and the record of the shipped files, and runs in CI. What was undocumented is everything
-around it: how to cut a release at all. This file is that, so the bus factor of the release
-process is not one.
+Version discipline itself is enforced — `scripts/release.py check` cross-checks seven sources and
+a tag, and runs in CI. What was undocumented is everything around it: how to cut a release at all.
+This file is that, so the bus factor of the release process is not one.
 
 The sequence, once, before the detail: `scripts/release.py check` → towncrier assembles
 `CHANGELOG.md` from the `changelog.d/` fragments → the release commit, into whose marketplace
@@ -34,7 +33,6 @@ public repository's CI holds no credential that can write one.
 | `.codex-plugin/plugin.json` | `version` |
 | `CHANGELOG.md` | the first `## <version>` heading after the towncrier marker |
 | `.claude-plugin/marketplace.json` | the plugin entry's `ref`, `vX.Y.Z`: the tag of `stayfixed/stayfixed-plugin` the marketplace fetches the plugin at; its `sha` beside it is the commit that tag names, and no version |
-| `hooks/hashes.json` | **not a version.** The record of the three files the harness runs — `hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed`. `scripts/release.py check` fails while it is stale and `scripts/release.py hashes` refreshes it, in whichever commit changed one of them. Nothing touches it at release time. |
 
 The marketplace entry is held to one shape besides its `ref`: exactly one entry named
 `stayfixed`, a `url` source naming `https://github.com/stayfixed/stayfixed-plugin.git`, pinned by
@@ -766,8 +764,7 @@ projects only.
   resolvers without breaking anyone who has already pinned it) and release a patch version.
 - **`scripts/release.py check` fails in the workflow but passed locally.** Almost always
   `uv.lock`: `uv sync` was not run after the version bump, so the lockfile still carries the old
-  one. The other candidate is `hooks/hashes.json`, if a shipped file moved without
-  `scripts/release.py hashes`.
+  one.
 - **`scripts/publish_template.py` pushed the wrong tree.** Its next run fixes it: it replaces the
   tree whole rather than merging into it.
 
@@ -781,7 +778,6 @@ ever checked the stayfixed repository itself. It runs through the same frame as 
 ```bash
 uv run python scripts/release.py check [--tag TAG]               # one version everywhere
 uv run python scripts/release.py notes --version X.Y.Z [--draft]  # assemble CHANGELOG.md
-uv run python scripts/release.py hashes [--check]                 # the record of the shipped files
 uv run python scripts/release.py pin [--remote URL]               # the plugin commit, pinned
 ```
 
@@ -800,8 +796,7 @@ not read, quoting what it said — a clone without `HEAD`'s first parent among t
 `fetch-depth: 2` for. Plain `check`, which CI runs on every pull request, never counts and never
 computes the commit, because `tests/test_payload.py` holds the same count there and the pin is the
 release commit's alone. It writes nothing; it reads the sources, the fragments pending in
-`changelog.d/`, `hooks/hashes.json` beside the three files it records, and under `--tag` the
-committed tree.
+`changelog.d/`, and under `--tag` the committed tree.
 
 **`notes`** is a wrapper around towncrier, which does the rendering while `[tool.towncrier]` in
 `pyproject.toml` owns the format. A `--version` that is not the project's is refused (`2`) before
@@ -812,18 +807,6 @@ fragments: towncrier removes each one from `changelog.d/` and, in a git checkout
 changes — `git add` of `CHANGELOG.md`, `git rm` of each tracked fragment, which removes the
 directory itself when the tracked fragments were all it held. With `--draft` it writes nothing
 and prints the rendered section.
-
-**`hashes`** records the sha256 of the three files the harness executes without Python —
-`hooks/run-hook.sh`, `hooks/hooks.json` and `scripts/stayfixed` — into `hooks/hashes.json` beside
-them; a wheel's own contents are the packaging tool's to attest. The record is refused rather
-than written when any of the three is missing: a record naming two of three would still claim to
-be what the release shipped, while naming less, and every later comparison would report drift
-against that claim. It is not a release-time command: `check` compares the record to the
-tree on every run, so editing any of the three without re-recording fails the gate in the same
-commit, which is what makes it a record somebody has watched fail. `stayfixed doctor`'s `files`
-row reads the installed record against the installed files. Under `--check` it writes nothing,
-exits `1` on drift, and its `--json` object carries `summary`, `files` and `problems` in both
-outcomes.
 
 **`pin`** is step 5's command: it computes the plugin commit of `HEAD` with
 `scripts/plugin_tree.py commit` and writes it into the marketplace entry's `sha`, once it has
