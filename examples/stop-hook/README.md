@@ -69,8 +69,10 @@ next stop arrives with `stop_hook_active` set to `true`, and the recipe lets tha
 
 The adversary is the agent's "done". The agent in the session can edit the hook's settings file or
 weaken the tests, so the anchor is your own install and the harness's sandbox, which can keep the
-settings file out of the agent's writes. Without that, the recipe is a reminder the agent can turn
-off, not a control.
+settings file out of the agent's writes. Even so, the recipe is a convenience, not a control: the
+`stop_hook_active` let-through passes the next stop whatever the tests say, and no sandbox keeps
+the agent from weakening them. It costs at most one continuation per stop and stops no agent that
+means to finish. The check that holds is your project's own CI run of its tests.
 
 ## Where the `Stop` behaviour comes from
 
