@@ -543,6 +543,15 @@ def test_a_checkout_reached_through_a_linked_parent_is_read_as_the_checkout(
     assert f"config: {UNCHANGED}" in said, said
 
 
+def test_a_root_below_the_checkout_s_top_is_read_in_the_checkout(tmp_path: Path) -> None:
+    # The platform's run reproduced from the project's own directory: `--root` is that directory,
+    # and the repository named to git is the checkout's, whose top git finds from there.
+    project = _platform_clone(tmp_path, under="app")
+    code, said = _gate(project / "app", tmp_path, *PLATFORM, "--only=config")
+    assert code == 0, said
+    assert f"config: {UNCHANGED}" in said, said
+
+
 @pytest.mark.parametrize(
     ("name", "document"),
     [

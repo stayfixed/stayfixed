@@ -182,6 +182,7 @@ def run_gate(args: argparse.Namespace) -> Result:
         summary,
         workflow_commands,
     )
+    from stayfixed.committed import repository_top
     from stayfixed.gitenv import named
     from stayfixed.release.api import is_released
     from stayfixed.runner import subprocess_runner
@@ -197,11 +198,13 @@ def run_gate(args: argparse.Namespace) -> Result:
     # The adversary is a pull request, which writes every file under `--root` but its `.git`, so
     # a directory it fills can be one git, asked there, takes for a repository of its own. The
     # anchor is the checkout's own `.git`, which `actions/checkout` creates and no tree can write:
-    # git checks out no path named `.git`. With the platform's base `--root` is that checkout, so
-    # every git this run asks names its repository, and the project is `--path`'s directory of
-    # it; the release tags are asked for from its top, where git meets that `.git` first. A local
-    # run's root is a person's own tree, which git reads as their own git does.
-    with named(checkout if platform else None):
+    # git checks out no path named `.git`. With the platform's base git is asked once, at
+    # `--root`, for its checkout's top; the workflow's `--root` is that top, where git meets that
+    # `.git` first. Every other git this run asks names that repository, so the project is
+    # `--path`'s directory of it, and the release tags are asked for from its top. A local run's
+    # root is a person's own tree, which git reads as their own git does.
+    top = repository_top(checkout) if platform else None
+    with named(top):
         gate_run = gate_change(
             root,
             base=args.base,
@@ -212,7 +215,7 @@ def run_gate(args: argparse.Namespace) -> Result:
             owner=owner,
             workflow_sha=args.workflow_sha,
             running=__version__,
-            released=lambda sha: is_released(sha, runner, cwd=checkout),
+            released=lambda sha: is_released(sha, runner, cwd=top or checkout),
         )
     verdict, results, waiting = gate_run.verdict, gate_run.results, gate_run.waiting
     lines = [config_line(verdict)] if gate_run.judged else []
