@@ -158,6 +158,8 @@ class Demo:
         self.home = scratch / "home"
         self.bin = scratch / "bin"
         self.tmp = scratch / "tmp"
+        # The version `stayfixed --version` names, which the fixture's configuration records.
+        self.version = ""
         for directory in (self.repo, self.home, self.bin, self.tmp):
             directory.mkdir()
         (self.bin / "stayfixed").symlink_to(stayfixed)
@@ -216,7 +218,9 @@ class Demo:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
-    def stayfixed(self, args: Sequence[str], *, code: int, fields: Sequence[Field]) -> object:
+    def stayfixed(
+        self, args: Sequence[str], *, code: int, fields: Sequence[Field]
+    ) -> dict[str, object]:
         """Run `stayfixed ARGS` and assert its exit code and every field of its `--json` object.
 
         Prints the command as typed, the exit code and each field asserted. Returns the object, so
@@ -230,10 +234,11 @@ class Demo:
             problems.append(f"exit: expected {code}, got {ran.code}")
         print(f"  exit {ran.code}")
         try:
-            document: object = json.loads(ran.stdout)
+            parsed: object = json.loads(ran.stdout)
         except json.JSONDecodeError:
-            document = None
-        if not isinstance(document, dict):
+            parsed = None
+        document: dict[str, object] = parsed if isinstance(parsed, dict) else {}
+        if not isinstance(parsed, dict):
             problems.append("stdout is not one JSON object")
         else:
             for field in fields:
@@ -296,11 +301,110 @@ def act_forging(demo: Demo) -> None:
     )
 
 
+# The project's configuration: no built-in gate, and one gate of its own that runs every fixed
+# bug's regression, as docs/cli.md gives it for a machine with `stayfixed` on `PATH`.
+CONFIGURATION = """\
+[stayfixed]
+version = "{version}"
+
+[project]
+name = "demo"
+
+[gates]
+builtin = []
+
+[gates.custom.regressions]
+run = ["stayfixed", "bugs", "regressions"]
+"""
+BUG_TITLE = "total drops the last item"
+# The argv the ledger entry carries, which `bugs regressions` runs once the entry is fixed.
+REGRESSION = ["pytest", "-q", "tests/test_total.py"]
+# The change that brings the bug back.
+FIXED = "    return sum(items)\n"
+BROKEN = "    return sum(items[:-1])\n"
+
+
+def _close(demo: Demo, relative: str) -> None:
+    """Close the entry `bugs new` filed as the close-bug skill says: `fixed`, `fixed_in` quoted
+    around its backticks, the regression that reproduces it and a `## Fix` section."""
+    path = demo.repo / relative
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ActFailed(f"the entry bugs new named cannot be read: {error}") from error
+    closed = text
+    for before, after in (
+        ("\nstatus: open\n", "\nstatus: fixed\n"),
+        ("\nfixed_in:\n", f'\nfixed_in: "`main`"\nregression: {json.dumps(REGRESSION)}\n'),
+    ):
+        if closed.count(before) != 1:
+            raise ActFailed(f"the entry bugs new wrote has no single {before.strip()!r} line")
+        closed = closed.replace(before, after)
+    closed += (
+        "\n## Fix\n\n"
+        "`total` sums every item again. `tests/test_total.py` covers it, and is this entry's"
+        " regression.\n"
+    )
+    path.write_text(closed, encoding="utf-8")
+
+
+def act_regression(demo: Demo) -> None:
+    # On `main`: the configuration, and a bug filed, fixed and given its regression.
+    demo.write("stayfixed.toml", CONFIGURATION.format(version=demo.version))
+    filed = demo.stayfixed(
+        [
+            "bugs",
+            "new",
+            BUG_TITLE,
+            "--severity",
+            "medium",
+            "--area",
+            "total",
+            "--no-fetch",
+            "--json",
+        ],
+        code=0,
+        fields=[Field("id", "BR-001"), Field("path", "docs/bugs/BR-001.md")],
+    )
+    _close(demo, str(filed["path"]))
+    demo.stayfixed(["bugs", "index", "--json"], code=0, fields=[])
+    demo.stayfixed(["bugs", "check", "--json"], code=0, fields=[Field("findings", [])])
+    demo.stayfixed(
+        ["bugs", "regressions", "--json"],
+        code=0,
+        fields=[Field("not_proved", 0), Field("regressions[id=BR-001].verdict", "proved")],
+    )
+    demo.git("add", "-A")
+    demo.git("commit", "-q", "-m", "a fixed bug, its regression, and a gate that runs it")
+    # Promoted on `main` and committed there, as the owner's direct push to the base would be.
+    demo.stayfixed(
+        ["adopt", "promote", "regressions", "--base", "refs/heads/main", "--json"],
+        code=0,
+        fields=[Field("promoted", "regressions", "holds")],
+    )
+    demo.git("commit", "-q", "-a", "-m", "enforce the regressions gate")
+    # On `change`: the bug comes back, and the enforced gate fails the change.
+    demo.git("switch", "-q", "-c", "change")
+    source = (demo.repo / "total.py").read_text(encoding="utf-8")
+    demo.write("total.py", source.replace(FIXED, BROKEN))
+    demo.git("commit", "-q", "-a", "-m", "total drops the last item again")
+    demo.stayfixed(
+        ["gate", "--only", "regressions", "--base", "refs/heads/main", "--json"],
+        code=1,
+        fields=[
+            Field("gates[name=regressions].enforcing", True),
+            Field("gates[name=regressions].answered", True),
+            Field("gates[name=regressions].failing", True),
+        ],
+    )
+
+
 ACTS: tuple[tuple[str, Callable[[Demo], None]], ...] = (
     ("a green run is proved, from the runner's own report", act_proved),
     ("text that only looks like a test report proves nothing", act_not_recognised),
     ("a run whose every test was skipped is a failure", act_all_skipped),
     ("a variable that switches assertions off is refused", act_forging),
+    ("a fixed bug's regression fails the change that brings it back", act_regression),
 )
 
 
@@ -361,6 +465,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _run(demo: Demo, options: argparse.Namespace, started: float) -> int:
     version = demo.run(["stayfixed", "--version"])
+    demo.version = _first_line(version).split()[-1]
     pytest = demo.which("pytest") or ""
     pytest_version = demo.run(["pytest", "--version"])
     print(f"stayfixed: {os.path.realpath(options.stayfixed)}")

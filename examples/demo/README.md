@@ -36,3 +36,5 @@ executable file or `git` or `pytest` is not on `PATH`.
 2. A command that only prints `42 passed` proves nothing: `not proven`, `not-recognised`.
 3. A run whose only test was skipped is `failed`, `all-skipped`, never a pass.
 4. `PYTHONOPTIMIZE=1`, which compiles assertions out, is `refused`, `assigned-forging`.
+5. A fixed bug's regression, run by a gate of the project's own that `stayfixed adopt promote`
+   enforces on `main`, fails `stayfixed gate` on the branch `change` that brings the bug back.
