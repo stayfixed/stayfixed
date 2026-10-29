@@ -7,7 +7,7 @@ on the script's own word. The recording of the demo is made from this script's r
 
 ## What it needs
 
-- `git` and `pytest` on `PATH`. The script installs nothing and reaches no network.
+- `git`, `pytest` and `python3` on `PATH`. The script installs nothing and reaches no network.
 - `claude` (Claude Code) on `PATH` for act 6, which installs the overlay's plugin through it. It
   needs no signed-in account there: `HOME` is a scratch directory. Without `claude` act 6 is
   skipped, and the skip is printed.
@@ -32,8 +32,8 @@ its `pytest` is the one found.
 Every command runs with `HOME` inside the scratch directory, `GIT_CONFIG_NOSYSTEM=1` and a fixed
 author, committer and date, so your own configuration changes nothing it does.
 The script exits `0` when no act failed, `1` when one did or when act 6 was skipped under
-`--require-claude`, and `2` when the program is not an executable file or `git` or `pytest` is
-not on `PATH`.
+`--require-claude`, and `2` when the program is not an executable file or `git`, `pytest` or
+`python3` is not on `PATH`.
 
 ## The acts
 
@@ -45,3 +45,7 @@ not on `PATH`.
    enforces on `main`, fails `stayfixed gate` on the branch `change` that brings the bug back.
 6. `stayfixed attach` binds the repository to a scratch overlay and delivers this project's skill,
    `demo-canary`, and not the other project's, `other-canary`; `git status` stays empty.
+7. The `Stop`-hook recipe in `../stop-hook/`, given `pytest -q tests/test_total.py`, keeps the
+   agent working on `change` (exit 2, its stderr naming `failed`), lets it stop on `main`
+   (exit 0), and lets a stop through on `change` when `stop_hook_active` says the agent is already
+   working on because of it (exit 0). It prints nothing on stdout on any of the three.
