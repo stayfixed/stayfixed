@@ -206,12 +206,15 @@ class Demo:
             raise ActFailed(f"{shlex.join(argv)} could not start: {error}") from error
         return Ran(done.returncode, done.stdout, done.stderr)
 
-    def git(self, *args: str) -> str:
-        """A git command the act needs to set the scene; any failure fails the act."""
-        ran = self.run(["git", *args])
+    def run_checked(self, argv: Sequence[str], *, cwd: Path | None = None) -> str:
+        """A command the act needs to set the scene; any failure fails the act."""
+        ran = self.run(argv, cwd=cwd)
         if ran.code != 0:
-            raise ActFailed(f"git {shlex.join(args)} exited {ran.code}: {ran.stderr.strip()}")
+            raise ActFailed(f"{shlex.join(argv)} exited {ran.code}: {ran.stderr.strip()}")
         return ran.stdout
+
+    def git(self, *args: str) -> str:
+        return self.run_checked(["git", *args])
 
     def write(self, relative: str, text: str) -> None:
         path = self.repo / relative
@@ -351,6 +354,8 @@ def _close(demo: Demo, relative: str) -> None:
 def act_regression(demo: Demo) -> None:
     # On `main`: the configuration, and a bug filed, fixed and given its regression.
     demo.write("stayfixed.toml", CONFIGURATION.format(version=demo.version))
+    demo.git("add", "stayfixed.toml")
+    demo.git("commit", "-q", "-m", "the project's configuration")
     filed = demo.stayfixed(
         [
             "bugs",
@@ -375,7 +380,7 @@ def act_regression(demo: Demo) -> None:
         fields=[Field("not_proved", 0), Field("regressions[id=BR-001].verdict", "proved")],
     )
     demo.git("add", "-A")
-    demo.git("commit", "-q", "-m", "a fixed bug, its regression, and a gate that runs it")
+    demo.git("commit", "-q", "-m", "a fixed bug and its regression")
     # Promoted on `main` and committed there, as the owner's direct push to the base would be.
     demo.stayfixed(
         ["adopt", "promote", "regressions", "--base", "refs/heads/main", "--json"],
@@ -399,12 +404,94 @@ def act_regression(demo: Demo) -> None:
     )
 
 
+# The private overlay `attach` binds the fixture to: this project's skill, and another project's
+# that must stay out of this one's render. Its layout is the overlay's own: `common/` for every
+# project, `projects/<name>/` for one.
+OVERLAY_DIRECTORIES = ("common/claude", "common/codex", "common/memory", "projects/demo/memory")
+CANARY = "demo-canary"
+OTHER_CANARY = "other-canary"
+SKILLS = {
+    "projects/demo/claude/skills": CANARY,
+    "projects/other/claude/skills": OTHER_CANARY,
+}
+# Where `attach` renders the overlay's plugin, under the home directory: one directory per binding,
+# named by the binding id, which `--json` names by its first characters.
+DELIVERY = ".local/share/stayfixed/delivery"
+MARKETPLACE = ".claude-plugin/marketplace.json"
+
+
+def _overlay(demo: Demo) -> Path:
+    """A scratch overlay, a git repository as a real one is, and the machine file naming it."""
+    overlay = demo.scratch / "overlay"
+    for relative in OVERLAY_DIRECTORIES:
+        (overlay / relative).mkdir(parents=True)
+    for relative, name in SKILLS.items():
+        skill = overlay / relative / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: A skill that shows which project it reached.\n"
+            f"---\n\nSay {name}.\n",
+            encoding="utf-8",
+        )
+    demo.run_checked(["git", "init", "-q", "-b", "main"], cwd=overlay)
+    machine = demo.scratch / "machine.toml"
+    machine.write_text(f"[overlay]\nroot = {json.dumps(str(overlay))}\n", encoding="utf-8")
+    return machine
+
+
+def _clean(demo: Demo) -> None:
+    status = demo.git("status", "--porcelain")
+    if status:
+        raise ActFailed(f"git status --porcelain is not empty:\n{status.rstrip()}")
+    print("  git status --porcelain is empty")
+
+
+def _render(demo: Demo, binding: str) -> Path:
+    """The plugin directory of the one render `attach` wrote for `binding`, read off the
+    marketplace file it wrote there."""
+    delivery = demo.home / DELIVERY
+    renders = sorted(delivery.glob(f"{binding}*")) if binding and delivery.is_dir() else []
+    if len(renders) != 1:
+        raise ActFailed(f"~/{DELIVERY}/ holds {len(renders)} render(s) for binding {binding!r}")
+    try:
+        marketplace = json.loads((renders[0] / MARKETPLACE).read_text(encoding="utf-8"))
+        source = marketplace["plugins"][0]["source"]
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
+        raise ActFailed(f"the render's {MARKETPLACE} names no plugin: {error!r}") from error
+    return renders[0] / str(source)
+
+
+def act_attach(demo: Demo) -> None:
+    if demo.which("claude") is None:
+        raise Skipped("claude is not on PATH")
+    machine = _overlay(demo)
+    _clean(demo)
+    attached = demo.stayfixed(
+        ["attach", "--machine", os.path.relpath(machine, demo.repo), "--json"],
+        code=0,
+        fields=[
+            Field("skills_added", CANARY, "holds"),
+            Field("skills_added", OTHER_CANARY, "lacks"),
+        ],
+    )
+    skills = _render(demo, str(attached.get("binding", ""))) / "skills"
+    shown = f"~/{DELIVERY}/{attached['binding']}…/{skills.parent.name}/skills"
+    if not (skills / CANARY).is_dir():
+        raise ActFailed(f"{shown}/{CANARY}/ is not there")
+    print(f"  {shown}/{CANARY}/ is there")
+    if (skills / OTHER_CANARY).exists():
+        raise ActFailed(f"{shown}/{OTHER_CANARY}/ is there")
+    print(f"  {shown}/{OTHER_CANARY}/ is not")
+    _clean(demo)
+
+
 ACTS: tuple[tuple[str, Callable[[Demo], None]], ...] = (
     ("a green run is proved, from the runner's own report", act_proved),
     ("text that only looks like a test report proves nothing", act_not_recognised),
     ("a run whose every test was skipped is a failure", act_all_skipped),
     ("a variable that switches assertions off is refused", act_forging),
     ("a fixed bug's regression fails the change that brings it back", act_regression),
+    ("attach delivers this project's skill and not another project's", act_attach),
 )
 
 
