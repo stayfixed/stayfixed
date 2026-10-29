@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from stayfixed.committed import (
     committed_document,
@@ -188,20 +188,14 @@ def platform_base(root: Path, *, pr_base: str, base_input: str, default_branch: 
 
 
 def platform_root(checkout: Path, path: str) -> Path:
-    """The project root the caller file's `path:` names inside `checkout`: `""`, `.` and `./`
-    are the checkout itself, and otherwise one leading `./` and one trailing `/` are dropped.
-
-    No character of `path` is refused: nothing it is written into reads a line break as a key,
-    and `--annotate` prints a path only inside `printed`'s grammar. A root reached through a
-    symlink is `stayfixed gate`'s own refusal, made after this one.
+    """The project root the caller file's `path:` names inside `checkout`, with one leading `./`
+    dropped: `""`, `.` and `./` are the checkout itself. No character is refused, and every
+    message that names the root prints it through `printed.quoted`. A `..` component is
+    `committed.repository_prefix`'s refusal, and a symlink on the way `stayfixed gate`'s.
     """
-    value = "" if path in ("", ".", "./") else path.removeprefix("./").removesuffix("/")
-    pure = PurePosixPath(value)
+    value = path.removeprefix("./")
     # The adversary is a caller file whose `path:` points the gates at another checkout's
-    # configuration (`../stayfixed`, the workflow's own). The anchor is the checkout the runner
-    # made, and the check bounds the value lexically, so writing the value does not move it. An
-    # absolute path leaves the checkout without a `..`. Never echoed: the value is the caller
-    # file's.
-    if pure.is_absolute() or ".." in pure.parts:
+    # configuration; an absolute one leaves the checkout without a `..`. Never echoed.
+    if value.startswith("/"):
         raise Refusal(PATH_LEAVES)
-    return checkout / value if value else checkout
+    return checkout / value

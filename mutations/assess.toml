@@ -173,14 +173,15 @@ before = '        f"refs/remotes/origin/{branch}^{{commit}}",'
 after = '        f"origin/{branch}^{{commit}}",'
 reddens = ["tests/assess/test_read_base.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_platform_base"]
 
-# A `path:` of `../stayfixed` points the gates at the workflow's own checkout and its
-# configuration. The check is lexical, so writing the value does not move it.
+# An absolute `path:` leaves the caller's checkout without a `..`, and names any checkout's
+# configuration. The `..` half is the root's own refusal, held by
+# `mutations/`'s "a root spelled with '..' is refused as a symlink".
 [[mutation]]
-name = "a `..` path is admitted"
+name = "an absolute path is admitted"
 file = "src/stayfixed/assess/base.py"
-before = '    if pure.is_absolute() or ".." in pure.parts:'
-after = "    if pure.is_absolute():"
-reddens = ["tests/assess/test_read_base.py::test_a_dotdot_or_absolute_path_is_refused_unechoed"]
+before = '    if value.startswith("/"):'
+after = "    if False:"
+reddens = ["tests/assess/test_read_base.py::test_an_absolute_path_is_refused_unechoed"]
 
 # The tighten-only rule. A verdict other than `refused` lets a pull request's own configuration
 # govern its run, so each guard that says `refused`, and each that picks the configuration and the
@@ -592,6 +593,17 @@ before = "    if (names and (len(promoted) < len(results) or waiting or skipped)
 after = "    if len(promoted) < len(results) or waiting or skipped or not promoted:"
 reddens = [
   "tests/assess/test_state.py::test_with_no_names_every_passing_gate_is_enforced_and_the_rest_are_named",
+]
+
+# The editor's own refusal names the key it failed on and tells the person to run the command
+# again, which once the list is set by hand would promote nothing; the promotion's names the list.
+[[mutation]]
+name = "the promotion's write refusal does not name the list it was writing"
+file = "src/stayfixed/assess/state.py"
+before = "        raise OwnedKeyError(UNWRITTEN.format(enforced=_literal(enforced))) from None"
+after = "        raise"
+reddens = [
+  "tests/assess/test_state.py::test_a_write_the_editor_cannot_make_names_enforced_as_it_would_be",
 ]
 
 [[mutation]]

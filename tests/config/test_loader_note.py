@@ -36,7 +36,7 @@ from stayfixed.config.reading import ConfigError, toml_position
 from stayfixed.config.schema import HARNESS_MODE
 from stayfixed.errors import Failure, Refusal
 from stayfixed.presets import load_preset
-from stayfixed.printed import clipped
+from stayfixed.printed import clipped, quoted
 from tests.crafted import assert_never_raw
 
 HEAD = '[stayfixed]\nversion = "0.1.0"\npreset = "recommended"\n'
@@ -199,7 +199,7 @@ def test_one_unusable_key_past_the_limit_refuses_the_whole_document(tmp_path: Pa
     # loads with 65 notes.
     with pytest.raises(TooManyResets) as refused:
         loads_noting(_unusable_gates(NOTE_REMOVAL_LIMIT + 1), tmp_path, owner=OWNER)
-    path = tmp_path / CONFIG_FILE
+    path = quoted(str(tmp_path / CONFIG_FILE))
     assert str(refused.value) == TOO_MANY_RESETS.format(path=path, limit=NOTE_REMOVAL_LIMIT)
     assert refused.value.key is None and refused.value.limit == NOTE_REMOVAL_LIMIT
 
@@ -228,7 +228,7 @@ def test_a_long_document_is_read_past_fewer_unusable_keys(tmp_path: Path) -> Non
     assert NOTE_REBUILT_LIMIT // len(longer) == limit  # one gate more moves the bound nowhere
     with pytest.raises(TooManyResets) as refused:
         loads_noting(longer, tmp_path, owner=OWNER)
-    path = tmp_path / CONFIG_FILE
+    path = quoted(str(tmp_path / CONFIG_FILE))
     assert str(refused.value) == TOO_MANY_RESETS.format(path=path, limit=limit)
     assert refused.value.limit == limit
 
@@ -354,7 +354,9 @@ def test_a_document_level_refusal_propagates(tmp_path: Path, text: str, refused:
     with pytest.raises(ConfigError) as raised:
         loads_noting(text, tmp_path, owner=OWNER)
     position = _decoder_position(text) if "{position}" in refused else ""
-    assert str(raised.value) == refused.format(path=tmp_path / CONFIG_FILE, position=position)
+    assert str(raised.value) == refused.format(
+        path=quoted(str(tmp_path / CONFIG_FILE)), position=position
+    )
     assert raised.value.key is None
 
 

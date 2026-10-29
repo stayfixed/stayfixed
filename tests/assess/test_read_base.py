@@ -439,24 +439,28 @@ def test_the_platform_base_falls_back_to_the_pr_base_then_the_default_branch(
         _platform(project)
 
 
-@pytest.mark.parametrize(
-    "path", ["../the-other-checkout", "sub/../../the-other-checkout", "..", "/the-other-checkout"]
-)
-def test_a_dotdot_or_absolute_path_is_refused_unechoed(tmp_path: Path, path: str) -> None:
+def test_a_dotdot_path_is_refused_unechoed(tmp_path: Path) -> None:
     """The adversary is a caller file whose `path:` points the gates at another checkout's
-    configuration, `../stayfixed` among them, the workflow's own. The check is lexical, so the
-    value cannot move it, and the value is never echoed. Mutation (declared): `mutations/`'s
-    "a `..` path is admitted".
+    configuration: `../upstream` here is a repository beside the checkout, as `../stayfixed`, the
+    workflow's own, is beside CI's.
+
+    Mutation (declared): `mutations/`'s "a root spelled with '..' is refused as a symlink".
     """
-    checkout = tmp_path / "project"
-    with pytest.raises(Refusal, match=re.escape(PATH_LEAVES)) as refused:
-        platform_root(checkout, path)
-    assert "the-other-checkout" not in str(refused.value)
     project = _platform_clone(tmp_path)
-    code, said = _gate(project, tmp_path, f"--path={path}")
+    platform = ("--pr-base=main", "--base-input=", "--default-branch=")
+    code, said = _gate(project, tmp_path, *platform, "--path=../upstream", "--only=config")
     assert code == 2, said
-    assert PATH_LEAVES in said, said
-    assert "the-other-checkout" not in said, said
+    assert "../upstream" not in said, said
+
+
+@pytest.mark.parametrize("path", ["/the-other-checkout", "/", ".//", ".//the-other-checkout"])
+def test_an_absolute_path_is_refused_unechoed(tmp_path: Path, path: str) -> None:
+    # An absolute `path:` leaves the checkout without a `..`, and so does one that is absolute
+    # once its leading `./` is dropped. Mutation (declared): `mutations/`'s "an absolute path is
+    # admitted".
+    with pytest.raises(Refusal, match=re.escape(PATH_LEAVES)) as refused:
+        platform_root(tmp_path / "project", path)
+    assert "the-other-checkout" not in str(refused.value)
 
 
 @pytest.mark.parametrize(
@@ -493,6 +497,38 @@ def test_a_project_root_below_the_checkout_is_the_root(
     assert code == 0, said
     # Unchanged, and not the bootstrap: the base's copy was read at the same root the tree's was.
     assert f"config: {UNCHANGED}" in said, said
+
+
+@pytest.mark.parametrize(
+    ("name", "document"),
+    [
+        ("x\n::error file=README.md,line=1::forged", "not toml = ["),
+        ("y\n::warning::forged", "[bogus]\n"),
+    ],
+    ids=["not-toml", "unknown-section"],
+)
+def test_a_path_holding_a_line_break_prints_no_workflow_command(
+    tmp_path: Path, name: str, document: str
+) -> None:
+    # `path:` is admitted whatever its characters, so a root whose name holds a line break
+    # reaches every message that names the tree's `stayfixed.toml`, and a runner reads a workflow
+    # command from any line of the step's output. Printed through `printed.quoted`, the name
+    # stays on its line.
+    project = _platform_clone(tmp_path)
+    (project / name).mkdir()
+    (project / name / "stayfixed.toml").write_text(document, encoding="utf-8")
+    commit(project, "chore: a root named by the pull request")
+    code, said = _gate(
+        project,
+        tmp_path,
+        "--pr-base=main",
+        "--base-input=",
+        "--default-branch=",
+        f"--path={name}",
+        "--annotate",
+    )
+    assert code == 1, said
+    assert [line for line in said.splitlines() if line.startswith("::")] == [], said
 
 
 @pytest.mark.parametrize("branch", ["a..b", "-x"])

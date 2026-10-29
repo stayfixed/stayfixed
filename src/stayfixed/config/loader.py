@@ -77,7 +77,7 @@ from stayfixed.presets import (
     load_preset,
     shipped_presets,
 )
-from stayfixed.printed import clipped
+from stayfixed.printed import clipped, quoted
 
 CONFIG_FILE = "stayfixed.toml"
 SECTIONS = (
@@ -525,7 +525,7 @@ def loads(
     hands it to every load it makes, so a note is said once a command and never once a document.
     Every argument after `root` is keyword-only.
     """
-    path = label or root / CONFIG_FILE
+    path = _document(root, label)
     raw = _parsed(text, path)
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
@@ -533,7 +533,14 @@ def loads(
     return _built(raw, root, machine=machine, personal=personal, owner=owner)
 
 
-def _parsed(text: str, path: Path | str) -> dict[str, Any]:
+def _document(root: Path, label: str | None) -> str:
+    """What a refusal calls the document: `label`, or the file at `root` through
+    `printed.quoted`, since the root's name is the repository's, or the caller file's `path:`,
+    and a line break in it would start a line of its own."""
+    return label or quoted(str(root / CONFIG_FILE))
+
+
+def _parsed(text: str, path: str) -> dict[str, Any]:
     """`text` as TOML, or a refusal of the whole document naming only where the parser stopped."""
     try:
         return tomllib.loads(text)
@@ -683,7 +690,7 @@ def loads_noting(
     (`MissingKeys`). The owner's layer is folded in as `loads` folds it.
     `parsed` is `text` as a caller already parsed it, which is then not parsed again.
     """
-    path = label or root / CONFIG_FILE
+    path = _document(root, label)
     raw = _parsed(text, path) if parsed is None else parsed
     notes: list[str] = []
     keys: list[str] = []

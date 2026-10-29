@@ -2951,7 +2951,10 @@ name = "a root spelled with '..' is refused as a symlink"
 file = "src/stayfixed/committed.py"
 before = '    if ".." in lexical.parts:'
 after = "    if False:"
-reddens = ["tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is"]
+reddens = [
+  "tests/assess/test_gate_command.py::test_a_root_spelled_with_dot_dot_is_refused_for_what_it_is",
+  "tests/assess/test_read_base.py::test_a_dotdot_path_is_refused_unechoed",
+]
 
 [[mutation]]
 name = "the JSON writer writes back a text past the read cap"
