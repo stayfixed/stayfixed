@@ -1080,7 +1080,6 @@ def test_the_release_tags_are_asked_for_from_the_checkout_and_not_the_project_ro
     platform = ("--pr-base=main", "--base-input=", "--default-branch=", "--path=app")
     code, out, _ = cli(project, tmp_path, "gate", "--only=config", "--workflow-sha", SHA, *platform)
     assert code == 0, out
-    assert asked, out
     assert set(asked) == {project}
 
 

@@ -531,8 +531,7 @@ def test_a_path_through_a_committed_link_into_another_repository_is_refused(
 def test_a_checkout_reached_through_a_linked_parent_is_read_as_the_checkout(
     tmp_path: Path,
 ) -> None:
-    # `/tmp` on macOS, a symlinked home: a link above the checkout is the machine's, and the
-    # repository named to git is the checkout's own however `--root` is spelled.
+    # The repository named to git is the checkout's own however `--root` is spelled.
     real = tmp_path / "real"
     real.mkdir()
     project = _platform_clone(real, under="app")
