@@ -29,7 +29,7 @@ def test_each_probe_cites_the_principle_it_means() -> None:
     cited = {probe.id: titles[probe.principle] for probe in PROBES if probe.principle is not None}
     assert cited == {
         "todo-markers": "A bug is a file, and its index is a rendering",
-        "memory-history": "A personal overlay is a versioned plugin, not a dotfiles sync",
+        "memory-history": "A personal overlay is a versioned repository, not a dotfiles sync",
         "foreign-hooks": "A repository is untrusted input",
         "codeowners": "Enforcement is earned, not declared",
     }

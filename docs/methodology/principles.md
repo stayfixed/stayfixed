@@ -188,12 +188,14 @@ it two hundred times, which is where every existing project starts.
 its own rules. Nothing external states it, and no repository has yet adopted through `init` and
 had its advisory period's findings counted. The label changes when one has.
 
-## 8. A personal overlay is a versioned plugin, not a dotfiles sync
+## 8. A personal overlay is a versioned repository, not a dotfiles sync
 
 **Statement.** The rules and memory that belong to a person rather than a project should
-travel as a plugin that declares a dependency on the public one and carries its own upgrade
-manifest — installable on a fresh machine by the same command that installs everything
-else, private by construction, and never a prerequisite for the public tool to be useful.
+travel as a private, versioned repository that declares the release of the public tool it needs
+and carries its own upgrade manifest — set up on a fresh machine by the same tool that installs
+everything else, private by construction, and never a prerequisite for the public tool to be
+useful. What reaches a session from it is rendered for that checkout as a plugin; the overlay
+itself is not one.
 
 **What stayfixed does today.** The public plugin needs no overlay: with `[memory] mode` set to
 `local-only` or `in-repo` it runs whole. The overlay is its delivery layer, and the core runs
@@ -204,8 +206,8 @@ wrote and keeps the overlay's record of the binding. The memory store honours an
 only when its target lies inside this project's share of the recorded overlay root and the
 overlay's record binds this repository's `origin`.
 
-**Why.** A plugin with a declared dependency and a manifest is now a specified, portable
-unit [S15]; one plugin root serves both harnesses, because each reads its own manifest from
+**Why.** What `attach` renders from the overlay is a plugin, and a plugin is now a specified,
+portable unit [S15]; one plugin root serves both harnesses, because each reads its own manifest from
 it [S1] [S8] and Codex exports that root under both names [S9]; a private marketplace can
 serve one [S6]; and the plugin's data directory survives updates while the plugin root does
 not [S2], which is the distinction the overlay's upgrade path is built on. The overlay's own
