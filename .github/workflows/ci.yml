@@ -25,16 +25,16 @@ jobs:
   # the rest (`scripts/ci_scope.py` says which paths count): no behaviour changes, yet tests read
   # them — `docs/cli.md` is held to the parser, every tracked file to the neutrality and anchor
   # guards, and ruff, mypy and coverage read the comments that steer them — so one leg of the suite
-  # still runs, and the other legs, the oracle, the real runners and the plugin validator have
-  # nothing of theirs to judge. A mutation entry whose text such a change edits fails on the next
-  # pull request that runs the oracle, not on this one.
+  # still runs, and the other legs, the oracle, the real runners, the plugin validator and the demo
+  # have nothing of theirs to judge. A mutation entry whose text such a change edits fails on the
+  # next pull request that runs the oracle, not on this one.
   #
   # Skipped by step and not by job wherever a check is a matrix leg: branch protection requires
   # each leg by its full name, and every leg here still starts and reports under it. A job skipped
-  # by its `if:` reports success, so `oracle`, `runners` and `plugin` skip whole. Every job that
-  # reads this one runs unless the run was cancelled and treats any answer but `false` as a change
-  # to code, so this job failing, or answering nothing, runs everything: it can only narrow a run
-  # when it says, in so many words, that no code changed.
+  # by its `if:` reports success, so `oracle`, `runners`, `plugin` and `demo` skip whole. Every job
+  # that reads this one runs unless the run was cancelled and treats any answer but `false` as a
+  # change to code, so this job failing, or answering nothing, runs everything: it can only narrow a
+  # run when it says, in so many words, that no code changed.
   #
   # A push (to `main`) runs everything. A pull request's checkout is the merge commit the platform
   # makes, so its first parent is the base the change is judged against. `smoke.yml` carries the
@@ -374,3 +374,32 @@ jobs:
           node --version
           go version
           uv run pytest -n auto -m runners
+
+  # The demo script, `examples/demo/demo.py`, against this checkout's `stayfixed`: each act passes
+  # on the product's own exit code and `--json` answer, and the last drives the `Stop`-hook recipe
+  # in `examples/stop-hook/`. Claude Code is installed at the `plugin` job's pin for the act that
+  # attaches an overlay, and `--require-claude` fails the run when that act is skipped, so a
+  # missing `claude` is a red job and not a quiet skip. It makes no model call. `PATH` leads with
+  # the project's environment, so its `pytest` and `python3` are the ones the acts run.
+  demo:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install Claude Code for the attach act
+        run: npm install -g @anthropic-ai/claude-code@2.1.261
+      - name: Install
+        run: uv sync --locked
+      - name: The demo, against the checkout's stayfixed
+        run: PATH="$PWD/.venv/bin:$PATH" python3 -I examples/demo/demo.py "$PWD/.venv/bin/stayfixed" --require-claude
