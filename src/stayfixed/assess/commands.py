@@ -136,6 +136,7 @@ def run_assess(args: argparse.Namespace) -> Result:
 def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed import __version__
     from stayfixed.assess import rule
+    from stayfixed.assess.base import read_base
     from stayfixed.assess.gates import GateContext, run_gates
     from stayfixed.assess.report import (
         BUILTIN_FINDINGS_ELSEWHERE,
@@ -177,7 +178,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     runner = subprocess_runner()
     verdict = rule.judge(
         root,
-        rule.read_base(root, base, branch=branch, prefix=prefix),
+        read_base(root, base, branch=branch, prefix=prefix),
         tree_text,
         machine=machine,
         running=__version__,
@@ -337,7 +338,7 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
 
 
 def register(groups: SubParsers) -> None:
-    from stayfixed.assess.rule import BASE_REF, BASE_SHAPE
+    from stayfixed.assess.base import BASE_REF, BASE_SHAPE
 
     # `--base` for `stayfixed gate`, whose verdict reads the base's `stayfixed.toml`, and `adopt
     # promote`, which writes enforcement off the comparison: refused at the parser unless it is a

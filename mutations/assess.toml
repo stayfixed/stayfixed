@@ -118,14 +118,14 @@ reddens = ["tests/assess/test_probes.py::test_a_git_query_that_does_not_answer_i
 # never had — is a guard.
 [[mutation]]
 name = "a short base name is resolved by git, and a tag of its spelling answers for the base"
-file = "src/stayfixed/assess/rule.py"
+file = "src/stayfixed/assess/base.py"
 before = "    if not BASE_REF.match(base):"
 after = "    if False:"
 reddens = ["tests/assess/test_read_base.py::test_a_short_name_is_refused_because_a_tag_can_take_its_place"]
 
 [[mutation]]
 name = "a full ref name that does not exist is read as the tag of its spelling"
-file = "src/stayfixed/assess/rule.py"
+file = "src/stayfixed/assess/base.py"
 before = '    if base.startswith("refs/"):'
 after = "    if False:"
 reddens = ["tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_itself"]
@@ -135,7 +135,7 @@ reddens = ["tests/assess/test_read_base.py::test_a_full_ref_name_must_exist_as_i
 # copy would govern the run.
 [[mutation]]
 name = "a base copy that is not UTF-8 is parsed and governs the run"
-file = "src/stayfixed/assess/rule.py"
+file = "src/stayfixed/assess/base.py"
 before = "        raise Failure(BASE_NOT_UTF8) from None"
 after = "        pass"
 reddens = [
@@ -282,7 +282,7 @@ reddens = [
 # copy on the base" — the bootstrap — held by a case that runs on every platform.
 [[mutation]]
 name = "a base id that names a tree is read as if it named a commit"
-file = "src/stayfixed/assess/rule.py"
+file = "src/stayfixed/assess/base.py"
 before = '        f"{base}^{{commit}}",'
 after = '        base,'
 reddens = ["tests/assess/test_read_base.py::test_a_base_id_that_names_no_commit_is_a_failure_and_never_the_bootstrap"]

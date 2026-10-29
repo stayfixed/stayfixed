@@ -20,7 +20,8 @@ import pytest
 
 import stayfixed
 from stayfixed import committed, gitenv
-from stayfixed.assess.rule import BASE_NOT_UTF8, read_base
+from stayfixed.assess import rule
+from stayfixed.assess.base import BASE_NOT_UTF8, BASE_REF, BASE_SHAPE, read_base
 from stayfixed.committed import NOT_A_REPOSITORY, ROOT_UNANSWERED, repository_prefix
 from stayfixed.config.layout import local_base
 from stayfixed.config.loader import load
@@ -42,6 +43,16 @@ REMOTE_MAIN = "refs/remotes/origin/main"
 
 def default_base(root: Path) -> str:
     return local_base(load(root, machine=root.parent / "absent.toml"))
+
+
+def test_the_base_read_lives_apart_from_the_judgement(tmp_path: Path) -> None:
+    # Which commit and where in it are `base`'s, and the rule that judges what was read is
+    # `rule`'s (#33): `rule` re-exports none of the read, so no caller reaches it through `rule`.
+    assert not hasattr(rule, "read_base")
+    assert not hasattr(rule, "BASE_REF")
+    assert BASE_REF.match(REMOTE_MAIN)
+    with pytest.raises(Refusal, match=re.escape(BASE_SHAPE)):
+        read_base(tmp_path, "origin/main", branch="main")
 
 
 def test_the_default_base_is_the_remote_tracking_ref_whatever_a_tag_is_called(
@@ -285,7 +296,7 @@ def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(
     script = (
         "import sys\n"
         "from pathlib import Path\n"
-        "from stayfixed.assess.rule import read_base\n"
+        "from stayfixed.assess.base import read_base\n"
         "from stayfixed.errors import Failure\n"
         "for root in sys.argv[1:]:\n"
         "    try:\n"

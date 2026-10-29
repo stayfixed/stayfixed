@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed.assess import rule
 from stayfixed.assess.gates import STOPPED
 from stayfixed.assess.report import (
     BOOTSTRAP,
@@ -982,7 +981,7 @@ def test_an_unexpected_error_reading_the_base_is_never_the_bootstrap(
     def broken(root: Path, base: str, **_: object) -> str | None:
         raise OSError("disk")
 
-    monkeypatch.setattr(rule, "read_base", broken)
+    monkeypatch.setattr("stayfixed.assess.base.read_base", broken)
     code, _, err = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 2
     assert "internal error: OSError: disk" in err, err
