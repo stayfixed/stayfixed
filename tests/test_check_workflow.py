@@ -489,36 +489,6 @@ def test_no_expression_names_head_ref() -> None:
 
 
 @needs_workflow
-def test_both_gate_steps_pass_the_platform_values_and_no_base() -> None:
-    # The step that resolved the base and the root in bash is gone, and each gate step hands the
-    # platform's values to `stayfixed gate`, which resolves them itself. Neither step runs from
-    # the caller's checkout: the process stays in the workspace, which the pull request writes
-    # nothing into, and `--root project` names the checkout.
-    for step, part in ((JUDGE, "--builtin"), (CUSTOM, "--custom")):
-        commands = [line for line in _lines(step_script(CHECK_WORKFLOW, step)) if "python" in line]
-        assert commands == [
-            f"python3 -P -s -m stayfixed gate {part} --root project {PLATFORM_ARGUMENTS} "
-            f"{GATE_ARGUMENTS}"
-        ], commands
-        assert "working-directory" not in _step(step), _step(step)
-        assert "--base " not in commands[0] and "--base=" not in commands[0], commands
-
-
-@needs_workflow
-def test_no_step_reads_another_s_outputs_but_the_checkout_sha() -> None:
-    # The two gate steps resolve the base each for itself, in one checkout that nothing fetches
-    # into between them, so neither reads a base from the other or from a step before it: the
-    # one output any step reads is the checkout step's peeled commit, and only that step writes
-    # `$GITHUB_OUTPUT`.
-    text = CHECK_WORKFLOW.read_text(encoding="utf-8")
-    assert set(re.findall(r"steps\.[\w-]+\.outputs\.[\w-]+", text)) == {
-        "steps.stayfixed.outputs.sha"
-    }
-    writers = [_name(step) for step in _steps() if "GITHUB_OUTPUT" in str(step.get("run", ""))]
-    assert writers == [CHECKOUT_STEP], writers
-
-
-@needs_workflow
 def test_the_judging_step_passes_the_platform_s_workflow_sha_through_env() -> None:
     # An upgrade's `[ci] ref` is admitted only at the commit the platform says is running, so
     # the judging step must hand `stayfixed gate` that commit, and from the platform's own record

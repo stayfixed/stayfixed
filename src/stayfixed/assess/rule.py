@@ -35,8 +35,7 @@ from dataclasses import dataclass, field, fields, replace
 from enum import StrEnum
 from pathlib import Path
 
-# Imported under a private name: `rule` judges what the read returns, and publishes none of it.
-from stayfixed.assess.base import read_base as _read_base
+from stayfixed.assess.base import read_base
 from stayfixed.config.classes import KeyClass, class_of
 from stayfixed.config.loader import CONFIG_FILE, loads
 from stayfixed.config.owner import Owner
@@ -266,7 +265,7 @@ def read_base_gates(
     """The base's custom gates by name, loaded as `judge` loads the base's copy; none when the
     base has no `stayfixed.toml` at the project's path. Raises as `read_base` and the loader do.
     `owner` is the owner's layer the command already resolved (`loads`' own)."""
-    text = _read_base(root, base, branch=branch)
+    text = read_base(root, base, branch=branch)
     if text is None:
         return {}
     config = loads(text, root, machine=machine, label=BASE_COPY, owner=owner)

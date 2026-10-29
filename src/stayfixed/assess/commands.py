@@ -326,9 +326,6 @@ def register(groups: SubParsers) -> None:
     gate = common_flags(groups.add_parser("gate", help=GATE_HELP))
     gate.add_argument("--only", action="append", default=None, metavar="NAME", help=ONLY_HELP)
     gate.add_argument("--base", default=None, type=base_ref, help=BASE_REF_HELP)
-    # The reusable workflow's raw values, each one argv as `--name=value` so that a value
-    # beginning with `-` is still the flag's, and each may be empty. Python checks them, where a
-    # shell step did (`stayfixed.assess.base`).
     gate.add_argument("--pr-base", default=None, metavar="BRANCH", help=PR_BASE_HELP)
     gate.add_argument("--base-input", default=None, metavar="BRANCH", help=BASE_INPUT_HELP)
     gate.add_argument("--default-branch", default=None, metavar="BRANCH", help=DEFAULT_BRANCH_HELP)

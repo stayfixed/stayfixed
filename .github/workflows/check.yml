@@ -133,10 +133,7 @@ jobs:
       # `only:` is split on whitespace and never globbed, and each name travels as `--only=NAME`,
       # so it is always that flag's value, whatever it looks like; `--builtin` runs the
       # configuration check whatever `only:` names, so a leg that names one gate still judges the
-      # change's `stayfixed.toml` against the base's. The base and the project root arrive as the
-      # platform's raw values, and `stayfixed gate` checks and resolves them before any gate runs;
-      # the process stays in the workspace, which the pull request writes nothing into, and
-      # `--root project` names the caller's checkout.
+      # change's `stayfixed.toml` against the base's.
       - name: The configuration and the built-in gates
         env:
           PYTHONPATH: stayfixed/src

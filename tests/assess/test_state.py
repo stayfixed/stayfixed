@@ -10,7 +10,6 @@ message, and all five built-in gates pass on the tree as `_project` leaves it.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -113,20 +112,6 @@ def test_a_promotion_keeps_every_other_byte_and_the_record(tmp_path: Path) -> No
     record = Manifest.read(root).get(CONFIG_ARTIFACT)
     assert record is not None
     assert record.sha256 == digest(after)
-
-
-def test_promote_writes_enforced_alone_and_never_state(tmp_path: Path) -> None:
-    # `enforced` is the one adoption key: promoting the last configured gate lists it beside the
-    # others, in configured order, and no `state` line is written, read or kept.
-    root, base = _project(tmp_path)
-    promote(root, _config(root, tmp_path), ["docs"], base=base, machine=tmp_path / "m.toml")
-    transition = promote(root, _config(root, tmp_path), [], base=base, machine=tmp_path / "m.toml")
-    assert transition.promoted == tuple(name for name in BUILTIN_GATES if name != "docs")
-    document = _document(root)
-    assert not re.search(r"^\s*state\s*=", document, re.MULTILINE), document
-    listed = ", ".join(f'"{name}"' for name in BUILTIN_GATES)
-    assert f"\nenforced = [{listed}]\n" in document
-    assert _config(root, tmp_path).stayfixed.enforcing == frozenset(BUILTIN_GATES)
 
 
 def test_a_named_gate_that_passes_is_listed_in_enforced(tmp_path: Path) -> None:

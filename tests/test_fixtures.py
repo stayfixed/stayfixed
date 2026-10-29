@@ -199,14 +199,12 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
     assert "STAYFIXED_CONFIG" in settings["env"]
 
 
-# --- the workflows' steps, run as the shell scripts they are ----------------------------
+# --- workflow steps, read out of the shipped files -------------------------------------
 #
 # The repository carries no YAML parser and adds no dependency to check its own prose, so a workflow
 # is otherwise proven only by the run that first executes it. A step's `run:` body is extracted
 # from the shipped file — never retyped here, or the test would hold a copy and the file would be
-# free to drift — and run with `bash`. `check.yml`'s base and project root are no longer a step:
-# `stayfixed gate` resolves them from the platform's values, and `tests/assess/test_read_base.py`
-# holds the cases that ran a shell step here.
+# free to drift — and a case that runs it runs it with `bash`.
 
 CHECK_WORKFLOW = ROOT / ".github" / "workflows" / "check.yml"
 needs_bash = pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not installed")

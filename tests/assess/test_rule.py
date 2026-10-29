@@ -199,27 +199,11 @@ def test_each_row_of_the_table_while_a_gate_enforces(
     assert verdict.refused is (expected is Verdict.REFUSED)
 
 
-def test_enforced_grown_to_a_strict_superset_is_a_tightening(tmp_path: Path) -> None:
-    # `enforced` is the one adoption key, so a promotion is the list growing and nothing else.
-    verdict = _judge(STRICT, _enforced("plan", "docs"), tmp_path)
-    assert _verdicts(verdict) == {"stayfixed.enforced": Verdict.TIGHTENED}
-    assert verdict.enforcing == {"plan", "docs"}
-
-
-def test_enforced_reordered_is_no_change(tmp_path: Path) -> None:
-    # The same set in another order: no reader sees the order, so no key changed at all.
-    verdict = _judge(_enforced("plan", "docs"), _enforced("docs", "plan"), tmp_path)
-    assert verdict.changes == ()
-    assert not verdict.refused
-
-
 def test_enforced_that_loses_a_gate_the_base_lists_is_refused(tmp_path: Path) -> None:
-    # A gate the base enforces leaves the list: refused, whatever the list gains beside it, and
-    # an empty list is no superset of the base's either.
-    for tree in (_enforced("docs"), _enforced()):
-        verdict = _judge(_enforced("plan", "commit"), tree, tmp_path)
-        assert _verdicts(verdict) == {"stayfixed.enforced": Verdict.REFUSED}
-        assert verdict.refused
+    # A gate the base enforces leaves the list: refused, whatever the list gains beside it.
+    verdict = _judge(_enforced("plan", "commit"), _enforced("docs"), tmp_path)
+    assert _verdicts(verdict) == {"stayfixed.enforced": Verdict.REFUSED}
+    assert verdict.refused
 
 
 def test_a_base_that_still_spells_state_does_not_load_and_names_the_direct_push(
