@@ -454,15 +454,34 @@ def test_foreign_workflows_are_listed_and_stayfixed_s_own_is_not(tmp_path: Path)
         (None, True),
         ("*.md @owner\n", True),
         ("/.github/ @owner\n", False),
+        ("/.github/\t@owner\n", False),
         ("# /.github/ @owner\n", True),
+        ("/.github/\u00a0@owner\n", True),
+        ("/.github/\n", True),
+        ("/docs/ @acme/.github-admins\n", True),
     ],
-    ids=["no-file", "another-pattern", "github-directory", "a-comment"],
+    ids=[
+        "no-file",
+        "another-pattern",
+        "github-directory",
+        "a-tab",
+        "a-comment",
+        "no-break-space",
+        "no-owner",
+        "an-owner-names-github",
+    ],
 )
 def test_codeowners_is_reported_unless_a_line_names_github(
     tmp_path: Path, codeowners: str | None, reported: bool
 ) -> None:
-    # Advice read as a substring, not GitHub's matching. Mutation (advisory): the comment filter
-    # dropped -> `a-comment` is silent and reddens.
+    # Advice read as a substring of the pattern, not GitHub's matching. GitHub splits a line on
+    # ASCII space and tab and not on U+00A0, as a run on GitHub showed: `no-break-space` is one
+    # pattern with no owner, and a pattern with no owner owns nothing. Mutation (advisory): the
+    # comment filter dropped -> `a-comment` is silent and reddens. Mutations (declared):
+    # `mutations/`'s "the codeowners probe asks the whole line again" -> `no-break-space`,
+    # `no-owner` and `an-owner-names-github` are silent; "a codeowners line with no owner
+    # counts" -> `no-break-space` and `no-owner` are; "a codeowners line is split on U+00A0
+    # too" -> `no-break-space` is.
     root = _repo(tmp_path)
     if codeowners is not None:
         _write(root, ".github/CODEOWNERS", codeowners)
