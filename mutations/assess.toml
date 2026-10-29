@@ -1,4 +1,4 @@
-# The assess group: running a project's gates, its inventory, and the adoption state machine.
+# The assess group: running a project's gates, its inventory, and adoption, which promotes them.
 # Which group an entry belongs in is `GROUP_OF` in `scripts/mutation_oracle.py`; what an entry is:
 # CONTRIBUTING.md, "Tests".
 
@@ -596,8 +596,8 @@ reddens = [
   "tests/assess/test_state.py::test_the_command_exits_1_when_a_gate_failed_and_reports_both_lists",
 ]
 
-# `adopt promote` is the one adoption command: it moves a project out of `initialised` itself, so
-# a second one would be a step every project pays for and nothing needs.
+# `adopt promote` is the one adoption command: it writes the one adoption key itself, so a second
+# one would be a step every project pays for and nothing needs.
 [[mutation]]
 name = "the adopt group registers a command besides promote"
 file = "src/stayfixed/assess/commands.py"

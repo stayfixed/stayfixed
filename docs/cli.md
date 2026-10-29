@@ -1278,9 +1278,9 @@ design-document directories, because stayfixed names no other tool's convention;
 test exercises what its name says, which only reading one stack's test files could judge.
 
 **Writes** `.stayfixed/assessment.json`, which the `stayfixed:ignore` region keeps out of git,
-overwritten on every run that gets that far and never read back: format `1`, with `format`,
-`stayfixed` (the version that wrote it), `base`, `state`, `enforcing` (the gates
-`[stayfixed] enforced` makes enforcing, every configured gate under `installed`), `skipped` (the
+overwritten on every run that gets that far and never read back: format `2`, with `format`,
+`stayfixed` (the version that wrote it), `base`, `enforcing` (the gates
+`[stayfixed] enforced` names), `skipped` (the
 custom gates `--builtin` left out, else empty), `gates` (a gate's row each, above) and `items`
 (per item: `probe`, the gate or probe that found it; `rule`; `principle`, a number in
 [the principles](methodology/principles.md) or `null`; `severity`, `warning` or `advice`;
@@ -1367,12 +1367,11 @@ rewrite what the other runs; one leg per gate isolates them (see "One row per ga
 **What a pull request may change in `stayfixed.toml`.** Both copies go through the loader and are
 compared by what it derives — each key by its dotted name, each budget by its effective value,
 each custom gate's `run` on its own — never by byte. A comment, a key written out at its default,
-a reordered `enforced` or `[gates] builtin` list, and `installed` beside a list that says the same
-thing are no change at all. Each changed key gets one verdict:
+and a reordered `enforced` or `[gates] builtin` list are no change at all. Each changed key gets one verdict:
 
 | Key | Admitted when | Verdict | Otherwise |
 |---|---|---|---|
-| `stayfixed.state` and `stayfixed.enforced`, judged as one | this tree enforces every gate the base enforces, and `state` does not move back (`initialised`, `adopting`, `installed`) | `tightened` when either moved forward, else `neutral` | `refused` |
+| `stayfixed.enforced` | it lists every gate the base lists | `tightened` when it lists more, else `neutral` | `refused` |
 | `gates.builtin` | a gate added, or one removed that the base does not enforce | `tightened` when one was added, else `neutral` | `refused` |
 | `gates.custom.<name>.run` | the gate is new, or the base does not enforce it | `tightened` when new, else `neutral` | `refused` |
 | `budgets.<name>`, a gate's budget (`agents_md_lines`, `agents_md_words`, `status_lines`, `roadmap_prose_lines`, `roadmap_prose_words`) or a session's (`memory_index_words`, `startup_rules_words`, `volatile_notes_words`, `volatile_ttl_days`) | the effective value is at most the base's | `tightened` | `refused` |
@@ -1390,7 +1389,7 @@ refused, and then the base's; it enforces the gates either side enforces. So a p
 promotes a gate is held to that gate in its own run.
 
 **How a refused change lands.** While any gate enforces, a pull request cannot make a change the
-table refuses, and under `installed` that includes routine upkeep: a `[paths]` value,
+table refuses, and that includes routine upkeep: a `[paths]` value,
 `[artifacts] local`, a `[ledger] code_roots` entry removed, a `[commit_messages] types` entry, a custom
 gate's `run`, `[gates] custom_timeout_seconds`, `[project] base_branch`. The owner makes such a
 change by pushing it directly to the base branch; every later pull request is judged against it.
@@ -1451,7 +1450,7 @@ ten per level per step and drops the others without a word.
 
 **`--summary FILE`** appends a markdown table — each gate's mode, count and outcome, and each
 changed key's verdict — to `FILE`; the workflow names the job summary. **`--json`** carries
-`config` (`judged`, `base_state`, `changes` as `{key, verdict}`, `refused`, `enforcing`),
+`config` (`judged`, `changes` as `{key, verdict}`, `refused`, `enforcing`),
 `not_on_base`, the custom gates not run until the base has their command, and `gates`, a gate's
 row each as [`stayfixed assess`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
 defines it, `enforcing` as this run enforces it. It lists no finding: `stayfixed assess --json` is
@@ -1492,25 +1491,21 @@ on the base branch.
 ## `stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`
 
 Runs gates strictly on the tree as it is, and enforces those that pass by adding them to
-`[stayfixed] enforced`. It is the one adoption command: the first gate it promotes moves an
-`initialised` project to `adopting`, and an `adopting` project with nothing enforced yet — one
-written so by hand, or left so by an earlier release — is promoted from the same way. With no
-`GATE`, it runs every configured gate that does not enforce yet, enforces each one that passes,
-names the rest with their finding counts, and exits 1 if any failed; the line names up to eight
-gates in each of its two lists and counts the rest, and `--json` carries every one. With names,
-they pass together or nothing is written, and a named gate that already enforces is refused
-rather than skipped. Once every configured gate enforces, the state becomes `installed` and
-`enforced` is emptied: under `installed` an empty list means every configured gate, so a gate
-the project adds later enforces from its first run — for a custom gate, the first run after it
-lands on the base branch, since `stayfixed gate` runs none before. An `adopting` project whose
-every configured gate already enforces — one that removed the last gate it had not promoted — is
-moved to `installed` with no gate run; a project that configures no gate is refused, since it
-has none to have earned. The state never moves back. A name, a gate already enforcing, nothing
-left to promote, a `stayfixed.toml` the editor cannot rewrite in place and a manifest it cannot
-read are each refused before the first gate runs; a refusal from the editor names `state` and
-`enforced` together, one line each: as they stand when the check before the gates finds it, and
-as the command would write them when the write itself refuses, so following it either leaves the
-project as it was or makes the transition whole.
+`[stayfixed] enforced`, the one adoption key: a gate enforces when that list names it, and
+nothing else says so. It is the one adoption command. With no `GATE`, it runs every configured
+gate that does not enforce yet, enforces each one that passes, names the rest with their finding
+counts, and exits 1 if any failed; the line names up to eight gates in each of its two lists and
+counts the rest, and `--json` carries every one. With names, they pass together or nothing is
+written, and a named gate that already enforces is refused rather than skipped. The list is
+written in configured order, and once every configured gate passed it names every one: a gate
+the project adds later is advisory until it is promoted in turn, or listed by hand in the pull
+request that adds it, which `stayfixed gate` admits as a tightening. A project whose every
+configured gate is already listed is refused, as is one that configures no gate. A name, a gate
+already enforcing, nothing left to promote, a `stayfixed.toml` the editor cannot rewrite in place
+and a manifest it cannot read are each refused before the first gate runs; a refusal from the
+editor names `enforced` on one line: as it stands when the check before the gates finds it, and
+as the command would write it when the write itself refuses, so following it either leaves the
+project as it was or makes the promotion whole.
 
 `--base` is what `plan` and `commit` judge a range against, and what `bugs` compares the ledger
 with where `HEAD` forked from it, as for `stayfixed gate`: a 40-hex commit or a `refs/…` name,
@@ -1542,7 +1537,7 @@ each one is not run and not promoted, is named `(not run, as --builtin asked)` w
 saying that without `--builtin` the command runs them, and, named beside other gates, holds them
 back as a gate not on the base does.
 
-`--json` carries, on exit 0 or 1, `before`, `after`, `gates` (a gate's row for each gate it ran,
+`--json` carries, on exit 0 or 1, `gates` (a gate's row for each gate it ran,
 as `stayfixed assess` defines it, `enforcing` when this run promoted it), `promoted`, `failing`,
 which maps each gate that ran and did not pass to its finding count, `unanswered`, the gates that
 could not run, `not_on_base`, the custom gates not run because the base does not have their
@@ -1564,16 +1559,15 @@ branch protection, which is an owner's act and not a command. Removing or renami
 `[stayfixed] enforced` lists is such an edit, and the same push must take the name out of that
 list, or `stayfixed.toml` no longer loads.
 
-**Writes** `stayfixed.toml`'s `[stayfixed] state` and `enforced` through the same editor as
+**Writes** `stayfixed.toml`'s `[stayfixed] enforced` through the same editor as
 `stayfixed upgrade`, and the manifest's record of it when that record still describes the file —
-and nothing when no gate is promoted and the state does not move. A custom gate writes whatever
-its command writes.
+and nothing when no gate is promoted. A custom gate writes whatever its command writes.
 
 | Exit | Meaning |
 |---|---|
-| 0 | every gate it ran passed and now enforces, or an adopting project whose every gate enforces was installed |
+| 0 | every gate it ran passed and now enforces |
 | 1 | a gate failed, could not run, is a custom gate whose command the base does not have, or is a custom gate `--builtin` did not run: with names, nothing was written; without, the others were enforced; or `stayfixed.toml` is missing or does not load |
-| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote, a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `stayfixed.toml` refused |
+| 2 | a name that is not a configured gate, a named gate that already enforces, nothing left to promote (every configured gate listed), a project that configures no gate, a `--base` outside its grammar (from the parser), a manifest that cannot be read, or `stayfixed.toml` refused |
 
 ## `stayfixed memory refs`
 
@@ -1682,13 +1676,13 @@ says so in a `note:` line.
 
 The file is then checked as it will be on disk, that key included, before anything is
 written. One the next command could not load fails (`1`) with the loader's own sentence, and
-nothing is written: no `[project] name`, a `state` outside `initialised`, `adopting` and
-`installed`, or an `enforced` list the loader holds against `state` and the gates.
+nothing is written: no `[project] name`, a `[stayfixed] state` line (a key stayfixed no longer
+has, which the loader refuses as any unknown key), or an `enforced` list naming a gate the project
+does not run, or one gate twice.
 
 The paths it declares are where the scaffold lands. A repository with no `stayfixed.toml` gets
-one written from the detected values and your answers, headed by a comment naming the four
-keys that are stayfixed's to rewrite: `[stayfixed] version`, `state` and `enforced`, and
-`[ci] ref`. A file that cannot be read, is not UTF-8 text or is not valid TOML is a failure
+one written from the detected values and your answers, headed by a comment naming the three
+keys that are stayfixed's to rewrite: `[stayfixed] version` and `enforced`, and `[ci] ref`. A file that cannot be read, is not UTF-8 text or is not valid TOML is a failure
 (`1`) naming the file. A repository that already carries `.stayfixed/manifest.json` is refused
 (`2`): re-running `init` is `stayfixed upgrade`. `stayfixed uninstall` later keeps a
 `stayfixed.toml` you wrote, the version line included. When that file configures
@@ -3392,7 +3386,7 @@ section describes.
 **Advisory or enforcing, per gate.** A gate is advisory until it enforces: its findings are
 warning annotations and the job stays green. An enforcing gate's findings are errors and fail
 the job. What enforces is what the base's `[stayfixed] enforced` names, with any gate the change
-itself adds there, and every configured gate once `[stayfixed] state` is `installed`.
+itself adds there; a gate no list names is advisory, however the project configures it.
 `stayfixed adopt promote` moves a gate across. Within a step, every gate runs whatever the one
 before it said, so a project fixing its documents does not pay a round trip per finding; the one
 exception is a custom gate, which is not started once the run has failed. A custom gate runs
@@ -3510,8 +3504,7 @@ why so few of them are trusted with anything.
 ```toml
 [stayfixed]
 version = "0.6.1"        # required; there is no default
-state = "installed"      # initialised | adopting | installed — default: initialised
-enforced = []            # tool-owned: the gates promoted while adopting
+enforced = []            # tool-owned: the gates that enforce, each promoted when it passed
 preset = "recommended"
 profile = ""
 agents = ["claude", "codex"]
@@ -3615,12 +3608,9 @@ the guards on the preset and the machine owner's layer ([`stayfixed hook
 <event>`](#stayfixed-hook-event)).
 
 Every value above is what a key you leave out takes, from the `recommended` preset — with three
-exceptions, and one line that is an example rather than a default. `[stayfixed] version` and
-`[project] name` have no default at all and are yours to write: a file without `version` does
-not load at all (`[stayfixed] is missing required key(s): version`). And `[stayfixed] state`
-defaults to `initialised` — it is one of `initialised`, `adopting` and `installed`, and the
-`installed` above shows a set value, not what an omitted key takes. `[ci] gate_branch` has no
-preset default: left out, it is `[project] base_branch`, whose default is `main`. Everything else
+exceptions. `[stayfixed] version` and `[project] name` have no default at all and are yours to
+write: a file without `version` does not load at all (`[stayfixed] is missing required key(s):
+version`). `[ci] gate_branch` has no preset default: left out, it is `[project] base_branch`, whose default is `main`. Everything else
 from `[project] base_branch` down is the preset's default exactly as written. `[project]
 base_branch` and `release_branch` are branch names git accepts, from letters, digits, `.`, `_`,
 `-` and `/` (the grammar `--base-branch` and `[ci] gate_branch` follow); anything else does not
@@ -3675,20 +3665,15 @@ so a project with many slow regressions raises it; a set that runs past it ends 
 not run, never as a pass. Named in `[stayfixed] enforced`, the gate makes a regression that is not
 proved fail the run; otherwise it is advisory, like any other gate.
 
-**Enforcement is per gate.** `[stayfixed] enforced` lists the gates promoted while a project
-adopts stayfixed, and `state = "installed"` means every gate the project runs. Both keys are
-stayfixed's to write (`stayfixed adopt promote`), and the loader holds them together: an
-`initialised` project lists none, and an `installed` one lists every gate or none. So there are
-three shapes and no others: `initialised` with an empty list (nothing has begun), `adopting`
-with any list of configured gates, each named once (the adoption has begun, and each gate is
-promoted when it passes), and `installed` with every gate or none. `adopting` with the empty
-list is one of them: `stayfixed adopt promote` never writes it, since its first promotion lists
-a gate, but a person may write it by hand and an earlier release wrote it, and it loads and is
-promoted from like any other `adopting` list. The state is kept beside the list because
-`initialised` and `adopting` differ even when nothing enforces; any other combination does
-not load. A gate enforces when the base branch's list names it, when the change under review
-adds it there, or once either side's state is `installed`, so a change that moves the state to
-`installed` is held to every gate in its own run; every other gate is advisory.
+**Enforcement is per gate.** `[stayfixed] enforced` is the one adoption key: it lists the gates
+that enforce, configured gates each named once, and nothing else makes a gate enforce. It is
+stayfixed's to write (`stayfixed adopt promote` adds each gate as it passes), and a person may
+write it too; the loader refuses a name the project does not run and a name given twice. Left
+out, or empty, nothing enforces. A project that has promoted every gate lists every gate, and a
+gate it adds later is advisory until the list names it. `[stayfixed] state`, which once stated a
+lifecycle beside the list, is gone: the loader refuses it as any key it does not have. A gate
+enforces when the base branch's list names it or the change under review adds it there, so a
+change that lists a gate is held to it in its own run; every other gate is advisory.
 [The reusable workflow](#the-reusable-workflow) says what each means for a run.
 
 **Which command reads which path.** `agents_md` and `roadmap` are the two documents `docs check`
