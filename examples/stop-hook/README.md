@@ -1,9 +1,10 @@
 # Run `stayfixed prove` before the agent finishes
 
 `prove_on_stop.py` is a Claude Code `Stop` hook. When the agent finishes responding, it runs your
-test command under `stayfixed prove` and lets the agent stop only on `proved`. On any other verdict
-it keeps the agent working, with one line saying what `prove` answered and asking for a green run,
-or a word on why there cannot be one, before finishing.
+test command under `stayfixed prove`. On `proved` it lets the agent stop. On any other verdict it
+keeps the agent working once, with one line saying what `prove` answered and asking for a green
+run, or a word on why there cannot be one, before finishing; the stop that continuation ends is let
+through, whatever the verdict.
 
 It needs Python 3.11 or later, standard library only, and `stayfixed` and `git` on `PATH`. It never
 imports `stayfixed`: it runs the program, as you would.
