@@ -454,15 +454,39 @@ def test_foreign_workflows_are_listed_and_stayfixed_s_own_is_not(tmp_path: Path)
         (None, True),
         ("*.md @owner\n", True),
         ("/.github/ @owner\n", False),
+        ("/.github/\t@owner\n", False),
         ("# /.github/ @owner\n", True),
+        ("#/.github/ @owner\n", True),
+        (" \t/.github/ @owner \t\n", False),
+        ("/.github/ \t\n", True),
+        ("/.github/\u00a0@owner\n", True),
+        ("/.github/\n", True),
+        ("/docs/ @acme/.github-admins\n", True),
     ],
-    ids=["no-file", "another-pattern", "github-directory", "a-comment"],
+    ids=[
+        "no-file",
+        "another-pattern",
+        "github-directory",
+        "a-tab",
+        "a-comment",
+        "a-comment-no-space",
+        "padded",
+        "no-owner-trailing-blank",
+        "no-break-space",
+        "no-owner",
+        "an-owner-names-github",
+    ],
 )
 def test_codeowners_is_reported_unless_a_line_names_github(
     tmp_path: Path, codeowners: str | None, reported: bool
 ) -> None:
-    # Advice read as a substring, not GitHub's matching. Mutation (advisory): the comment filter
-    # dropped -> `a-comment` is silent and reddens.
+    # Read as `_codeowners` says, not as GitHub matches. Mutation (advisory): the comment filter
+    # dropped -> `a-comment-no-space` reddens (`a-comment`'s first field is `#`, so it reports
+    # either way); the strip dropped -> `padded` and `no-owner-trailing-blank`. Declared:
+    # `mutations/`'s "the codeowners probe asks the whole line again" -> `no-break-space`,
+    # `no-owner` and `an-owner-names-github` are silent; "a codeowners line with no owner
+    # counts" -> `no-break-space` and `no-owner` are; "a codeowners line is split on U+00A0
+    # too" -> `no-break-space` is.
     root = _repo(tmp_path)
     if codeowners is not None:
         _write(root, ".github/CODEOWNERS", codeowners)

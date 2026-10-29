@@ -1267,7 +1267,7 @@ A row names no finding: `assess` lists them as items.
 | `memory-history` | the history of `[paths] memory` | warning | 8 | the store has history and `memory.mode` is not `in-repo` |
 | `foreign-hooks` | the committed hook settings of each harness `[stayfixed] agents` selects | advice | 5 | any hook entry, one claiming stayfixed's marker included: stayfixed writes none into a committed file |
 | `foreign-workflows` | `.github/workflows/*.yml` and `*.yaml` | advice | — | any workflow but stayfixed's own caller |
-| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line that does not start with `#` holds `.github`: a plain substring, not GitHub's pattern matching, so a line such as `* @owner` still reports; not judged under `[ci] mode = "none"` |
+| `codeowners` | the first of `.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` | advice | 7 | there is no file, or no line that does not start with `#` has, split on spaces and tabs, a first field holding `.github` and another field after it: a plain substring, which reads neither GitHub's pattern matching nor its owner syntax, inline comments or which line matches last, so a line such as `* @owner` still reports and `/.github/ #TODO` does not; not judged under `[ci] mode = "none"` |
 | `commit-types` | the subjects of the last 100 commits, merges excluded | advice | — | a subject whose type is not in `[commit_messages] types`; `where` names commits |
 | `profile` | the configured profile's checks | the check's own | — | each failed check, counted once; a profile this stayfixed does not ship is one `profile-not-shipped` warning |
 
@@ -3253,17 +3253,19 @@ jobs:
 ```
 
 The branch is named four times, and each one is load-bearing. A pull request into any other
-branch runs nothing, so it cannot collect a green check against a looser base and then be
-retargeted. `edited` re-runs the check when a pull request is retargeted, and on every title
-edit too, because a job filtered out with `if:` reports as skipped, which a required check
-counts as passing. `base:` is a literal, so a pull request whose base is not this branch is
-refused even where the trigger has been widened by hand. `merge_group` makes the check report
-for the gate branch's merge queue and no other: a merge group reports no base the workflow reads,
-so with the literal `base:` another branch's queue would be judged against the gate branch's
-configuration, and it gets no run, as a pull request into that branch gets none. Each
-`edited` run is a job, billed by the whole minute like any other. A pull request into another
-branch — one stacked on a feature branch, say — gets no run at all, which blocks nothing as long
-as the check is required on the gate branch only.
+branch runs nothing, and one retargeted onto the gate branch runs again: `edited` re-runs the
+check when a pull request's base becomes this branch, and on every title or body edit too,
+because a job filtered out with `if:` reports as skipped, which a required check counts as
+passing. Retargeted the other way, from the gate branch to another, a pull request starts no run
+and keeps the check it has, judged against the gate branch's configuration. `base:` is a literal,
+so a pull request whose base is not this branch is refused even where the trigger has been
+widened by hand. `merge_group` makes the check report for the gate branch's merge queue and no
+other: a merge group reports no base the workflow reads, so with the literal `base:` another
+branch's queue would be judged against the gate branch's configuration, and it gets no run, as a
+pull request into that branch gets none. Each `edited` run is a job, billed by the whole minute
+like any other. Where another branch requires `check / gates` too, a pull request opened into it
+with no check on its head cannot join that branch's queue, and an entry that does join it gets no
+run and waits out the queue's timeout, reported neither as passed nor as skipped.
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -3385,12 +3387,13 @@ gates still run and still report but cannot stop a pull request that edits its o
 - **CODEOWNERS covering `/.github/`, with review from code owners required**, so a change to
   the caller needs someone other than its author. GitHub reads the rules from the base
   branch's copy; keep the file at `.github/CODEOWNERS`, where its own `/.github/` rule covers it
-  (`stayfixed assess` advises, `codeowners`, when no line names `.github`);
+  (`stayfixed assess` advises, `codeowners`, when no line's first field holds `.github`);
 - **"Dismiss stale pull request approvals when new commits are pushed"**, or **"Require
   approval of the most recent reviewable push"**, so an approval of an innocuous `.github/` edit
   does not carry over to a later commit that repoints `uses:`;
-- **the `check / gates` status check required** (`check` is the caller job `init` writes; a
-  caller of your own names its own job), or every leg's check under a matrix;
+- **the `check / gates` status check required** on the branches the caller gates and no other
+  (`check` is the caller job `init` writes; a caller of your own names its own job), or every
+  leg's check under a matrix;
 - **that check's expected source set to GitHub Actions**, not "any source": otherwise anyone
   with write access can post a `success` status of that name through the API, and no file
   changes for a code owner to see;
@@ -3413,8 +3416,15 @@ itself adds there; a gate no list names is advisory, however the project configu
 before it said, so a project fixing its documents does not pay a round trip per finding; the one
 exception is a custom gate, which is not started once the run has failed. A custom gate runs
 in the second step, and only with the command the base gives it ("Which custom gates run" under
-`stayfixed gate`). The job's token is `contents: read` and neither checkout
-keeps it, and the judging step's verdict was decided before any command started.
+`stayfixed gate`). The job's token is `contents: read`, neither checkout
+keeps it and the gate's environment does not hold it, and the judging step's verdict was decided
+before any command started. A custom gate's output is the step's log, so it can write workflow
+commands: an annotation of its own, or a `::stop-commands::` that, never closed with its token,
+hides every later workflow command of the step, stayfixed's annotations included, since those are
+printed once every gate has run. It can append to `$GITHUB_STEP_SUMMARY`, after the judging
+step's summary and before the one stayfixed appends for the custom gates; to `$GITHUB_OUTPUT`,
+which nothing reads; and to `$GITHUB_ENV`, whose variables reach the job's later steps, the post
+steps of `setup-python` and of both checkouts.
 
 **Pin it by SHA.** A reusable workflow's ref is resolved when the run is created, so `@v1` and
 `@dev` are a moving stayfixed running against your repository. `stayfixed init` writes that pin,

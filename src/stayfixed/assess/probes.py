@@ -231,7 +231,9 @@ def _exact_file(path: Path) -> bool:
 
 def _codeowners(context: ProbeContext) -> Looked:
     """Whether the code-owners file GitHub reads, the first of `_CODEOWNERS` under its exact
-    name, has a line that is not a comment naming `.github`: a substring, not GitHub's matching."""
+    name, has a line that is not a comment whose first field, split on spaces and tabs, holds
+    `.github` with another field after it. GitHub does not split on U+00A0, and gives a pattern
+    alone no owner; owner syntax, inline comments and the last matching line are not read."""
     if context.config.ci.mode == "none":
         return Looked()  # stayfixed renders no workflow to protect
     for relative in _CODEOWNERS:
@@ -245,7 +247,12 @@ def _codeowners(context: ProbeContext) -> Looked:
             lines = [] if over else content.decode("utf-8").splitlines()
         except (PathEscape, OSError, ValueError):
             return Looked(unread=(relative,))
-        named = any(".github" in line for line in lines if not line.lstrip().startswith("#"))
+        rows = [
+            re.split("[ \t]+", line.strip(" \t"))
+            for line in lines
+            if not line.lstrip().startswith("#")
+        ]
+        named = any(len(row) > 1 and ".github" in row[0] for row in rows)
         return Looked() if named else Looked((_UNOWNED,))
     return Looked((_UNOWNED,))
 

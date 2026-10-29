@@ -775,6 +775,37 @@ before = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES - 
 after = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES)"
 reddens = ["tests/assess/test_probes.py::test_a_codeowners_file_github_does_not_load_owns_nothing"]
 
+# `_codeowners`'s docstring says what a code-owners line must hold; each entry breaks one part.
+[[mutation]]
+name = "the codeowners probe asks the whole line again"
+file = "src/stayfixed/assess/probes.py"
+before = '        named = any(len(row) > 1 and ".github" in row[0] for row in rows)'
+after = '        named = any(".github" in line for line in lines if not line.lstrip().startswith("#"))'
+reddens = [
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_names_github[no-break-space]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_names_github[no-owner]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_names_github[an-owner-names-github]",
+]
+
+[[mutation]]
+name = "a codeowners line with no owner counts"
+file = "src/stayfixed/assess/probes.py"
+before = "len(row) > 1 and"
+after = "len(row) > 0 and"
+reddens = [
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_names_github[no-owner]",
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_names_github[no-break-space]",
+]
+
+[[mutation]]
+name = "a codeowners line is split on U+00A0 too"
+file = "src/stayfixed/assess/probes.py"
+before = 're.split("[ \t]+", line.strip(" \t"))'
+after = "line.split()"
+reddens = [
+  "tests/assess/test_probes.py::test_codeowners_is_reported_unless_a_line_names_github[no-break-space]",
+]
+
 # A base the checkout lacks is why `plan`, `commit` and `bugs` fail, and the note says so, in
 # `assess` as in `adopt promote`, suggesting the project's own base branch.
 [[mutation]]
