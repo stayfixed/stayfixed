@@ -19,7 +19,7 @@ import pytest
 from stayfixed import gitenv
 from stayfixed.assess import tracked
 from stayfixed.assess.assessment import UNNAMED, Assessment, assess, document, render
-from stayfixed.assess.gates import GateResult
+from stayfixed.assess.gates import COULD_NOT_RUN, GateResult, configured
 from stayfixed.assess.state import promote
 from stayfixed.assess.tracked import (
     CASE_DIFFERS,
@@ -673,10 +673,10 @@ def test_a_listing_git_refuses_after_naming_the_top_is_no_answer(
 
 
 def test_a_path_a_gate_answered_without_reaching_is_left_to_its_result(tmp_path: Path) -> None:
-    # With no roadmap, the trail gate answers with its own finding and never asks for
-    # `trail.toml`, which here is a symlink `contained()` refuses. The check asks for it, is
-    # refused, and leaves the gate to that result, which already fails; the refusal never ends
-    # the run. Mutation (declared): the refusal is raised.
+    # With no roadmap, the trail gate could not run (#33) and never asks for `trail.toml`, which
+    # here is a symlink `contained()` refuses. The assessment asks nothing about a gate that did
+    # not answer; asked anyway, the check is refused and leaves the gate to its result, which
+    # already fails; the refusal never ends the run. Mutation (declared): the refusal is raised.
     root = smoke_repo(tmp_path)
     _unlink_roadmap(root)
     git(root, "rm", "-q", ROADMAP)
@@ -687,8 +687,11 @@ def test_a_path_a_gate_answered_without_reaching_is_left_to_its_result(tmp_path:
     git(root, "commit", "-qm", "docs: no roadmap, and the states behind a link")
     assessment = _assess(root, tmp_path)
     row = _row(assessment, "trail")
-    assert row.answered and [f.rule for f in row.findings] == ["roadmap-missing"], row
+    assert not row.answered and row.findings == (), row
+    assert row.reason == COULD_NOT_RUN.format(command="docs trail --check"), row
     assert "trail" not in set(_items(assessment, UNTRACKED)) | set(_items(assessment, UNASKED))
+    config = load(root, machine=tmp_path / "m.toml")
+    assert tracked.unseen(root, config, (configured(config)["trail"],)) == ()
 
 
 def test_a_name_that_reaches_no_file_is_never_the_same_file_as_another(tmp_path: Path) -> None:

@@ -590,14 +590,15 @@ def test_the_trail_gate_passes_a_current_listing_and_names_a_stale_one(tmp_path:
     assert [finding.rule for finding in trail_gate(root, config)] == ["trail-stale"]
 
 
-def test_the_trail_gate_names_a_missing_roadmap(tmp_path: Path) -> None:
-    # `docs trail --check` prints its own sentence for this answer, told apart by the rule.
-    # Mutation (advisory): `ROADMAP_MISSING` replaced by `TRAIL_STALE` in the first return —
-    # this reddens.
+def test_a_missing_roadmap_is_a_gate_that_cannot_judge(tmp_path: Path) -> None:
+    # A gate that cannot judge the tree raises, as every other gate does, and never returns a
+    # finding that stands for "could not look" (#33). The message names the configured path;
+    # `docs trail --check` tests the roadmap first and prints its own sentence. Mutation
+    # (declared): `mutations/`'s "a missing roadmap is a trail gate that passes".
     root, config = corpus(tmp_path)
     (root / config.paths.roadmap).unlink()
-    found = [(finding.rule, finding.path) for finding in trail_gate(root, config)]
-    assert found == [("roadmap-missing", config.paths.roadmap)]
+    with pytest.raises(Failure, match=re.escape(f"{config.paths.roadmap} does not exist")):
+        trail_gate(root, config)
 
 
 def test_a_theme_pattern_or_a_theme_count_past_its_bound_fails_in_stayfixed_s_words(

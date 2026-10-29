@@ -17,6 +17,7 @@ from stayfixed import processes
 from stayfixed.assess.gates import (
     BASE,
     BUILTIN,
+    COULD_NOT_RUN,
     GateContext,
     GateResult,
     configured,
@@ -167,6 +168,19 @@ def test_a_stale_trail_is_a_failing_gate(tmp_path: Path) -> None:
     git(root, "add", "-A")
     [trail] = results(root, config, "trail")
     assert [finding.rule for finding in trail.findings] == ["trail-stale"]
+    assert trail.failing
+
+
+@needs_git
+def test_a_missing_roadmap_makes_the_trail_gate_unanswered(tmp_path: Path) -> None:
+    # A missing roadmap is the trail gate not judging the tree, read one way with every other
+    # gate that cannot (#33): could not run, which fails an enforced gate and leaves an advisory
+    # one advisory, and never a finding of its own.
+    root, config = smoke(tmp_path)
+    (root / config.paths.roadmap).unlink()
+    [trail] = results(root, config, "trail")
+    assert (trail.answered, trail.findings) == (False, ())
+    assert trail.reason == COULD_NOT_RUN.format(command="docs trail --check")
     assert trail.failing
 
 

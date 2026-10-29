@@ -202,10 +202,10 @@ def docs_reads(root: Path, config: Config) -> list[Path]:
     return [contained(root, config.paths.agents_md), *linked]
 
 
-def docs_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+def docs_gate(root: Path, config: Config, _base: str = "") -> list[Finding]:
     """The `docs` gate's whole composition: the budgets and the link targets.
 
-    `docs check` with no flag answers with this function. `base` is unread: every gate takes the
-    same three arguments, so `stayfixed.assess.gates` holds each one as a value.
+    `docs check` with no flag answers with this function. `_base` is unread: every gate is a
+    `stayfixed.assess.gates.GateFn`, so that module holds each one as a value.
     """
     return check_budgets(root, config) + check_links(root, config)

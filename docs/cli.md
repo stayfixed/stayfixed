@@ -14,7 +14,9 @@ Three things hold everywhere:
   Four commands do: `bugs check`, `docs check`, `memory refs` and `plan check`. Every other
   command's keys are its own and are listed with it below — `doctor`'s `checks`, `memory refs`'s
   advisory `notices`, `docs trail`'s `undeclared`, and the two of `docs trail`'s keys that are
-  not lists at all, `written` and `stale`.
+  not lists at all, `written` and `stale`. `--json` escapes every non-ASCII character as
+  `\uXXXX`, and a name git or the disk gave in bytes that are not UTF-8 appears as one lone
+  surrogate escape per byte (`\udcXX`), which a strict JSON reader may refuse.
 - **Exit codes**: `0` success, `1` findings, `2` a refusal or an internal error. A caller that
   treats `1` as "proceed anyway" must still never treat `2` that way — a refusal is a boundary,
   not a low-confidence result. Every command that reads `stayfixed.toml` refuses one that is a

@@ -1274,6 +1274,18 @@ before = '    return [Finding(TRAIL_STALE, config.paths.roadmap, None, "")]'
 after = "    return []"
 reddens = ["tests/assess/test_gates.py::test_a_stale_trail_is_a_failing_gate"]
 
+# A missing roadmap is the trail gate not judging the tree: it raises, as every gate that cannot
+# judge does, and is read as could not run, which fails an enforced gate.
+[[mutation]]
+name = "a missing roadmap is a trail gate that passes"
+file = "src/stayfixed/docs/trail.py"
+before = '        raise Failure(f"{config.paths.roadmap} does not exist")'
+after = "        return []"
+reddens = [
+  "tests/docs/test_trail.py::test_a_missing_roadmap_is_a_gate_that_cannot_judge",
+  "tests/assess/test_gates.py::test_a_missing_roadmap_makes_the_trail_gate_unanswered",
+]
+
 # "No ledger yet" is read off the tree, which a pull request writes: with the arm answering
 # nothing, a change that deletes the ledger and its index switches an enforced `bugs` gate off
 # while code still cites entry files.

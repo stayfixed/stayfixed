@@ -102,6 +102,22 @@ def test_docs_trail_writes_the_listing_and_check_reports_staleness(
     assert invoke(["docs", "trail", "--check", *common]) == 0
 
 
+def test_docs_trail_check_names_a_missing_roadmap_in_its_own_words(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The `trail` gate raises for a missing roadmap, and `--check` tests the roadmap first, so
+    # the command keeps its own answer: the path, exit 1, and `stale` neither true nor false.
+    root, common = project(tmp_path)
+    (root / "docs" / "roadmap.md").unlink()
+    assert invoke(["docs", "trail", "--check", *common]) == 1
+    assert capsys.readouterr().out == "docs/roadmap.md does not exist\n"
+    assert invoke(["docs", "trail", "--check", "--json", *common]) == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "summary": "docs/roadmap.md does not exist",
+        "stale": None,
+    }
+
+
 def test_docs_trail_never_prints_a_crafted_document_name_raw(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -7,12 +7,12 @@ knows no gate by name, so a built-in gate that comes to read files by path falls
 declaring them. A file that is on disk here and that git does not track, an ignored one included,
 is a file those gates read here and CI never sees, and so is one read through a tracked symlink
 whose target is untracked or outside the repository, since git tracks the link alone and the
-checkout leaves it dangling: in CI it is absent, and the gate's own finding for an absent file
-(`missing-document`, `missing-link`, `roadmap-missing`, or a listing rebuilt without the states)
-fails every pull request. So a verdict taken here would not be CI's verdict, and `stayfixed assess`
-reports such a gate as unable to judge the tree as CI will, and `stayfixed adopt promote` never
-enforces it. `stayfixed gate` asks nothing of this: it runs where CI checked out, and there the file
-is simply absent.
+checkout leaves it dangling: in CI it is absent, and the gate's own answer for an absent file
+(`missing-document`, `missing-link`, a `trail` gate that could not run for want of its roadmap,
+or a listing rebuilt without the states) fails every pull request. So a verdict taken here would
+not be CI's verdict, and `stayfixed assess` reports such a gate as unable to judge the tree as CI
+will, and `stayfixed adopt promote` never enforces it. `stayfixed gate` asks nothing of this: it
+runs where CI checked out, and there the file is simply absent.
 
 **What is not asked.** A file a gate reads only when it is there, whose absence adds no finding,
 such as the roadmap the `docs` gate reads for its prose budget, is not among its reads: one CI
@@ -248,8 +248,9 @@ def unseen(root: Path, config: Config, gates: tuple[Gate, ...]) -> tuple[Unseen,
         try:
             found = _reads(root, config, gate)
         except StayfixedError:
-            # A path the gate refuses to read, which it answered without reaching: the trail
-            # gate stops at a missing roadmap, its own finding, before it asks for `trail.toml`.
+            # A path the gate's record names and refuses to read. A gate whose run reached the
+            # path did not answer, and is not asked about here; one asked anyway (`unseen` takes
+            # any gate) is left to its result, and the refusal never ends the run.
             # That result already fails, so nothing here could make it pass.
             continue
         if found:
