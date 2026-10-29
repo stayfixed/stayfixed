@@ -794,19 +794,6 @@ reddens = [
   "tests/test_check_workflow.py::test_one_commit_id_shape_everywhere",
 ]
 
-# `inputs.path` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a
-# `path:` carrying a newline writes further `key=value` lines — and the key the gate steps read
-# is `base_sha`, the commit whose configuration governs the gates. Disable the character check
-# and a caller's `path:` forges that commit, and with it what a pull request is judged against.
-[[mutation]]
-name = "the reusable workflow lets `path:` write its own outputs"
-file = ".github/workflows/check.yml"
-before = "            *[!A-Za-z0-9._/-]*)"
-after = "            unmatchable-pattern-that-is-never-a-path)"
-reddens = [
-  "tests/test_fixtures.py::test_a_path_input_cannot_write_the_steps_own_outputs",
-]
-
 # The hook smoke's guard held one direction: it caught `hooks.json` gaining an event with no
 # sample, and not `hooks.json` losing one — which shrinks the walk, runs fewer rows and prints a
 # green summary. With this mutation every remaining row still passes and `main` returns 0, so
@@ -989,18 +976,6 @@ after = """
 """
 reddens = [
   "tests/test_check_workflow.py::test_one_job_whose_judging_steps_may_not_fail_and_run_in_order",
-]
-
-# On a `pull_request` the caller workflow comes from the merge commit, so `with: base:` is the
-# author's. A `base:` naming a branch the author pushed would choose the configuration the change
-# is judged against, without the tree's own `stayfixed.toml` being touched.
-[[mutation]]
-name = "a pull request's base: input is preferred over the platform's own answer again"
-file = ".github/workflows/check.yml"
-before = '          if [ -n "$PR_BASE" ] && [ -n "$INPUT_BASE" ] && [ "$INPUT_BASE" != "$PR_BASE" ]; then'
-after = '          if false; then'
-reddens = [
-  "tests/test_fixtures.py::test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused",
 ]
 
 # The clean run is gated on `Outcome.passed` with a long paragraph about why an exit code alone
@@ -1251,20 +1226,28 @@ reddens = [
 [[mutation]]
 name = "the judging step runs the repository's own gate commands"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -s -m stayfixed gate --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m stayfixed gate --builtin --root project \'
+after = '          python3 -P -s -m stayfixed gate --root project \'
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_runs_no_custom_gate_and_the_next_step_runs_them",
 ]
 
-# The base step resolves the base once to a commit, and the judging step must judge against
-# that commit. Judged against the tree's own HEAD, every change to `stayfixed.toml` compares
-# equal to itself, and a pull request that stops enforcing a gate passes the configuration check.
+# The judging step hands `stayfixed gate` the platform's base, which it resolves to a commit and
+# judges against. Judged against the tree's own HEAD instead, every change to `stayfixed.toml`
+# compares equal to itself, and a pull request that stops enforcing a gate passes the
+# configuration check.
 [[mutation]]
 name = "the judging step judges the tree against itself"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$(git -C "$ROOT" rev-parse HEAD)" \'
+before = '''
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --pr-base="$PR_BASE" --base-input="$INPUT_BASE" \
+            --default-branch="$DEFAULT_BRANCH" --path="$INPUT_PATH" \
+'''
+after = '''
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --base "$(git -C project rev-parse HEAD)" --path="$INPUT_PATH" \
+'''
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
 ]
@@ -1276,10 +1259,14 @@ reddens = [
 name = "the judging step stops annotating"
 file = ".github/workflows/check.yml"
 before = '''
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --pr-base="$PR_BASE" --base-input="$INPUT_BASE" \
+            --default-branch="$DEFAULT_BRANCH" --path="$INPUT_PATH" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
 after = '''
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --pr-base="$PR_BASE" --base-input="$INPUT_BASE" \
+            --default-branch="$DEFAULT_BRANCH" --path="$INPUT_PATH" \
             --workflow-sha "$WORKFLOW_SHA" --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
@@ -1291,10 +1278,14 @@ reddens = [
 name = "the judging step writes no job summary"
 file = ".github/workflows/check.yml"
 before = '''
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --pr-base="$PR_BASE" --base-input="$INPUT_BASE" \
+            --default-branch="$DEFAULT_BRANCH" --path="$INPUT_PATH" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
 after = '''
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --pr-base="$PR_BASE" --base-input="$INPUT_BASE" \
+            --default-branch="$DEFAULT_BRANCH" --path="$INPUT_PATH" \
             --workflow-sha "$WORKFLOW_SHA" --annotate "${only[@]}"'''
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_fails_a_change_that_loosens_what_the_base_enforces",
@@ -1307,10 +1298,14 @@ reddens = [
 name = "the judging step drops the running workflow's commit"
 file = ".github/workflows/check.yml"
 before = '''
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --pr-base="$PR_BASE" --base-input="$INPUT_BASE" \
+            --default-branch="$DEFAULT_BRANCH" --path="$INPUT_PATH" \
             --workflow-sha "$WORKFLOW_SHA" --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
 after = '''
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
+            --pr-base="$PR_BASE" --base-input="$INPUT_BASE" \
+            --default-branch="$DEFAULT_BRANCH" --path="$INPUT_PATH" \
             --annotate --summary "$GITHUB_STEP_SUMMARY" "${only[@]}"'''
 reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_passes_the_platform_s_workflow_sha_through_env",
@@ -1323,8 +1318,8 @@ reddens = [
 [[mutation]]
 name = "the judging step imports from its working directory"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m stayfixed gate --builtin --root project \'
+after = '          python3 -s -m stayfixed gate --builtin --root project \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
@@ -1337,12 +1332,12 @@ file = ".github/workflows/check.yml"
 before = '''
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
 '''
 after = '''
           :
           set +f
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
 '''
 reddens = [
   "tests/test_check_workflow.py::test_only_runs_the_names_it_is_given_and_nothing_else",
@@ -1358,30 +1353,17 @@ before = '''
           only=()
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
 '''
 after = '''
           :
           only=()
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
 '''
 reddens = [
   "tests/test_check_workflow.py::test_an_only_name_is_never_expanded_as_a_file_pattern",
-]
-
-# git resolves a short `origin/<base>` through `refs/tags/` before `refs/remotes/`, and
-# `fetch-depth: 0` fetches every tag. So whoever may push a tag named `origin/main` would choose
-# the commit whose configuration every pull request is judged against. The anchor is the fully
-# qualified remote-tracking ref, which `actions/checkout` writes from the platform.
-[[mutation]]
-name = "a tag named like the tracking branch chooses the base"
-file = ".github/workflows/check.yml"
-before = '          base_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/$base^{commit}")" ||'
-after = '          base_sha="$(git rev-parse --verify --quiet "origin/$base^{commit}")" ||'
-reddens = [
-  "tests/test_fixtures.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base",
 ]
 
 # `-P` keeps the working directory off `sys.path` and nothing else: a `PYTHONPATH` entry inside
@@ -1482,12 +1464,12 @@ file = ".github/workflows/check.yml"
 before = '''
           for name in $ONLY; do only+=("--only=$name"); done
           set +f
-          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --custom --root project \
 '''
 after = '''
           :
           set +f
-          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --custom --root project \
 '''
 reddens = [
   "tests/test_check_workflow.py::test_the_custom_step_runs_only_the_custom_gates_only_names",
@@ -1498,8 +1480,8 @@ reddens = [
 [[mutation]]
 name = "the custom step imports from its working directory"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m stayfixed gate --custom --root project \'
+after = '          python3 -s -m stayfixed gate --custom --root project \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
@@ -1563,14 +1545,13 @@ reddens = [
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
 
-# And the base step, which runs from the caller's checkout, so a relative `BASH_ENV` names a file
-# the pull request wrote.
+# And the checkout step, the one other step with a script before the judging step.
 [[mutation]]
-name = "the base step's shell sources a file from the checkout"
+name = "the checkout step's shell sources a file from the checkout"
 file = ".github/workflows/check.yml"
-before = "          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"
-after = """          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          BASH_ENV: .ci-env"""
+before = "          EXPECTED: ${{ job.workflow_sha }}"
+after = """          EXPECTED: ${{ job.workflow_sha }}
+          BASH_ENV: project/.ci-env"""
 reddens = [
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
 ]
@@ -1578,10 +1559,10 @@ reddens = [
 # A script that writes `$GITHUB_ENV` or `$GITHUB_PATH` chooses every later step's environment or
 # interpreter, outside any step's `env:` block, where no equality over the blocks can see it.
 [[mutation]]
-name = "the base step sets the environment of every later step"
+name = "the checkout step sets the environment of every later step"
 file = ".github/workflows/check.yml"
-before = """          } >> "$GITHUB_OUTPUT\""""
-after = """          } >> "$GITHUB_OUTPUT"
+before = """          echo "sha=$expected" >> "$GITHUB_OUTPUT\""""
+after = """          echo "sha=$expected" >> "$GITHUB_OUTPUT"
           echo "PYTHONPATH=project" >> "$GITHUB_ENV\""""
 reddens = [
   "tests/test_check_workflow.py::test_the_verdict_s_process_gets_only_the_environment_its_step_names",
@@ -1592,8 +1573,8 @@ reddens = [
 [[mutation]]
 name = "the judging step's command gains an assignment in front of it"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m stayfixed gate --builtin --root project \'
+after = '          PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root project \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
 ]
@@ -1606,12 +1587,12 @@ name = "the judging step exports a user base inside the caller's checkout"
 file = ".github/workflows/check.yml"
 before = '''
           set +f
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
 '''
 after = '''
           set +f
           export PYTHONUSERBASE=project/.local
-          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --builtin --root project \
 '''
 reddens = [
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
@@ -1622,12 +1603,12 @@ name = "the custom step sources a file from the caller's checkout"
 file = ".github/workflows/check.yml"
 before = '''
           set +f
-          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --custom --root project \
 '''
 after = '''
           set +f
           [ -f project/.ci-env ] && . project/.ci-env || true
-          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \
+          python3 -P -s -m stayfixed gate --custom --root project \
 '''
 reddens = [
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
@@ -1637,14 +1618,14 @@ reddens = [
 # interpreter imports a `sitecustomize.py` it finds there at start-up, so a copy into stayfixed's
 # own checkout is code in the verdict's process.
 [[mutation]]
-name = "the base step copies a file into stayfixed's own checkout"
+name = "the checkout step copies a file into stayfixed's own checkout"
 file = ".github/workflows/check.yml"
 before = """
-          git check-ref-format --branch "$base" >/dev/null
+          actual="$(git -C stayfixed rev-parse HEAD)"
 """
 after = """
-          git check-ref-format --branch "$base" >/dev/null
-          cp .ci/sitecustomize.py ../stayfixed/src/ 2>/dev/null || true
+          actual="$(git -C stayfixed rev-parse HEAD)"
+          cp project/.ci/sitecustomize.py stayfixed/src/ 2>/dev/null || true
 """
 reddens = [
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
@@ -1654,8 +1635,8 @@ reddens = [
 [[mutation]]
 name = "the judging step's command line runs a second command before the gate"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -s -m stayfixed gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m stayfixed gate --builtin --root project \'
+after = '          python3 -P -s -m stayfixed gate --help >/dev/null; PYTHONUSERBASE=project/.local python3 -P -s -m stayfixed gate --builtin --root project \'
 reddens = [
   "tests/test_check_workflow.py::test_both_gate_steps_start_python_without_the_working_directory_on_its_path",
   "tests/test_check_workflow.py::test_every_script_the_job_runs_is_held_line_for_line",
@@ -1678,8 +1659,8 @@ reddens = [
 [[mutation]]
 name = "the judging step reads the user site directory again"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -m stayfixed gate --builtin --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m stayfixed gate --builtin --root project \'
+after = '          python3 -P -m stayfixed gate --builtin --root project \'
 reddens = [
   "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[judging]",
 ]
@@ -1687,8 +1668,8 @@ reddens = [
 [[mutation]]
 name = "the custom step reads the user site directory again"
 file = ".github/workflows/check.yml"
-before = '          python3 -P -s -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
-after = '          python3 -P -m stayfixed gate --custom --root "$ROOT" --base "$BASE_SHA" \'
+before = '          python3 -P -s -m stayfixed gate --custom --root project \'
+after = '          python3 -P -m stayfixed gate --custom --root project \'
 reddens = [
   "tests/test_check_workflow.py::test_no_pth_file_under_a_user_base_in_the_checkout_runs_in_a_gate_step[custom]",
 ]

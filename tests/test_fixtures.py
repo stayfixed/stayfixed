@@ -199,24 +199,22 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
     assert "STAYFIXED_CONFIG" in settings["env"]
 
 
-# --- `check.yml`'s base-ref step, run as the shell script it is -------------------------
+# --- the workflows' steps, run as the shell scripts they are ----------------------------
 #
 # The repository carries no YAML parser and adds no dependency to check its own prose, so a workflow
-# is otherwise proven only by the run that first executes it. The one part of `check.yml` that is
-# *logic* rather than platform plumbing is the step that decides which base commit the gates'
-# configuration comes from and which project root the gates run in. That step's `run:` body is
-# extracted from the shipped file — never retyped here, or the test would hold a copy and the file
-# would be free to drift — and run with `bash` against real repositories.
+# is otherwise proven only by the run that first executes it. A step's `run:` body is extracted
+# from the shipped file — never retyped here, or the test would hold a copy and the file would be
+# free to drift — and run with `bash`. `check.yml`'s base and project root are no longer a step:
+# `stayfixed gate` resolves them from the platform's values, and `tests/assess/test_read_base.py`
+# holds the cases that ran a shell step here.
 
 CHECK_WORKFLOW = ROOT / ".github" / "workflows" / "check.yml"
-BASE_STEP = "The base ref and the project root"
 needs_bash = pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not installed")
 # `.github/` is outside `source-include`: it is this repository's own continuous integration
 # and not source a downstream packager needs, and `scripts/check_artifacts.py` states that the
 # sdist exists so such a packager can run the suite. So the cases below skip where the file
 # they are about is not there, rather than the tree gaining a line to ship CI configuration.
-# Five cases here really do run `check.yml`'s base step, and `tests/test_check_workflow.py`
-# imports this marker for its own, which run the two gate steps.
+# `tests/test_check_workflow.py` imports this marker for its cases, which run `check.yml`'s steps.
 needs_workflow = pytest.mark.skipif(
     not CHECK_WORKFLOW.is_file(), reason="check.yml is not in the sdist"
 )
@@ -610,190 +608,6 @@ def test_a_step_s_script_is_never_read_from_the_step_after_it(tmp_path: Path) ->
     )
     assert step_script(workflow, "first") == "echo first\n"
     assert step_script(workflow, "second") == "echo second\n"
-
-
-def _project_with_a_base(tmp_path: Path, *, on_base: str | None) -> Path:
-    """A clone whose `origin/main` carries `on_base` as `stayfixed.toml`, or carries none.
-
-    The upstream also has a branch `a-branch-the-author-pushed`, so the clone tracks it: the
-    disagreement case then meets a `base:` naming a branch that exists, which is the attack,
-    and not a missing ref that fails for another reason. Measured when the case was written:
-    with the branch absent the step with its refusal removed still exits 1, "not in this
-    checkout"; with it present it exits 0.
-    """
-    upstream = tmp_path / "upstream"
-    upstream.mkdir()
-    git(upstream, "init", "-q", "-b", "main")
-    (upstream / "README.md").write_text("# a project\n", encoding="utf-8")
-    if on_base is not None:
-        (upstream / "stayfixed.toml").write_text(on_base, encoding="utf-8")
-    git(upstream, "add", "-A")
-    git(upstream, "commit", "-qm", "chore: base")
-    git(upstream, "branch", "a-branch-the-author-pushed")
-    project = tmp_path / "project"
-    git(tmp_path, "clone", "-q", str(upstream), str(project))
-    return project
-
-
-def _run_base_step(
-    project: Path, tmp_path: Path, **environment: str
-) -> tuple[int, dict[str, str], str]:
-    output = tmp_path / "github-output"
-    output.write_text("", encoding="utf-8")
-    done = subprocess.run(
-        ["bash", "-e", "-c", step_script(CHECK_WORKFLOW, BASE_STEP)],
-        cwd=project,
-        capture_output=True,
-        text=True,
-        check=False,
-        env={
-            # The step runs no interpreter: git and the shell's own builtins are all it needs.
-            "PATH": "/usr/bin:/bin:/usr/local/bin",
-            "GITHUB_OUTPUT": str(output),
-            "INPUT_BASE": "",
-            "INPUT_PATH": ".",
-            "PR_BASE": "",
-            "DEFAULT_BRANCH": "",
-            **environment,
-        },
-    )
-    emitted = output.read_text(encoding="utf-8").splitlines()
-    written = dict(line.split("=", 1) for line in emitted if "=" in line)
-    return done.returncode, written, done.stdout + done.stderr
-
-
-ENFORCING = (
-    '[stayfixed]\nversion = "0.1.0"\nenforced = ["docs", "bugs", "plan", "commit", "trail"]\n\n'
-    '[project]\nname = "p"\n'
-)
-
-
-def _main(project: Path) -> str:
-    """The commit the clone's remote-tracking `main` names: the base every case expects."""
-    return git(project, "rev-parse", "refs/remotes/origin/main").strip()
-
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base(tmp_path: Path) -> None:
-    """git resolves a short `origin/main` through `refs/tags/` before `refs/remotes/`, and
-    `fetch-depth: 0` fetches every tag, so whoever may push a tag of that name would choose the
-    configuration every pull request is judged against. The step resolves the fully qualified
-    tracking ref, once, and every later read uses the commit it wrote.
-
-    Mutation (declared): the short `origin/$base^{commit}` in place of the qualified name ->
-    `base_sha` is the tag's commit.
-    """
-    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
-    (project / "stayfixed.toml").write_text(
-        ENFORCING.replace('enforced = ["docs", "bugs", "plan", "commit", "trail"]\n', ""),
-        encoding="utf-8",
-    )
-    git(project, "add", "-A")
-    git(project, "commit", "-qm", "chore: loosen")
-    git(project, "tag", "origin/main")
-    git(project, "checkout", "-q", "--detach", "HEAD~1")
-    code, written, printed = _run_base_step(project, tmp_path, PR_BASE="main")
-    assert code == 0, printed
-    assert written["base_sha"] == _main(project), (written, printed)
-    assert written["base_sha"] != git(project, "rev-parse", "refs/tags/origin/main").strip()
-
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused(
-    tmp_path: Path,
-) -> None:
-    """The caller's `base:` may not choose the configuration a pull request is judged against.
-
-    On a `pull_request` event the platform runs the workflow file from the merge commit — the
-    author's copy — and `with: base:` lives in it. So a pull request could point `base:` at a
-    branch it had pushed, whose `stayfixed.toml` enforces nothing, and be judged against that
-    without touching the tree's own `stayfixed.toml`.
-
-    The platform's `github.base_ref` is the answer that cannot be written from the branch, so
-    where both are present and they disagree the step refuses, and never echoes the author's
-    value, which has not been validated and could carry a workflow command of its own. This
-    costs a legitimate caller nothing: on a pull request `base:` decides nothing anyway, which
-    the agreeing case below is here to keep true.
-
-    Mutation (declared): the disagreement test is removed -> this reddens on the exit code.
-    """
-    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
-    code, written, printed = _run_base_step(
-        project, tmp_path, INPUT_BASE="a-branch-the-author-pushed", PR_BASE="main"
-    )
-    assert code == 1, printed
-    assert "this pull request's base is 'main'" in printed, printed
-    assert "a-branch-the-author-pushed" not in printed, printed
-    # Nothing was written, so no later step can read a base commit from this run.
-    assert written == {}, written
-
-    # Agreeing is not refused, and `base:` still decides on every event that reports no base —
-    # which is what makes the refusal free.
-    code, written, printed = _run_base_step(project, tmp_path, INPUT_BASE="main", PR_BASE="main")
-    assert code == 0, printed
-    assert written["base_sha"] == _main(project), written
-
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_the_base_ref_falls_back_to_the_pull_requests_base_and_then_the_default_branch(
-    tmp_path: Path,
-) -> None:
-    # The three anchors, in the order the workflow reads them, and none of them is the tree
-    # under review: the caller's `with:`, the pull request's base as the platform reports it,
-    # and the repository's default branch. With none of the three the step refuses rather than
-    # guessing a branch name.
-    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
-    _code, written, _printed = _run_base_step(project, tmp_path, PR_BASE="main")
-    assert written["base_sha"] == _main(project), written
-    _code, written, _printed = _run_base_step(project, tmp_path, DEFAULT_BRANCH="main")
-    assert written["base_sha"] == _main(project), written
-    code, written, printed = _run_base_step(project, tmp_path)
-    assert code == 1, printed
-    assert "no base ref" in printed, printed
-    assert written == {}, written
-
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_path_input_cannot_write_the_steps_own_outputs(tmp_path: Path) -> None:
-    # `p` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a `path:`
-    # carrying a newline would write further `key=value` lines — and `base_sha` is the commit
-    # whose configuration governs the gates. A forged one would choose it.
-    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
-    code, written, printed = _run_base_step(
-        project, tmp_path, INPUT_BASE="main", INPUT_PATH=f"sub\nbase_sha={'0' * 40}"
-    )
-    assert code == 1, printed
-    assert "must be a plain relative path" in printed, printed
-    assert written == {}, written
-    # And the other half of the same check, so `root=` below stays inside the checkout.
-    code, written, printed = _run_base_step(
-        project, tmp_path, INPUT_BASE="main", INPUT_PATH="../elsewhere"
-    )
-    assert code == 1, printed
-    assert "must not leave the checkout" in printed, printed
-    assert written == {}, written
-
-
-@needs_git
-@needs_bash
-@needs_workflow
-def test_a_project_root_below_the_checkout_is_where_the_gates_run(tmp_path: Path) -> None:
-    # The `path:` input, which is what the smoke workflow and a monorepo use. It reaches the
-    # shell through `env:` and is used as a path prefix, never as a command.
-    project = _project_with_a_base(tmp_path, on_base=None)
-    code, written, printed = _run_base_step(
-        project, tmp_path, INPUT_BASE="main", INPUT_PATH="./sub/project/"
-    )
-    assert code == 0, printed
-    assert written["root"] == "project/sub/project", written
 
 
 SMOKE_RELEASE = WORKFLOWS / "smoke-release.yml"

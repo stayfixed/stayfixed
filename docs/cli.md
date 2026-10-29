@@ -60,7 +60,7 @@ Three things hold everywhere:
 - [`stayfixed docs trail [--check]`](#stayfixed-docs-trail---check)
 - [`stayfixed plan check [--base REF] [PATH …]`](#stayfixed-plan-check---base-ref-path-)
 - [`stayfixed assess [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-assess---base-ref---builtin---root-path---machine-path)
-- [`stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#stayfixed-gate---only-name---base-ref---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
+- [`stayfixed gate [--only NAME]… [--base REF | --pr-base=BRANCH --base-input=BRANCH --default-branch=BRANCH] [--path=PATH] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`](#stayfixed-gate---only-name---base-ref----pr-basebranch---base-inputbranch---default-branchbranch---pathpath---builtin----custom---workflow-sha-sha---annotate---summary-file---root-path---machine-path)
 - [`stayfixed adopt promote [GATE …] [--base REF] [--builtin] [--root PATH] [--machine PATH]`](#stayfixed-adopt-promote-gate----base-ref---builtin---root-path---machine-path)
 - [`stayfixed memory refs`](#stayfixed-memory-refs)
 - [`stayfixed init --yes [--dry-run] [--name NAME] [--base-branch BRANCH] [--agent NAME …] [--profile NAME] [--memory-mode MODE] [--attribution-check] [--commit-type TYPE …] [--local ID …] [--no-ci] [--root PATH] [--machine PATH]`](#stayfixed-init---yes---dry-run---name-name---base-branch-branch---agent-name----profile-name---memory-mode-mode---attribution-check---commit-type-type----local-id----no-ci---root-path---machine-path)
@@ -1303,7 +1303,7 @@ could enforce now; `1` when a gate would fail, enforced or not, or when `stayfix
 missing or invalid (`failed:`, as for every command that reads it); `2` on a refusal, a
 `stayfixed.toml` that is a symlink among them: it is never followed, as no command follows it.
 
-## `stayfixed gate [--only NAME]… [--base REF] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`
+## `stayfixed gate [--only NAME]… [--base REF | --pr-base=BRANCH --base-input=BRANCH --default-branch=BRANCH] [--path=PATH] [--builtin | --custom] [--workflow-sha SHA] [--annotate] [--summary FILE] [--root PATH] [--machine PATH]`
 
 The gate a pull request faces, runnable on your own checkout. One run:
 
@@ -1333,6 +1333,21 @@ command runs and must exit 0", and nothing about what it runs. An owner who want
 pinned puts them under CODEOWNERS. Run bare on your own checkout, everything runs in one
 process. Narrowed to nothing — `--custom` on a project with no gate of its own — the run prints
 `nothing to run`, appends no summary and exits `0`.
+
+**The platform's base, and `--path`.** [The reusable workflow](#the-reusable-workflow) hands the
+run what the platform and the caller file said, raw, and the run checks them itself. The base is
+either `--base` or three flags together, never both: `--pr-base` is the pull request's base as
+the platform reports it (empty on any other event), `--base-input` the caller's `base:`, and
+`--default-branch` the repository's default branch. Each takes one argument as `--name=value`, so
+a value that begins with `-` is still that flag's, and each may be empty. The branch is the first
+of `--base-input`, `--pr-base` and `--default-branch` that is not empty; a `--base-input` that
+disagrees with a non-empty `--pr-base` is refused, naming the pull request's base and never the
+input's value, since on a pull request the caller file is the author's; and the base commit is
+`refs/remotes/origin/<branch>`, resolved once in `--root`'s repository, which the verdict and every
+gate then read. `--path=PATH` is the project root inside `--root`, with either form of the base:
+`""`, `.` and `./` are `--root` itself, one leading `./` and one trailing `/` are dropped, and a
+`..` component or an absolute path is refused without echoing the value. Any other character is
+admitted, a space or a name outside ASCII included.
 
 **Which custom gates run, and in what order.** A custom gate runs only with the command the
 base's `stayfixed.toml` gives it. One the change adds, or re-commands while the base does not
@@ -1404,7 +1419,8 @@ that, and it is an option, not a requirement.
   nothing shorter: git resolves a short name through rules in which a tag called `origin/main`
   wins over the remote-tracking branch of that name, and a full name that does not exist falls
   through to a tag of the same spelling, so the name must also exist as itself. In CI the workflow
-  resolves the base once to a commit and passes that. Run locally, the default is
+  passes the platform's base instead, and the run resolves its branch's fully qualified
+  remote-tracking ref once, to a commit. Run locally, the default is
   `refs/remotes/origin/<project.base_branch>`, read from this tree's own configuration, which is
   why a local run is advice and never the authority. A clone without an `origin` remote names its
   base with `--base`, such as `--base refs/heads/<project.base_branch>`: a run whose base is not
@@ -1474,12 +1490,14 @@ shows the refusal itself.
 Exits `0` when no enforcing gate failed or could not run and, when the configuration check ran,
 nothing was refused; a custom gate not run until the base has its command changes neither. `1`
 when an enforcing gate failed or could not run; when the configuration check refused a key; when
-the base is not in the checkout or git could not read its copy (the message names
-`fetch-depth: 0`); when the root is not inside a git repository, or git refuses the one it is
+the base is not in the checkout or git could not read its copy, the platform's base branch
+included (the message names `fetch-depth: 0`); when the root is not inside a git repository, or git refuses the one it is
 in; when this tree has no `stayfixed.toml`; or when either side's `stayfixed.toml` is not UTF-8
 text or does not load, the message naming which (a base's copy is fixed on the base branch, and
 is never read as the base having none). `2` on a refusal: a `--base` outside its grammar (before
-anything runs); a root reached through a symbolic link, spelled otherwise than git spells it, or
+anything runs); some but not all of the platform's three base flags, or them beside `--base`; a
+`--base-input` that disagrees with `--pr-base`; none of the three naming a branch, or one `git
+check-ref-format --branch` refuses; a `--path` with a `..` component or an absolute one; a root reached through a symbolic link, spelled otherwise than git spells it, or
 given with a `..` component; an `--only` name this run's configuration does not have; a
 `stayfixed.toml` that is itself a symbolic link; or a `[paths]` value on either side that leaves
 the root, passes through a symbolic link, or names `.git` or `.stayfixed`. Both copies are loaded
@@ -3247,7 +3265,7 @@ as the check is required on the gate branch only.
 | Input | Default | Meaning |
 |---|---|---|
 | `base` | `""` | the branch the gates' configuration is read from; empty means the pull request's base, and on any other event the repository's default branch. On a pull request a value that disagrees with the pull request's own base is refused |
-| `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture. A **plain relative path** — letters, digits, `.`, `_`, `-` and `/`, with no `..` component — and anything else is refused before a gate runs, because the value reaches the run's own outputs, and those carry the base commit the gates' configuration is read from. A root any component of which is a symbolic link in the checkout is refused too |
+| `path` | `"."` | the project root inside the caller's checkout, for a monorepo or a fixture: a relative path with no `..` component, refused otherwise before a gate runs, so it cannot point the gates at another checkout's configuration. Any other character is admitted, a space or a name outside ASCII included: the value is handed to `stayfixed gate` as one argument and no longer reaches the run's outputs. A root any component of which is a symbolic link in the checkout is refused too |
 | `python-version` | `"3.13"` | the interpreter stayfixed runs on; 3.11 is the floor |
 | `only` | `""` | the checks to run, space-separated: `config` and any configured gate name. Empty runs the configuration check and every configured gate, and the configuration check runs whatever this names |
 | `timeout-minutes` | `15` | the job's time limit in minutes, handed to the runner as given |
@@ -3413,12 +3431,14 @@ there is no `v0` to track, a `0.x` project pins the commit, and until the first 
 at the latest release's tag, so that the branch and tag forms are known to work — it is not a form
 this reference tells you to write.
 
-**What proves it.** `tests/test_fixtures.py` and `tests/test_check_workflow.py` run the job's
-three scripts, extracted from this file, against real clones: a `base:` naming a branch the
-author pushed, a tag named like the base, a change that loosens what the base enforces, a
-custom gate that must not run in the judging step, and `only:`. `tests/assess/test_read_base.py`
-holds the refusal of a root reached through a symbolic link, which both gate steps run
-first. `.github/workflows/smoke.yml` installs this plugin from the checkout with the real
+**What proves it.** `tests/test_check_workflow.py` runs the job's scripts, extracted from this
+file, against real clones: a change that loosens what the base enforces, a custom gate that must
+not run in the judging step, and `only:`; and holds that each gate step hands over the platform's
+values and reads no base from another step. `tests/assess/test_read_base.py` holds what
+`stayfixed gate` checks in them, against real clones: a `base:` naming a branch the author pushed,
+a tag named like the base, the order the base is chosen in, a `path:` that leaves the checkout,
+a root below it, and the refusal of a root reached through a symbolic link, which both gate steps
+run first. `.github/workflows/smoke.yml` installs this plugin from the checkout with the real
 harness CLI under a temporary configuration directory, feeds every `hooks/hooks.json` entry the
 event it is filed under through the *installed* wrapper, runs `doctor` over the result, runs the
 clone-to-exfiltration scenario — a hostile clone attempting to reach the model through committed
