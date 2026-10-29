@@ -2,7 +2,7 @@
 
 > **For agentic workers:** this plan is not dispatched. It coordinates the wave's lanes, each of
 > which has its own plan, its own worktree and its own session. It fixes what crosses a lane: the
-> launch graph, the two releases, file ownership and hot spots, the lane-plan items, the execution
+> launch graph, the release, file ownership and hot spots, the lane-plan items, the execution
 > contract every lane plan cites in its header, and the wave's exit. Its own tasks (Releases and
 > Exit, below) are controller-run with the owner, step by step. A lane plan's REQUIRED SUB-SKILL
 > line is superpowers:subagent-driven-development, and its header carries the wave-dispatch rule and
@@ -11,22 +11,25 @@
 **Goal:** launch stayfixed as `v0.7.0` and file the Anthropic directory submission with it. Wave 10
 delivers:
 
-- a first screen that says what stayfixed counts and what it cannot stop, released early as a
-  docs-only `0.6.2` so readers see it;
+- a first screen that says what stayfixed counts and what it cannot stop;
 - a deterministic demo fixture, with its recording and a `Stop`-hook recipe;
-- a small with/without benchmark run in CI;
+- a small with/without benchmark, probed and calibrated; its instrument was not merged (the BM
+  lane plan's Findings);
 - Codex parity of the core, as measured;
 - four deletion-only cuts;
 - every open GitHub issue resolved.
 
-**Architecture:** seven lanes in parallel sessions, and two releases. RD1 rewrites the first screen
-and the storefront descriptions, and `0.6.2` ships them before the first article. The other lanes:
+**Architecture:** seven lanes in parallel sessions, and one release. RD1 rewrites the first screen
+and the storefront descriptions, which readers see with `v0.7.0`, since `main` moves only to release
+commits. The other lanes:
 
 - **IS** resolves the seven issues in three pull requests.
 - **CL** makes four deletion-only cuts.
 - **DM** builds the fixture and the recipe.
 - **CX** measures Codex against what DM ships.
-- **BM** calibrates early and runs last, in GitHub Actions.
+- **BM** probed and calibrated. Its baseline left the plugin nothing to reduce, so the instrument
+  was not merged (the owner's ruling, 2026-10-29) and stays on `wp/bench` for a later run with
+  DM's recipe.
 - **IC** adds the icon and the policy-hold restatements.
 - **RD2** writes the launch README over everything the others shipped.
 
@@ -93,9 +96,9 @@ Event bundles stay in the overlay and never reach the core. The articles are the
   admits a signature-checked PNG or JPEG.
 - **The timeout bound.** `check.yml` takes a `timeout-minutes` input bounded 5–60, with a failing
   step for anything outside.
-- **`hooks/hashes.json`** exists, beside `release.py hashes` and `doctor`'s `files` row.
-- **The frontmatter walk.** `src/stayfixed/doctor/frontmatter.py` and
-  `src/stayfixed/doctor/hooked.py` hold 966 lines.
+- **`hooks/hashes.json`** (delete) exists, beside `release.py hashes` and `doctor`'s `files` row.
+- **The frontmatter walk.** `src/stayfixed/doctor/frontmatter.py` (delete) and
+  `src/stayfixed/doctor/hooked.py` (delete) hold 966 lines.
 - **Mutations.** The oracle holds 2,670 entries. `scripts/mutation_oracle.py` `GROUP_OF` routes
   `scripts/` and `.github/` to `tooling` and the rest of the root to `repository`.
 - **Issues.** Seven are open: #31 (retitled to the adoption-stage decision), #32, #33, #34, #37, #43
@@ -103,11 +106,15 @@ Event bundles stay in the overlay and never reach the core. The articles are the
 
 **Drift since, at `dev` = `7f24fb5` (wave 9 closed, #141).** `0.6.1` is released (`54b5d5c`,
 tag `v0.6.1`): it carries `attach`'s fix (#137) and not RD1, and the README says "Released as
-0.6.1". `hooks/hashes.json` changed again (#135, the `run-hook.sh` digest), and `docs/cli.md`,
+0.6.1". `hooks/hashes.json` (delete) changed again (#135, the `run-hook.sh` digest), and `docs/cli.md`,
 `mutations/doctor.toml`, `mutations/repository.toml`, `mutations/attach.toml`,
 `src/stayfixed/doctor/model.py` and `src/stayfixed/attach/write.py` moved with wave 9's last pull
 requests, so the 2,670 entries above no longer hold. The smoke literal and `doctor`'s 17 rows still
 do, and the seven issues are still open.
+
+**Drift since, at `dev` = `99502ec` (2026-10-29).** CL6–CL9 have merged (#136, #134, #138, #139),
+so the paths marked `(delete)` above are gone and `doctor` has 15 rows; the icon has merged (#147);
+BM closed with its instrument unmerged (#146 closed, #148). RD1 (#149) is open.
 
 Each lane plan measures its own premise against the tree it starts from and stops on a mismatch
 there.
@@ -130,13 +137,13 @@ there.
 | IS | IS1: #33's placement moves, then #31's decision, then #34 | `wp/issues-assess` | `docs/plans/<date>-wave-10-issues.md`, one plan for IS1–IS3 |
 | IS | IS2: #32's four checks on GitHub, and what they find | `wp/issues-workflow-verify` | the same plan |
 | IS | IS3: #37 and #47, then #43 within the tracked-files contract | `wp/issues-gates` | the same plan |
-| CL | CL6: `hooks/hashes.json`, `release.py hashes` and the hash half of `doctor`'s `files` row (w4a) | `cleanup/hashes` | `docs/plans/<date>-wave-10-cleanup.md`, one plan for CL6–CL9 |
+| CL | CL6 (delete): `hooks/hashes.json`, `release.py hashes` and the hash half of `doctor`'s `files` row (w4a) | `cleanup/hashes` | `docs/plans/<date>-wave-10-cleanup.md`, one plan for CL6–CL9 |
 | CL | CL7: the `timeout-minutes` bound and its failing step (w4b) | `cleanup/timeout-bound` | the same plan |
 | CL | CL8: the skill-frontmatter hooks walk and the marker-provenance red (w4c) | `cleanup/frontmatter-walk` | the same plan |
 | CL | CL9: compatibility code for releases only the owner ran (w4d) | `cleanup/back-compat` | the same plan |
 | DM | the demo fixture and the `Stop`-hook recipe (w5, w3) | `wp/demo-fixture` | `docs/plans/<date>-wave-10-demo.md` |
 | CX | Codex parity of the core, as measured (w6), with BR-014 | `wp/codex-parity` | `docs/plans/<date>-wave-10-codex-parity.md`, written after DM merges |
-| BM | the benchmark: the instrument, the probe, the calibration, the run, in CI (w5) | `wp/bench` | the wave-7 side-lanes plan's Lane 2, rewritten in place against the tree |
+| BM | the benchmark: the instrument, the probe, the calibration, the run, in CI (w5). Closed: probed and calibrated, instrument not merged | `wp/bench` (kept, unmerged) | `docs/plans/2026-10-28-wave-10-bench.md` |
 | IC | the owner's icon and the policy-hold restatements (w11) | `wp/directory-icon` | none: controller-written once the owner delivers the artwork |
 | RD | RD2: the launch README over what shipped | `docs/launch-readme` | none: controller-written with the owner, last |
 
@@ -158,10 +165,9 @@ graph LR
   CL6 --> CL8
   CL8 --> CL9
   DM --> CX
-  BMcal[BM calibration] --> BMrun[BM run]
   DM --> RD2
   CX --> RD2
-  BMrun --> RD2
+  BM --> RD2
   IS3 --> RD2
   RD1 --> RD2
   CL9 --> IC
@@ -176,19 +182,21 @@ What each edge carries:
 - **IS1 → IS3.** #33 splits `src/stayfixed/assess/rule.py`, moves `run_gate` into the domain and
   edits `src/stayfixed/docs/trail.py`. IS3's #37 changes `src/stayfixed/assess/gates.py` and #47 the
   tracked-file walk, so they build on the moved modules.
-- **IS1 → DM.** #31 may change how a gate's adoption stage is spelt, removing the old spelling in
-  the same pull request (d3 as amended). DM's regression act writes and asserts that configuration.
+- **IS1 → DM.** #31 is decided as shape C (the owner, 2026-10-28; the IS plan's "#31's decision"):
+  `[stayfixed] state` is removed in the same pull request (d3 as amended), and `adopt promote`
+  writes `[stayfixed] enforced` alone. DM's regression act promotes through `adopt promote` and
+  asserts the result through `gate --json`'s `enforcing`.
 - **CL6 → CL8 → CL9.** All three edit `src/stayfixed/doctor/`, `tests/doctor/test_checks.py`,
   `src/stayfixed/harnesses.py`, `docs/cli.md`'s `doctor` section and `mutations/doctor.toml`. CL9
   removes the `retired-deny` row and folds the `files` row into `wrapper`, moving `doctor`'s count
   from 17 to 15 in one change, which about fifteen places pin.
 - **DM → CX.** CX measures the `Stop`-hook recipe and the fixture's acts on Codex.
-- **BM calibration → BM run.** The run's ceiling comes from the calibration's measured cost per run.
-- **DM, CX, BM run, IS3, RD1 → RD2.** RD2 describes what shipped:
+- **DM, CX, BM, IS3, RD1 → RD2.** RD2 describes what shipped:
   - the fixture and the recording;
   - the recipe;
   - the capability table as CX measured it;
-  - the benchmark's cases and raw result;
+  - the benchmark's cases and its calibrated baseline, as the BM plan's Findings record them (BM
+    has closed, so this edge is already met);
   - the `docs`/`trail` contract as IS3 left it for #43.
 
 - **CL9, DM → IC.** IC moves the Claude Code pin in `smoke.yml`, whose `doctor` count CL9 changes
@@ -199,20 +207,20 @@ What each edge carries:
 
 ## Releases
 
-Two releases, each cut on `origin/main` from `dev` by `RELEASING.md`, which also runs
+One release, cut on `origin/main` from `dev` by `RELEASING.md`, which also runs
 `scripts/publish_template.py`.
 
-- **`0.6.2`, docs only (w11).** Cut as soon as RD1 has merged, and before the first article is
-  published. It carries the first screen and the storefront descriptions, and nothing that changes
-  behaviour. A lane pull request that merged into `dev` before the cut ships in it too, so the
-  controller reads `git log v0.6.1..origin/dev` at the cut. Any behaviour change found there is the
-  owner's call: wait, or ship.
+- **`v0.7.0`.** Cut once every lane has merged. It carries the first screen, the storefront
+  descriptions and the icon, and the directory submission goes in with it.
+- **No `0.6.2`** (the owner's ruling, 2026-10-29, on the plans' final review). w11 planned it as a
+  docs-only release of RD1, but `RELEASING.md` cuts from `dev`, which already holds CL6–CL9's four
+  removals and the icon, and IS1 would add `[stayfixed] state`'s removal, which stops every `0.6.x`
+  `stayfixed.toml` from loading. A docs-only `0.6.2` would need a release branch the repository has
+  no procedure for. RD1 reaches readers with `v0.7.0`, and the first article waits for it.
 
   `0.6.1` is wave 9's: P6's exit check on `0.6.0` found that `attach` refused a repository with no
   `stayfixed.toml`, and the fix (the project found by its remote, else named from the remote's path)
   shipped as `0.6.1` on 2026-10-28, before RD1 merged.
-- **`v0.7.0`.** Cut once every lane has merged. It carries the icon, and the directory submission
-  goes in with it.
 
 A pull request's checks are read with `gh pr checks` on its own head, after the latest `dev` has
 come into it by `git merge origin/dev`. A push to `dev` re-runs no open pull request's checks, and
@@ -226,23 +234,23 @@ appended to the group file `scripts/mutation_oracle.py` `GROUP_OF` routes them t
 
 | File or area | Owner, in order | Note |
 |---|---|---|
-| `README.md` | RD1 (the first screen), IC (the restated text a hold matched), CL6, CL8 and CL9 (their rows and the 17), CX (the capability table), IS3 (the `docs`/`trail` contract, if #43 changes it), then RD2 | **hot spot**: each lane quotes the previous lane's text it rewrites |
+| `README.md` | RD1 (the first screen), IC (the restated text a hold matched), CL6, CL8 and CL9 (their rows and the 17), IS1 (the install note's key list, and the "enforcement state machine" bullet), CX (the capability table), IS3 (the `docs`/`trail` contract, if #43 changes it), then RD2 | **hot spot**: each lane quotes the previous lane's text it rewrites |
 | `pyproject.toml`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json` | RD1 (the descriptions), IC (the icon in `.claude-plugin/plugin.json`), then the release tasks (the versions) | `tests/test_manifests.py` `_storefront` holds them as one |
 | `.github/workflows/check.yml`, `tests/test_check_workflow.py` and its YAML reader | CL7, IS1 (#34), then IS2 | |
 | `.github/workflows/smoke.yml`, `scripts/smoke_hooks.py`, `tests/scripts/test_smoke_scripts.py`, `src/stayfixed/doctor/`, `tests/doctor/` and the files that pin `doctor`'s 17 rows | CL6, CL8, CL9 (17 → 15), then CX (if it adds a Codex row) | **hot spot**: each quotes the previous lane's count in its plan |
 | `hooks/` | CL6 (removes `hashes.json`) | no lane adds a hook entry |
-| `src/stayfixed/assess/`, `src/stayfixed/docs/trail.py` | IS1, then IS3 | |
-| `src/stayfixed/config/` | IS1 (#31's format, if it changes), CL9 (the preset's `[deny] retired`) | |
+| `src/stayfixed/assess/`, `src/stayfixed/docs/trail.py` | IS1, IS2 (`probes.py`, only if Check 4 needs a fix), then IS3 | |
+| `src/stayfixed/config/` | CL9 (the preset's `[deny] retired`), then IS1 (`[stayfixed] state` removed) | |
 | `src/stayfixed/harnesses.py` | CL6 (a comment), CL8 (`Hooked` and `Harness.hooked`), then CX (BR-014) | |
 | `src/stayfixed/guards/` | IC (comment restatements in `src/stayfixed/guards/bgcleanup.py` and `src/stayfixed/guards/commit.py`), then CX (BR-014) | |
 | `src/stayfixed/config/loader.py` | IC (a restatement, only if the match is located), then IS1 | |
 | `src/stayfixed/trust/record.py`, `src/stayfixed/overlay/template.py`, `src/stayfixed/presets/recommended.toml` | CL9 | |
 | `src/stayfixed/release/`, `scripts/release.py` | CL6 | |
 | `examples/` (create), its CI job in `.github/workflows/ci.yml` | DM | `GROUP_OF` routes `examples/` to `mutations/repository.toml` |
-| `scripts/bench/` (create), `tests/scripts/test_bench.py` (create), its workflow (create) | BM | `GROUP_OF` routes both to `mutations/tooling.toml` |
+| The benchmark's instrument, its tests and its workflow | BM | not merged: they stay on `wp/bench` |
 | `scripts/plugin_tree.py` `PLUGIN_PATHS`, `tests/plugintree.py` `NINE`, `tests/test_neutral.py` `UNDECODABLE`, `.claude-plugin/icon.png` (create) | IC | the icon is the repository's first binary; `tests/test_payload.py` already admits it, and is not loosened |
 | `skills/` | IC (the `attribute-failure` phrasing a hold matched), CL8 (the `doctor` skill's row count) | |
-| `docs/methodology/principles.md` | RD1 | |
+| `docs/methodology/principles.md` | RD1 and IS1, in merge order (IS1: the "state machine ships per gate" sentence) | the second quotes the first's text from the tree |
 | The Claude Code pin in `.github/workflows/ci.yml` and `.github/workflows/smoke.yml`, and `ci.yml`'s step that validates the rendered tree | IC, after CL9 and DM have merged | the section "Directory and launch inputs", item 2 |
 | `RELEASING.md` | IC (the tracked ref, item 7), then the release tasks | |
 
@@ -270,15 +278,15 @@ launch inputs".
 | Lane | Items |
 |---|---|
 | RD1 | **First screen.** At most about 20 lines: three commands and the headline (w7). `prove` reads only the runner's own report, so a printed summary or the agent's prose is never counted. The gate reads its policy from the base branch, key by key, and stays advisory until earned. The overlay leaves no trace in `git status`. **Said plainly:** the agent can still weaken the tests; `proved` means "the runner reported green on this tree, for the tests this command selected"; the project's own CI test job runs the tests on the merged tree, and one line runs them through `prove`. **Wording:** "finer-grained", never "first"; superpowers named as an ally. **Dropped:** "fail closed" in the five storefront files; the undated count of about 2,300 plugins; Codex behaviour beyond the current table; any traction; mutation counts and lane counts. The methodology principle that calls the overlay a plugin is corrected (d31 retired that). Human-written with the owner. |
-| IS1 | **#33 first**, as pure moves with no behaviour change: `base.py` split out of `src/stayfixed/assess/rule.py`; `run_gate` into the domain, returning a `GateRun`; one `GateFn`; `trail_gate` drops its unread `base` and raises instead of returning a sentinel finding; the lifecycle states as a `StrEnum` (this touches `src/stayfixed/config/schema.py`); the four items the issue "kept" each closed or written into `docs/cli.md`. **#31:** put to the owner at the lane's start, with both shapes priced: two coupled keys whose disagreements the loader refuses, or one value per gate naming its stage. Then implemented, the old spelling removed. **#34:** `check.yml` passes the raw platform values to `stayfixed gate` as one-argv `--name=value` flags, and Python checks them. Every shell guard moves intact, each with a Python test: the newline refusal, the base-mismatch refusal, the qualified ref, `check-ref-format`. `head_ref` is never passed. The Python step runs `-P -s` from the workflow-sha checkout. No test of a guard is deleted before its Python replacement holds the same case. |
+| IS1 | **#33 first**, as pure moves with no behaviour change: `base.py` split out of `src/stayfixed/assess/rule.py`; `run_gate` into the domain, returning a `GateRun`; one `GateFn`; `trail_gate` drops its unread `base` and raises instead of returning a sentinel finding; the lifecycle states as a `StrEnum` (this touches `src/stayfixed/config/schema.py`); the four items the issue "kept" each closed or written into `docs/cli.md`. **#31:** decided by the owner on 2026-10-28 as shape C: `[stayfixed] state` goes, and `[stayfixed] enforced` is the one adoption key, which `adopt promote` writes alone. The old spelling is removed. **#34:** `check.yml` passes the raw platform values to `stayfixed gate` as one-argv `--name=value` flags, and Python checks them. The guards whose anchor the platform or the runner holds move, each with a Python test: the base-mismatch refusal (`github.base_ref`), the qualified ref (`refs/remotes/origin/<base>`) and the `..` containment (the checkout the runner made). `check-ref-format` stays as a plain call with no mutation entry. The `path:` character grammar and its newline refusal are deleted with their bash test: once nothing reaches `$GITHUB_OUTPUT` they stop no adversary, and the grammar refuses a legitimate root with a space or a non-ASCII name. No refusal echoes `path:`'s value. `head_ref` is never passed. The Python steps run `-P -s` from the workspace root as today, with the caller's checkout passed as `--root project`. No test of a moved guard is deleted before its Python replacement holds the same case. |
 | IS2 | #32's four checks run on GitHub, each with a stated expected value and a positive control. **1.** A merge queue on another branch neither runs nor skips the required check. **2.** A pull request retargeted to another base keeps no passing check from the old base. **3.** What the custom-gate step can reach: workflow commands (`::stop-commands::`, `::error::`), `$GITHUB_STEP_SUMMARY` and the runner environment (both checkouts use `persist-credentials: false`). **4.** How GitHub parses a `CODEOWNERS` line holding a non-breaking space, and whether `codeowners-scope` agrees. **Scratch repositories:** created with the owner's yes and **deleted by the owner**; the controller never takes `gh`'s `delete_repo` scope. Each result goes into the plan's Findings, and each that contradicts `docs/cli.md` is fixed in this pull request. |
-| IS3 | **#37:** measure first whether cgroup v2's `cgroup.procs` and `cgroup.kill`, plain file writes under a delegated slice, end a descendant that left the gate's process group, on a Linux runner. If they do, implement it for Linux, with the macOS limitation in `docs/cli.md`. If not, the measurement goes to the owner, not a closure. **#47:** on an exact miss inside the walk, continue with git's case-folded spelling of that prefix when it names the same file; report `case-differs` only when the rest of the walk finds everything tracked, and `untracked` otherwise; each of the issue's three shapes is a test. The NFC/NFD case the issue lists as related is filed, not fixed. **#43:** resolved within the tracked-files contract (`docs/cli.md`): a project that keeps `AGENTS.md` or its roadmap private keeps them in the overlay's `projects/<name>/`, delivered as the overlay already delivers its rules; the `docs` and `trail` gates do not judge them, and `docs/cli.md` says so. No new delivery path; the closing comment states this. |
-| CL | **One plan, four deletion-only pull requests (w4).** Each deletes its tests, `docs/cli.md` rows, README rows, changelog references and mutation entries in the same pull request, prints its net size, and says which adversary the removed control named and why it reaches the anchor or is already stopped. **CL6:** `hooks/hashes.json`, `release.py hashes`, `src/stayfixed/release/hashes.py`, the hash half of `doctor`'s `files` row; first confirm that the `wrapper` row reports a partially updated plugin, and if not, say so in the pull request. What is left of `files` (the executable bit) folds into `wrapper` in CL9, so the count changes once (the owner's ruling on this plan's final review). **CL7:** the 5–60 expression and the failing step; the input passes through. **CL8:** `src/stayfixed/doctor/frontmatter.py`, `src/stayfixed/doctor/hooked.py`, the marker-provenance red and the info line. **CL9:** the 0.3.x reader in `src/stayfixed/trust/record.py`, the `retired-deny` row and the preset's `[deny] retired`, `src/stayfixed/overlay/template.py`'s retired-files table. No pull request adds a line to `src` that is not a caller's adaptation to a removal. |
+| IS3 | **#37:** measure first whether cgroup v2's `cgroup.procs` and `cgroup.kill`, plain file writes under a delegated slice, end a descendant that left the gate's process group, on a Linux runner, as the runner's user, where gates run. If they do, implement it for Linux, with the macOS limitation in `docs/cli.md`. If not, the measurement goes to the owner, not a closure. **#47:** on an exact miss inside the walk, continue with git's case-folded spelling of that prefix when it names the same file; report `case-differs` only when the rest of the walk finds everything tracked, and `untracked` otherwise; each of the issue's three shapes is a test. The NFC/NFD case the issue lists as related is filed, not fixed. **#43:** resolved within the tracked-files contract (`docs/cli.md`): a project that keeps `AGENTS.md` or its roadmap private keeps them in the overlay's `projects/<name>/`, delivered as the overlay already delivers its rules; the `docs` and `trail` gates do not judge them, and `docs/cli.md` says so. No new delivery path; the closing comment states this. |
+| CL | **One plan, four deletion-only pull requests (w4).** Each deletes its tests, `docs/cli.md` rows, README rows, changelog references and mutation entries in the same pull request, prints its net size, and says which adversary the removed control named and why it reaches the anchor or is already stopped. **CL6 (delete):** `hooks/hashes.json`, `release.py hashes`, `src/stayfixed/release/hashes.py`, the hash half of `doctor`'s `files` row; first confirm that the `wrapper` row reports a partially updated plugin, and if not, say so in the pull request. What is left of `files` (the executable bit) folds into `wrapper` in CL9, so the count changes once (the owner's ruling on this plan's final review). **CL7:** the 5–60 expression and the failing step; the input passes through. **CL8:** `src/stayfixed/doctor/frontmatter.py`, `src/stayfixed/doctor/hooked.py`, the marker-provenance red and the info line. **CL9:** the 0.3.x reader in `src/stayfixed/trust/record.py`, the `retired-deny` row and the preset's `[deny] retired`, `src/stayfixed/overlay/template.py`'s retired-files table. No pull request adds a line to `src` that is not a caller's adaptation to a removal. |
 | DM | **`examples/`:** a script that builds a small repository from scratch, takes the `stayfixed` binary as an argument, prints `command -v` and `--version` first, and needs no model call and no network beyond a pinned, pre-installed pytest. Each act asserts the product's own exit code and its `--json` or stdout, never a line the script echoes. **1.** `prove` on a genuine run (`proved`, exit 0). **2.** `prove -- sh -c 'echo "42 passed"'` (`not proven`, exit 1). **3.** An all-skipped suite (`failed`, exit 1). **4.** A forging spelling (`refused`, exit 2). **5.** A closed bug whose regression fails an **enforced** gate (the gate's state set and asserted, then the verdict and the exit). **6.** `attach` under an isolated `HOME` over a scratch overlay holding one canary addressed to the project and one to another: the first arrives, the second does not, and `git status --porcelain` is empty before and after. **7.** The `Stop`-hook recipe (w3): a shipped example hook that runs `stayfixed prove -- <tests>` and exits 2 on anything but `proved`, with a stated cost per turn (a turn with no edit pays the run too), driven once on a red tree (exit 2), once on a green one (exit 0), and once on a red tree with `stop_hook_active: true` in its input (exit 0). The recipe reads its stdin JSON and lets the stop through when `stop_hook_active` is true, so a tree the agent cannot make green (an unrecognised runner, a time-out, a `refused`) costs one continuation, not an unbounded loop. Its sentence: the adversary is the agent's "done"; the agent in the session can edit the hook's settings file or weaken the tests, so the anchor is the user's own install and the harness's sandbox, and the recipe says so where it is shipped. **CI:** a job in `ci.yml` runs the script against the checkout's binary; act 6 needs `claude` on the runner, or that act is skipped and the skip is printed, never counted as a pass. "Under a minute" is a goal printed with the measured time, not an assertion. The recording (about 90 seconds) is made by the owner from the script on the `v0.7.0` candidate. |
 | CX | **Measure first, on the Codex version current at the lane's start, before fixing tasks** (w6): whether stayfixed's hooks run once trusted and how a person trusts them; what Codex's `PostToolUse` carries for the red-run note (BR-014), which speaks on a signal Codex gives or stays documented as silent; how skills reach a Codex session; DM's `Stop`-hook recipe on Codex, whose `Stop` documents only a block. Nothing emulates Codex. The README's capability table and `doctor` say exactly what was measured, with the version and the date. Done when the table is filled; a fix it finds beyond BR-014 is filed. Every Codex run is the owner's to start where it needs a signed-in session. |
-| BM | Rewrite the side-lanes plan's Lane 2 against the tree: `scripts/release.py check`; entries in `mutations/tooling.toml`; the plugin built with `scripts/plugin_tree.py`; the 512-file limit, which still stands at release (`scripts/release.py` `PLUGIN_FILES_MAX`). **Cases:** `control`, `fabricated-done`, `all-skipped`, `outside-plan`, `stale-green` (a test run, an edit, "done"); the calibration must show a non-zero failure rate *without* the plugin on `stale-green` and `fabricated-done`, or those cases measure nothing. **Isolation:** each repetition gets its own `HOME`, so the baseline arm loads none of the owner's user-scope plugins. **Where:** a GitHub Actions job, the isolated environment the plugin-eval documentation names. **The key** is the repository's first secret, so the job states its anchor: the adversary is a pull request that edits `scripts/bench/` or the workflow and gets it run; the job triggers on `workflow_dispatch` only (never `pull_request` or `pull_request_target`), the secret lives in a GitHub environment whose required reviewer is the owner and whose deployment branches are `dev` only, the job holds `permissions: contents: read`, and the key carries a spend limit at the provider, since `--max-cost-usd` is a flag the run's own code can drop. **Cost:** `--max-cost-usd` on every run; the probe, then the calibration, then the run, each after the owner's yes with its ceiling stated. **Published:** the cases, the raw JSON, the version, the cost and n; no comparison against neighbouring tools. |
+| BM | Rewrite the side-lanes plan's Lane 2 against the tree: `scripts/release.py check`; entries in `mutations/tooling.toml`; the plugin built with `scripts/plugin_tree.py`; the 512-file limit, which still stands at release (`scripts/release.py` `PLUGIN_FILES_MAX`). **Cases:** `control`, `fabricated-done`, `all-skipped`, `outside-plan`, `stale-green` (a test run, an edit, "done"); the calibration must show a non-zero failure rate *without* the plugin on `stale-green` and `fabricated-done`, or those cases measure nothing. **Isolation:** each repetition gets its own `HOME`, so the baseline arm loads none of the owner's user-scope plugins. **Where:** a GitHub Actions job, the isolated environment the plugin-eval documentation names. **The key** is the repository's first secret, so the job states its anchor: the adversary is a pull request that edits `scripts/bench/` or the workflow and gets it run; the job triggers on `workflow_dispatch` only (never `pull_request` or `pull_request_target`), the secret lives in a GitHub environment whose required reviewer is the owner and whose deployment branches are `dev` only, the job holds `permissions: contents: read`, and the key carries a spend limit at the provider, since `--max-cost-usd` is a flag the run's own code can drop. **Cost:** `--max-cost-usd` on every run; the probe, then the calibration, then the run, each after the owner's yes with its ceiling stated. **Published:** the cases, the raw JSON, the version, the cost and n; no comparison against neighbouring tools. **Outcome (2026-10-29):** the probe and the calibration ran locally on the owner's subscription; the baseline gave the plugin nothing to reduce, so no with-plugin arm ran and the instrument was not merged (the BM plan's Findings). The CI job and its secret were never built. A later run that builds them states the owner as required reviewer for cost approval, not as a second security layer: the deployment-branch rule already keeps a pull request's code from the secret. |
 | IC | `.claude-plugin/icon.png` (create) from the owner's artwork: square PNG or JPEG, 512 to 2,048 px, under 2 MB. It is named in `.claude-plugin/plugin.json` (the portal's "No icon" warning reads the manifest). It is the tenth path in `PLUGIN_PATHS` and in `tests/plugintree.py`, and `UNDECODABLE` goes 0 → 1 with its reason. **The 2026-10-15 holds:** four `MCP_FORWARDS_CREDENTIAL_ENV` findings, which were pattern hits on text: `README.md` (a remote host beside the word `env`), a comment's example URL in `src/stayfixed/guards/bgcleanup.py`, the `claude.com` link in `src/stayfixed/guards/commit.py`'s comment, and the `attribute-failure` skill's "pass `--base`" read beside `hooks/run-hook.sh`. Restate each where a restatement clears the match with no loss of meaning. `COMMAND_SCRIPT_NOT_FOLLOWED` on `hooks/run-hook.sh` waits for the reviewer, as the portal allows. The `RUNTIME_FETCH_EXEC` warning's `src/stayfixed/config/loader.py` match was never located: restate nothing there unless the portal names the line. |
-| RD2 | Written over what shipped: the verdict table; the bound; the gate's base read; the `Stop`-hook recipe with its cost; the capability table as CX measured it; a factual neighbours-and-native table (prior art named, "finer-grained"); "What stayfixed sends where" re-read against `tests/outbound/policy.py`; the fixture's commands and the recording; the benchmark's cases and raw result. Human-written with the owner. |
+| RD2 | Written over what shipped: the verdict table; the bound; the gate's base read; the `Stop`-hook recipe with its cost; the capability table as CX measured it; a factual neighbours-and-native table (prior art named, "finer-grained"); "What stayfixed sends where" re-read against `tests/outbound/policy.py`; the fixture's commands and the recording; the benchmark's cases and calibrated baseline, as the BM plan's Findings record them. Human-written with the owner. |
 
 ## Directory and launch inputs
 
@@ -292,7 +300,8 @@ start, not a ruling. Three were already met when read:
   these:
   - the plugin's wrapper;
   - `~/.local/share/stayfixed`;
-  - the `autoMemoryDirectory` key `attach` writes into `.claude/settings.local.json`;
+  - the `autoMemoryDirectory` key `attach` writes into the project's local Claude Code settings
+    file;
   - the network use.
 - `hooks/hooks.json` has carried the Codex key `additionalContextLimit` since 2026-09-17. The
   portal Validate of 2026-10-15 therefore read it, and none of its holds named the hooks file.
@@ -426,7 +435,8 @@ this plan, and nothing generated goes into them. The controller supplies, outsid
   - The first post goes out on a Tuesday, about two weeks after Task 3's submission, and not in the
     week of 23–27 November.
 
-`0.6.2` is released before the first text is published. Habr's first article from the owner's
+`v0.7.0` is released before the first text is published, since the first screen reaches readers
+with it (Releases). Habr's first article from the owner's
 read-only account goes through the Sandbox, so its publication date is Habr's (w9).
 
 ## Release tasks
@@ -436,29 +446,20 @@ the `pypi` deployment in GitHub's web interface, and presses Save and Submit in 
 The controller runs only checks, read-backs and dry runs, and never calls the pending-deployments
 API.
 
-### Task 1: Cut `0.6.2` (controller, with the owner)
+### Task 1: Dropped
 
-- [ ] **Step 1:** when RD1 has merged and `gh pr checks` read every job green, run
-  `git log --oneline v0.6.1..origin/dev` and `uv run python scripts/release.py check` on `dev`. Paste
-  both into Findings. A commit that changes behaviour goes to the owner before the cut.
-- [ ] **Step 2:** the owner cuts `0.6.2` by `RELEASING.md`. The changelog names the rewritten first
-  screen and the storefront descriptions.
-- [ ] **Step 3:** read back three things:
-  - `git show origin/main:README.md | head -25`, which shows RD1's first screen;
-  - PyPI's project page summary for `0.6.2`;
-  - the plugin repository's `README.md` at `v0.6.2`.
-
-  Paste all three.
+`0.6.2` is not cut (Releases, the owner's ruling of 2026-10-29). Its read-back of the first screen
+moved to Task 3, Step 2. The task keeps its number so the lane plans' references to Tasks 2–4 hold.
 
 ### Task 2: The release check before `0.7.0` (controller, with the owner)
 
 - [ ] **Step 1:** when every lane has merged into `dev` and `gh pr checks` read every job green on
   each, run `uv run python scripts/release.py check` on `dev` and paste its output into Findings.
-- [ ] **Step 2:** read the upgrading section the fragments build against the installed `0.6.2`. It
-  must name four things:
+- [ ] **Step 2:** read the upgrading section the fragments build against the installed `0.6.1`. It
+  must name five things:
   - each cut's user-visible removal (`hashes.json` and `doctor`'s hash check; the timeout bound; the
     frontmatter info line; the 0.3.x record reader and `[deny] retired`);
-  - #31's change, if the format changed;
+  - #31's removal of `[stayfixed] state`, and the direct push a base branch that spells it needs;
   - #34's new flags;
   - the `Stop`-hook recipe;
   - for a `0.6.x` user, adding the marketplace again at `@v0.7.0`.
@@ -475,7 +476,10 @@ API.
     review.
   - **Example prompts.** Three that work on a fresh install.
   - **The sample repository.** The one DM's script builds.
-- [ ] **Step 2:** the owner cuts `0.7.0` by `RELEASING.md`.
+- [ ] **Step 2:** the owner cuts `0.7.0` by `RELEASING.md`. Then read back, and paste, three things:
+  - `git show origin/main:README.md | head -25`, which shows RD1's first screen;
+  - PyPI's project page summary for `0.7.0`;
+  - the plugin repository's `README.md` at `v0.7.0`.
 - [ ] **Step 3:** in the owner's signed-in portal, "Submit a plugin", repository
   `stayfixed/stayfixed-plugin`, tag `v0.7.0`, press Validate. Paste the checks, warnings and holds
   into Findings beside the 2026-10-15 run. No Save happens before this step's output is read: the
