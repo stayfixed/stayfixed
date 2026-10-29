@@ -227,7 +227,7 @@ def test_doctor_json_carries_no_codex_hooks_row(
     root = tmp_path / "project"
     root.mkdir()
     (root / "stayfixed.toml").write_text(
-        f'[stayfixed]\nversion = "{stayfixed.__version__}"\nstate = "installed"\n'
+        f'[stayfixed]\nversion = "{stayfixed.__version__}"\n'
         'agents = ["claude", "codex"]\n\n[project]\nname = "p"\n',
         encoding="utf-8",
     )

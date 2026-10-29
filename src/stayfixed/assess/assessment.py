@@ -49,7 +49,7 @@ from stayfixed.fsops import UnsafePath, write_within
 from stayfixed.gitenv import git_run
 from stayfixed.project.api import ASSESSMENT
 
-FORMAT = 1
+FORMAT = 2
 
 UNWRITABLE = (
     f"refusing to write {ASSESSMENT}: a directory on its path is a symlink or not a directory; "
@@ -73,7 +73,6 @@ NOT_IGNORED = (
 class Assessment:
     base: str
     base_branch: str  # `[project] base_branch`, for the note when `base` is not in the checkout
-    state: str
     enforcing: tuple[str, ...]
     gates: tuple[GateResult, ...]
     items: tuple[Item, ...]
@@ -131,7 +130,6 @@ def assess(
     return Assessment(
         base,
         config.project.base_branch,
-        config.stayfixed.state,
         enforcing,
         results,
         tuple(items),
@@ -145,7 +143,6 @@ def document(assessment: Assessment) -> dict[str, Any]:
         "format": FORMAT,
         "stayfixed": stayfixed.__version__,
         "base": assessment.base,
-        "state": assessment.state,
         "enforcing": list(assessment.enforcing),
         "skipped": list(assessment.skipped),
         "gates": [gate_row(g, enforcing=g.name in assessment.enforcing) for g in assessment.gates],
@@ -190,7 +187,7 @@ def render(assessment: Assessment) -> str:
     repository chose."""
     failing = assessment.would_fail
     lines = [
-        f"{SUMMARY_LEAD} state {assessment.state}; {len(failing)} of {len(assessment.gates)} "
+        f"{SUMMARY_LEAD} {len(failing)} of {len(assessment.gates)} "
         f"gate(s) would fail if enforced; {len(assessment.items)} item(s); the whole list is in "
         f"{ASSESSMENT}",
         "",

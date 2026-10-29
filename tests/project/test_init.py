@@ -71,13 +71,12 @@ def test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded(tmp_pat
     root = _repo(tmp_path)
     report = _init(root, tmp_path)
     config = load(root, machine=tmp_path / "absent.toml")
-    assert config.project.name == "widget" and config.stayfixed.state == "initialised"
-    # Read off the file and not only through the loader: `state` has a preset default, so
-    # `load` answers `initialised` for a document that never mentioned it.
+    assert config.project.name == "widget" and config.stayfixed.enforcing == frozenset()
+    # Read off the file and not only through the loader: `enforced` has a preset default, so
+    # `load` answers an empty list for a document that never mentioned it.
     document = tomllib.loads((root / CONFIG_FILE).read_text(encoding="utf-8"))
     assert document["stayfixed"] == {
         "version": stayfixed.__version__,
-        "state": "initialised",
         "agents": ["claude", "codex"],
     }
     assert document["project"]["name"] == "widget"
@@ -102,16 +101,16 @@ def test_a_bare_repository_gets_the_footprint_and_every_file_is_recorded(tmp_pat
 def test_a_created_document_opens_with_a_header_naming_every_tool_owned_key(
     tmp_path: Path,
 ) -> None:
-    # The header is the file's own statement of which keys stayfixed rewrites in place. It named
-    # `[stayfixed] version` and `state` while four keys are stayfixed's to rewrite. Every key of
-    # `OWNED` is looked for, as `key` or as `[table] key` in backticks, and every table it names
-    # is named, so a fifth owned key or a dropped one reddens here. Mutations: restore the
-    # two-key header and this reddens on `[ci] ref`, the first missing key in sorted order; drop
-    # only "`enforced`" and it reddens on `enforced`.
+    # The header is the file's own statement of which keys stayfixed rewrites in place. It once
+    # named two keys while more were stayfixed's to rewrite. Every key of `OWNED` is looked for,
+    # as `key` or as `[table] key` in backticks, and every table it names is named, so a fourth
+    # owned key or a dropped one reddens here. Mutations: drop "`, and `[ci] ref`" from the
+    # header and this reddens on `[ci] ref`, the first missing key in sorted order; drop only
+    # "`enforced`" and it reddens on `enforced`.
     root = _repo(tmp_path)
     _init(root, tmp_path)
     assert (root / CONFIG_FILE).read_text(encoding="utf-8").startswith(HEADER)
-    assert len(OWNED) == 4
+    assert len(OWNED) == 3
     for table, key in sorted(OWNED):
         assert re.search(rf"`(?:\[{table}\] )?{key}`", HEADER), (table, key)
         assert f"`[{table}]" in HEADER, table
@@ -206,8 +205,8 @@ def test_an_existing_configuration_without_a_manifest_is_adopted_and_never_repla
     # `[paths]` this file declares and under none of the preset's.
     #
     # **The engine is the authority on this, not an expectation written ahead of it.** A first
-    # draft of this test asserted that `[stayfixed] state`, `version` and a detected `agents` were
-    # written into the adopted file; `scaffold.engine.plan` skips a `Kind.ONCE` artifact whose
+    # draft of this test asserted that stayfixed's own keys and a detected `agents` were written
+    # into the adopted file; `scaffold.engine.plan` skips a `Kind.ONCE` artifact whose
     # file is present, unconditionally and above every `force`, and the two rules above —
     # "created when absent", "read as the answers rather than replaced" — say the same thing the
     # engine does.
@@ -609,9 +608,9 @@ def test_an_adopted_document_with_no_version_gets_one_and_keeps_every_line(
 
 
 REFUSED_HEADS = {
-    "enforced-while-initialised": 'enforced = ["docs"]\n',
-    "state-outside": 'state = "bogus"\n',
-    "partial-installed": 'state = "installed"\nenforced = ["docs"]\n',
+    # The removed `[stayfixed] state`, which the loader refuses as an unknown key.
+    "spells-state": 'state = "initialised"\n',
+    "enforced-unknown": 'enforced = ["absent"]\n',
     "no-project": "",
     # An empty file parses to `{}`, which is falsy: no table is copied and no head is read, a
     # path of its own through `_tables` and `_as_on_disk`.
@@ -624,9 +623,10 @@ REFUSED_HEADS = {
 def test_an_adopted_document_the_loader_would_refuse_is_refused_before_anything_is_written(
     tmp_path: Path, case: str
 ) -> None:
-    # The merged document `init` validates forces `state`, drops `enforced` and detects a name
-    # the file may lack, so each of these passed `init` and left a manifest over a file no later
-    # command could load. The file is now checked as it will be on disk, in the dry run too.
+    # The merged document `init` validates drops `enforced` and every other `[stayfixed]` key it
+    # does not carry over, and detects a name the file may lack, so each of these passed `init`
+    # and left a manifest over a file no later command could load. The file is now checked as it
+    # will be on disk, in the dry run too.
     # Mutation (oracle): `mutations/`'s "an adopted document the next command cannot load is adopted
     # anyway".
     root = _repo(tmp_path)

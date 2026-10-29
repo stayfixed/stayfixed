@@ -38,7 +38,6 @@ pytestmark = needs_git
 
 BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "adopting"
 enforced = ["docs"]
 
 [project]
@@ -92,7 +91,7 @@ def test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding(tmp_path:
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config", "--only", "docs", "--json")
     assert code == 1
     printed = json.loads(out)
-    assert set(printed["config"]) == {"judged", "base_state", "changes", "refused", "enforcing"}
+    assert set(printed["config"]) == {"judged", "changes", "refused", "enforcing"}
     assert printed["config"]["changes"] == [{"key": "stayfixed.enforced", "verdict": "refused"}]
     assert printed["config"]["refused"] is True
     assert printed["gates"] == [
@@ -119,16 +118,17 @@ def test_an_enforced_custom_gate_runs_its_command_and_fails_on_its_exit_status(
     assert "tests: enforcing, 1 finding(s)" in out.splitlines()
 
 
-def test_a_built_in_gate_added_under_installed_enforces_in_the_run_that_adds_it(
+def test_a_built_in_gate_added_and_listed_enforces_in_the_run_that_adds_it(
     tmp_path: Path,
 ) -> None:
-    # Under `installed` every gate the project runs enforces, so the pull request that adds a
-    # built-in gate is held to it at once: the enforcing set is the base's and the tree's.
-    # Mutation: `judge` enforcing the base's set alone (declared against the rule's own tests)
-    # -> `docs` is advisory here and the run passes.
-    installed = BASE.replace('state = "adopting"\nenforced = ["docs"]\n', 'state = "installed"\n')
-    project = clone(tmp_path, installed + '\n[gates]\nbuiltin = ["bugs"]\n')
-    _change(project, installed + '\n[gates]\nbuiltin = ["docs", "bugs"]\n', agents=OVER_BUDGET)
+    # The pull request that adds a built-in gate and lists it in `enforced` is held to it at
+    # once: the enforcing set is the base's and the tree's. Mutation: `judge` enforcing the
+    # base's set alone (declared against the rule's own tests) -> `docs` is advisory here and the
+    # run passes.
+    base = BASE.replace('["docs"]', '["bugs"]') + '\n[gates]\nbuiltin = ["bugs"]\n'
+    tree = BASE.replace('["docs"]', '["docs", "bugs"]') + '\n[gates]\nbuiltin = ["docs", "bugs"]\n'
+    project = clone(tmp_path, base)
+    _change(project, tree, agents=OVER_BUDGET)
     code, out, _ = cli(project, tmp_path, "gate")
     assert code == 1
     lines = out.splitlines()
@@ -271,7 +271,6 @@ def test_a_custom_gate_the_base_does_not_enforce_waits_for_its_new_command_to_la
 
 POLICY_BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "adopting"
 enforced = ["policy"]
 
 [project]

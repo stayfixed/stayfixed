@@ -1216,9 +1216,9 @@ reddens = [
 
 # The third enumerated-value leak in this loader, after `_build`'s and `_budgets`'. `!r` escapes
 # the control characters, which is why it read as milder than the raw bytes those two printed —
-# but `stayfixed.state`, `memory.mode` and `ci.mode` are repository-authored and bounded by no
-# grammar, so what it prints is unbounded in content and in length, and the same branch deleted
-# `; got {project.name!r}` from the refusal one screen below on exactly this reasoning.
+# but `memory.mode` and `ci.mode` are repository-authored and bounded by no grammar, so what it
+# prints is unbounded in content and in length, and the same branch deleted `; got
+# {project.name!r}` from the refusal one screen below on exactly this reasoning.
 [[mutation]]
 name = "a configuration enum quotes the value back again"
 file = "src/stayfixed/config/loader.py"
@@ -1323,9 +1323,7 @@ reddens = [
 # The gate set and per-gate enforcement. `mutations/`'s "the loader admits a gate the project does
 # not run into [stayfixed] enforced", "a custom gate's name reaches the loader's refusals unbounded"
 # and "the loader admits a built-in gate stayfixed does not have" bound what a repository-authored
-# gate name may reach in a refusal; `mutations/`'s "an installed project stops enforcing every gate
-# it runs" and "an installed project's partial enforced list loads again" hold the one fact `state`
-# and `enforced` state together.
+# gate name may reach in a refusal.
 [[mutation]]
 name = "the loader admits a gate the project does not run into [stayfixed] enforced"
 file = "src/stayfixed/config/loader.py"
@@ -1333,24 +1331,6 @@ before = "    unknown = [name for name in stayfixed.enforced if name not in conf
 after = "    unknown: list[str] = []"
 reddens = [
   "tests/config/test_loader.py::test_a_gate_the_project_does_not_run_is_counted_and_never_quoted",
-]
-
-[[mutation]]
-name = "an installed project stops enforcing every gate it runs"
-file = "src/stayfixed/config/loader.py"
-before = "    return replace(config, stayfixed=replace(stayfixed, enforced=names))"
-after = "    return config"
-reddens = [
-  "tests/config/test_loader.py::test_an_installed_project_enforces_every_configured_gate",
-]
-
-[[mutation]]
-name = "an installed project's partial enforced list loads again"
-file = "src/stayfixed/config/loader.py"
-before = "    if stayfixed.enforced and set(stayfixed.enforced) != configured:"
-after = "    if False:"
-reddens = [
-  "tests/config/test_loader.py::test_an_installed_project_with_a_partial_list_is_refused",
 ]
 
 [[mutation]]

@@ -62,6 +62,9 @@ def test_the_inventory_records_its_base_and_lands_where_git_ignores_it(tmp_path:
     written = json.loads((root / ASSESSMENT).read_text(encoding="utf-8"))
     assert written == json.loads(json.dumps(document(assessment)))
     assert (written["format"], written["base"], len(written["gates"])) == (FORMAT, BASE, 5)
+    # Format 2 has no lifecycle: `[stayfixed] enforced`, read as `enforcing`, is the one
+    # adoption key (docs/cli.md#configuration).
+    assert FORMAT == 2 and "state" not in written
     assert git(root, "check-ignore", "--", ASSESSMENT).strip() == ASSESSMENT
 
 
@@ -133,6 +136,6 @@ def test_the_custom_gates_builtin_left_out_are_named_at_most_to_the_listed_limit
     # `skipped` carries every one. Mutation (oracle): `mutations/`'s "assess names every custom gate
     # --builtin left out" -> this reddens.
     names = tuple(f"g{n:02}" for n in range(LISTED_LIMIT + 3))
-    text = render(Assessment("HEAD", "main", "adopting", (), (), (), skipped=names))
+    text = render(Assessment("HEAD", "main", (), (), (), skipped=names))
     shown = ", ".join(names[:LISTED_LIMIT]) + ", and 3 more"
     assert SKIPPED.format(names=shown) in text.splitlines()

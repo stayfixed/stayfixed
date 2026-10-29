@@ -114,7 +114,6 @@ CLASSES: Mapping[str, KeyClass] = MappingProxyType(
         "stayfixed.profile": KeyClass.PREFERENCE,
         **{f"budgets.{name}": KeyClass.SESSION_PARAMETER for name in sorted(SESSION_BUDGETS)},
         **{f"budgets.{name}": KeyClass.GATE_PARAMETER for name in sorted(GATE_BUDGETS)},
-        "stayfixed.state": KeyClass.GATE_PARAMETER,
         "stayfixed.enforced": KeyClass.GATE_PARAMETER,
         "gates.builtin": KeyClass.GATE_PARAMETER,
         "gates.custom": KeyClass.GATE_PARAMETER,

@@ -86,7 +86,6 @@ TABLE_ROWS = [
     ("budgets.status_lines", KeyClass.GATE_PARAMETER),
     ("budgets.roadmap_prose_lines", KeyClass.GATE_PARAMETER),
     ("budgets.roadmap_prose_words", KeyClass.GATE_PARAMETER),
-    ("stayfixed.state", KeyClass.GATE_PARAMETER),
     ("stayfixed.enforced", KeyClass.GATE_PARAMETER),
     ("gates.builtin", KeyClass.GATE_PARAMETER),
     ("gates.custom", KeyClass.GATE_PARAMETER),

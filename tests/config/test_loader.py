@@ -17,7 +17,6 @@ from stayfixed.config.schema import (
     MEMORY_MODES,
     NAME_RULE,
     PROJECT_NAME,
-    STATES,
     Config,
     CustomGate,
 )
@@ -40,7 +39,7 @@ def test_missing_file_names_the_next_command(tmp_path: Path) -> None:
 def test_preset_defaults_fill_every_section(tmp_path: Path) -> None:
     write(tmp_path, MINIMAL)
     config = load(tmp_path, machine=tmp_path / "no-machine.toml")
-    assert config.stayfixed.state == "initialised"
+    assert config.stayfixed.enforced == ()
     assert config.paths.specs == "docs/specs"
     # No layer chooses a memory mode here, so memory is the harness's own.
     assert config.memory.mode == "harness"
@@ -115,7 +114,6 @@ def test_project_name_must_be_one_lowercase_path_segment(tmp_path: Path, name: s
 @pytest.mark.parametrize(
     ("text", "key"),
     [
-        (HEAD + 'state = "deployed"\n\n[project]\nname = "sample"\n', "stayfixed.state"),
         (MINIMAL + '\n[memory]\nmode = "cloud"\n', "memory.mode"),
         (MINIMAL + '\n[ci]\nmode = "pip"\n', "ci.mode"),
     ],
@@ -256,7 +254,7 @@ def test_loads_answers_for_a_document_that_is_not_on_disk(tmp_path: Path) -> Non
     # `text` -> this reddens with FileNotFoundError, because there is no file.
     text = '[stayfixed]\nversion = "0.1.0"\n\n[project]\nname = "widget"\n'
     config = loads(text, tmp_path / "project", machine=tmp_path / "absent.toml")
-    assert config.project.name == "widget" and config.stayfixed.state == "initialised"
+    assert config.project.name == "widget" and config.stayfixed.enforced == ()
 
 
 def test_load_is_read_then_loads(tmp_path: Path) -> None:
@@ -305,7 +303,6 @@ def test_a_project_name_is_refused_without_being_quoted(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("text", "key", "allowed"),
     [
-        (HEAD + 'state = "{v}"\n\n[project]\nname = "sample"\n', "stayfixed.state", STATES),
         (MINIMAL + '\n[memory]\nmode = "{v}"\n', "memory.mode", MEMORY_MODES),
         (MINIMAL + '\n[ci]\nmode = "{v}"\n', "ci.mode", CI_MODES),
     ],
@@ -313,9 +310,9 @@ def test_a_project_name_is_refused_without_being_quoted(tmp_path: Path) -> None:
 def test_an_enumerated_value_is_refused_without_being_quoted(
     tmp_path: Path, text: str, key: str, allowed: tuple[str, ...]
 ) -> None:
-    """The same ruling `project.name` above takes, over the three keys that still echoed.
+    """The same ruling `project.name` above takes, over the keys that still echoed.
 
-    All three are repository-authored and bounded by no grammar, so a clone writes what it
+    Both are repository-authored and bounded by no grammar, so a clone writes what it
     likes into one and the refusal is relayed to a model by the `init` and `attach` skills.
     `!r` escapes the control characters, which is why this leak read as milder than the raw
     bytes `_build` and `_budgets` were just stopped from printing — it is the same class all
@@ -557,33 +554,36 @@ def test_a_built_in_gate_stayfixed_does_not_have_is_counted_and_never_quoted(
     )
 
 
-def test_an_adopting_project_enforces_exactly_what_it_promoted(tmp_path: Path) -> None:
+def test_state_is_an_unknown_key(tmp_path: Path) -> None:
+    # `[stayfixed] state` was the lifecycle beside `enforced`, and is gone with no alias: the
+    # loader refuses it as it refuses any key `Stayfixed` does not have, naming the key and never
+    # the value, which is the repository's to write.
+    with pytest.raises(ConfigError) as caught:
+        _gated(tmp_path, 'state = "installed\\u001b[31mRED"\n')
+    message = str(caught.value)
+    assert message == "[stayfixed] has unknown key(s): state"
+    assert "installed" not in message and "RED" not in message
+
+
+def test_an_unlisted_gate_does_not_enforce_whatever_the_file_configures(tmp_path: Path) -> None:
+    # `enforced` is the one adoption key: a gate enforces when it names it and never otherwise,
+    # so no default makes an unlisted gate enforce, the way the removed `state` key once made
+    # every gate enforce with no list at all. Without the list, a project enforces nothing, its
+    # own gate included; with one, exactly what it names.
+    configured = (*BUILTIN_GATES, "tests")
+    unlisted = _gated(tmp_path, rest=TESTS_GATE)
+    assert unlisted.gate_names == configured
+    assert unlisted.stayfixed.enforcing == frozenset()
+    listed = _gated(tmp_path, 'enforced = ["docs"]\n', TESTS_GATE)
+    assert listed.stayfixed.enforcing == frozenset({"docs"})
+
+
+def test_a_project_enforces_exactly_what_enforced_lists(tmp_path: Path) -> None:
     # No mutation of its own: the positive half of the refusals below, which is what keeps each
     # of them from passing by refusing everything.
-    config = _gated(tmp_path, 'state = "adopting"\nenforced = ["plan", "commit"]\n')
+    config = _gated(tmp_path, 'enforced = ["plan", "commit"]\n')
     assert config.stayfixed.enforced == ("plan", "commit")
     assert config.stayfixed.enforcing == frozenset({"plan", "commit"})
-
-
-def test_an_installed_project_enforces_every_configured_gate(tmp_path: Path) -> None:
-    # `installed` with no list is every gate, the project's own included: the fixtures and the
-    # documents written before the list existed say exactly this. Mutation: return `config`
-    # unchanged under `installed` and this reddens.
-    config = _gated(tmp_path, 'state = "installed"\n', TESTS_GATE)
-    assert config.stayfixed.enforcing == frozenset((*BUILTIN_GATES, "tests"))
-    spelled_out = _gated(
-        tmp_path,
-        'state = "installed"\nenforced = ["tests", "docs", "bugs", "plan", "commit", "trail"]\n',
-        TESTS_GATE,
-    )
-    assert spelled_out.stayfixed.enforcing == config.stayfixed.enforcing
-
-
-def test_an_installed_project_with_a_partial_list_is_refused(tmp_path: Path) -> None:
-    # One fact, stated twice, must agree: `installed` is every gate, so a list naming some of
-    # them contradicts it. Mutation: drop the refusal and this reddens.
-    with pytest.raises(ConfigError, match=r"lists 1 of the project's 5 gate\(s\)"):
-        _gated(tmp_path, 'state = "installed"\nenforced = ["docs"]\n')
 
 
 def test_a_gate_the_project_does_not_run_is_counted_and_never_quoted(tmp_path: Path) -> None:
@@ -592,7 +592,7 @@ def test_a_gate_the_project_does_not_run_is_counted_and_never_quoted(tmp_path: P
     with pytest.raises(ConfigError) as caught:
         _gated(
             tmp_path,
-            'state = "adopting"\nenforced = ["docs", "trail", "x\\u001b[31m"]\n',
+            'enforced = ["docs", "trail", "x\\u001b[31m"]\n',
             '\n[gates]\nbuiltin = ["docs", "bugs", "plan", "commit"]\n',
         )
     message = str(caught.value)
@@ -600,16 +600,10 @@ def test_a_gate_the_project_does_not_run_is_counted_and_never_quoted(tmp_path: P
     assert "\x1b" not in message and "[31m" not in message
 
 
-def test_an_initialised_project_that_enforces_something_is_refused(tmp_path: Path) -> None:
-    # Mutation: drop the refusal and this reddens.
-    with pytest.raises(ConfigError, match="initialised project enforces nothing"):
-        _gated(tmp_path, 'state = "initialised"\nenforced = ["docs"]\n')
-
-
 def test_a_gate_named_twice_is_refused(tmp_path: Path) -> None:
     # Mutation: drop the refusal and this reddens.
     with pytest.raises(ConfigError, match="enforced names a gate twice"):
-        _gated(tmp_path, 'state = "adopting"\nenforced = ["docs", "docs"]\n')
+        _gated(tmp_path, 'enforced = ["docs", "docs"]\n')
 
 
 @pytest.mark.parametrize(
@@ -713,7 +707,7 @@ def test_the_gates_a_project_runs_are_named_at_most_to_the_listed_limit(tmp_path
     custom = [f"g{n:02}" for n in range(LISTED_LIMIT)]
     tables = "".join(f'\n[gates.custom.{name}]\nrun = ["true"]\n' for name in custom)
     with pytest.raises(ConfigError) as caught:
-        _gated(tmp_path, 'state = "adopting"\nenforced = ["absent"]\n', tables)
+        _gated(tmp_path, 'enforced = ["absent"]\n', tables)
     runs = [*BUILTIN_GATES, *custom]
     shown = ", ".join(runs[:LISTED_LIMIT])
     assert str(caught.value) == (

@@ -19,11 +19,12 @@ import stayfixed
 from stayfixed.assess.rule import ConfigVerdict, Verdict, judge
 from stayfixed.config.loader import preset_defaults
 from stayfixed.config.paths import PathEscape
+from stayfixed.config.schema import BUILTIN_GATES
+from stayfixed.errors import Failure
 
 SHA = "d" * 40
 STRICT = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "adopting"
 enforced = ["plan"]
 
 [project]
@@ -32,11 +33,9 @@ name = "widget"
 [budgets]
 agents_md_lines = 250
 """
-LOOSE = STRICT.replace('state = "adopting"\nenforced = ["plan"]\n', 'state = "initialised"\n')
-INSTALLED = STRICT.replace('state = "adopting"\nenforced = ["plan"]\n', 'state = "installed"\n')
+LOOSE = STRICT.replace('enforced = ["plan"]\n', "")
 TESTS = '\n[gates.custom.tests]\nrun = ["pytest", "-q"]\n'
 BUILTIN_BUT_TRAIL = '\n[gates]\nbuiltin = ["docs", "bugs", "plan", "commit"]\n'
-ALL_FIVE = 'enforced = ["docs", "bugs", "plan", "commit", "trail"]\n'
 DEFAULT_BUGS = preset_defaults("widget").paths.bugs
 
 
@@ -88,9 +87,16 @@ def _with(document: str, line: str) -> str:
     return document.replace("[stayfixed]\n", f"[stayfixed]\n{line}", 1)
 
 
-def _state(document: str, lines: str) -> str:
-    """`STRICT` with its state and enforcement replaced by `lines`."""
-    return document.replace('state = "adopting"\nenforced = ["plan"]\n', lines)
+def _enforced(*names: str) -> str:
+    """`STRICT` with `enforced` listing `names` in that order, or with no `enforced` line."""
+    listed = ", ".join(f'"{name}"' for name in names)
+    return STRICT.replace('enforced = ["plan"]\n', f"enforced = [{listed}]\n" if names else "")
+
+
+# Every built-in gate listed: what a project that promoted each of them holds.
+EVERY_GATE = _enforced(*BUILTIN_GATES)
+# The same with the `tests` custom gate configured and listed beside them.
+EVERY_GATE_AND_TESTS = _enforced(*BUILTIN_GATES, "tests") + TESTS
 
 
 def _version(document: str, version: str) -> str:
@@ -116,20 +122,12 @@ def test_a_comment_is_not_a_change(tmp_path: Path) -> None:
             id="path-spelled-at-its-default",
         ),
         pytest.param(STRICT, _with(STRICT, 'preset = "recommended"\n'), id="preset-spelled-out"),
-        pytest.param(
-            _state(STRICT, 'state = "adopting"\nenforced = ["plan", "docs"]\n'),
-            _state(STRICT, 'state = "adopting"\nenforced = ["docs", "plan"]\n'),
-            id="enforced-reordered",
-        ),
+        pytest.param(_enforced("plan", "docs"), _enforced("docs", "plan"), id="enforced-reordered"),
         pytest.param(
             STRICT + BUILTIN_BUT_TRAIL,
             STRICT + '\n[gates]\nbuiltin = ["commit", "plan", "bugs", "docs"]\n',
             id="builtin-reordered",
         ),
-        pytest.param(
-            INSTALLED, _with(INSTALLED, "enforced = []\n"), id="installed-list-spelled-empty"
-        ),
-        pytest.param(INSTALLED, _with(INSTALLED, ALL_FIVE), id="installed-list-spelled-whole"),
     ],
 )
 def test_what_no_reader_can_tell_apart_is_no_change(base: str, tree: str, tmp_path: Path) -> None:
@@ -155,18 +153,9 @@ def test_what_no_reader_can_tell_apart_is_no_change(base: str, tree: str, tmp_pa
             id="budget-raised",
         ),
         pytest.param(
-            _state(STRICT, 'state = "adopting"\nenforced = ["plan", "docs"]\n'),
-            "stayfixed.enforced",
-            Verdict.TIGHTENED,
-            id="gate-promoted",
+            _enforced("plan", "docs"), "stayfixed.enforced", Verdict.TIGHTENED, id="gate-promoted"
         ),
-        pytest.param(
-            _state(STRICT, 'state = "adopting"\n'),
-            "stayfixed.enforced",
-            Verdict.REFUSED,
-            id="gate-dropped",
-        ),
-        pytest.param(INSTALLED, "stayfixed.state", Verdict.TIGHTENED, id="installed"),
+        pytest.param(_enforced(), "stayfixed.enforced", Verdict.REFUSED, id="gate-dropped"),
         pytest.param(
             STRICT.replace('name = "widget"', 'name = "gadget"'),
             "project.name",
@@ -210,43 +199,68 @@ def test_each_row_of_the_table_while_a_gate_enforces(
     assert verdict.refused is (expected is Verdict.REFUSED)
 
 
+def test_enforced_grown_to_a_strict_superset_is_a_tightening(tmp_path: Path) -> None:
+    # `enforced` is the one adoption key, so a promotion is the list growing and nothing else.
+    verdict = _judge(STRICT, _enforced("plan", "docs"), tmp_path)
+    assert _verdicts(verdict) == {"stayfixed.enforced": Verdict.TIGHTENED}
+    assert verdict.enforcing == {"plan", "docs"}
+
+
+def test_enforced_reordered_is_no_change(tmp_path: Path) -> None:
+    # The same set in another order: no reader sees the order, so no key changed at all.
+    verdict = _judge(_enforced("plan", "docs"), _enforced("docs", "plan"), tmp_path)
+    assert verdict.changes == ()
+    assert not verdict.refused
+
+
+def test_enforced_that_loses_a_gate_the_base_lists_is_refused(tmp_path: Path) -> None:
+    # A gate the base enforces leaves the list: refused, whatever the list gains beside it, and
+    # an empty list is no superset of the base's either.
+    for tree in (_enforced("docs"), _enforced()):
+        verdict = _judge(_enforced("plan", "commit"), tree, tmp_path)
+        assert _verdicts(verdict) == {"stayfixed.enforced": Verdict.REFUSED}
+        assert verdict.refused
+
+
+def test_a_base_that_still_spells_state_does_not_load_and_names_the_direct_push(
+    tmp_path: Path,
+) -> None:
+    # A base whose copy still spells the removed `[stayfixed] state` no longer loads, so the
+    # change cannot be judged, and the remedy is a direct push of the new spelling to the base.
+    base = STRICT.replace("[stayfixed]\n", '[stayfixed]\nstate = "installed"\n', 1)
+    with pytest.raises(Failure) as caught:
+        _judge(base, STRICT, tmp_path)
+    message = str(caught.value)
+    assert message.startswith("the base's stayfixed.toml governs this change and does not load")
+    assert "a direct push" in message and "unknown key(s): state" in message
+
+
 def test_a_built_in_gate_added_is_a_tightening(tmp_path: Path) -> None:
     verdict = _judge(STRICT + BUILTIN_BUT_TRAIL, STRICT, tmp_path)
     assert _verdicts(verdict) == {"gates.builtin": Verdict.TIGHTENED}
-
-
-def test_adopting_to_installed_with_the_list_dropped_is_one_tightening(tmp_path: Path) -> None:
-    # `installed` with no list means every gate: the loader fills `enforced`, so the two keys
-    # move together and both forward.
-    verdict = _judge(STRICT, INSTALLED, tmp_path)
-    assert _verdicts(verdict) == {
-        "stayfixed.enforced": Verdict.TIGHTENED,
-        "stayfixed.state": Verdict.TIGHTENED,
-    }
-
-
-def test_state_cannot_move_back_even_when_every_gate_still_enforces(tmp_path: Path) -> None:
-    tree = _state(STRICT, f'state = "adopting"\n{ALL_FIVE}')
-    verdict = _judge(INSTALLED, tree, tmp_path)
-    assert _verdicts(verdict) == {"stayfixed.state": Verdict.REFUSED}
 
 
 @pytest.mark.parametrize(
     ("base", "tree", "key"),
     [
         pytest.param(
-            INSTALLED, INSTALLED + BUILTIN_BUT_TRAIL, "gates.builtin", id="built-in-removed"
+            EVERY_GATE,
+            _enforced("docs", "bugs", "plan", "commit") + BUILTIN_BUT_TRAIL,
+            "gates.builtin",
+            id="built-in-removed",
         ),
-        pytest.param(INSTALLED + TESTS, INSTALLED, "gates.custom.tests.run", id="custom-removed"),
         pytest.param(
-            INSTALLED + TESTS,
-            INSTALLED + TESTS.replace('["pytest", "-q"]', '["true"]'),
+            EVERY_GATE_AND_TESTS, EVERY_GATE, "gates.custom.tests.run", id="custom-removed"
+        ),
+        pytest.param(
+            EVERY_GATE_AND_TESTS,
+            EVERY_GATE_AND_TESTS.replace('["pytest", "-q"]', '["true"]'),
             "gates.custom.tests.run",
             id="custom-run-changed",
         ),
         pytest.param(
-            INSTALLED + TESTS,
-            INSTALLED + TESTS.replace("custom.tests", "custom.unit"),
+            EVERY_GATE_AND_TESTS,
+            _enforced(*BUILTIN_GATES, "unit") + TESTS.replace("custom.tests", "custom.unit"),
             "gates.custom.tests.run",
             id="custom-renamed",
         ),
@@ -255,9 +269,8 @@ def test_state_cannot_move_back_even_when_every_gate_still_enforces(tmp_path: Pa
 def test_a_gate_the_base_enforces_cannot_be_removed_or_given_another_command(
     base: str, tree: str, key: str, tmp_path: Path
 ) -> None:
-    # The key's own verdict, not only `refused`: under `installed` the loader fills `enforced`
-    # from the gates, so a removal also moves `stayfixed.enforced`, whose refusal alone would let
-    # a gate row that answered `neutral` through unseen.
+    # The key's own verdict, not only `refused`: a gate removed or renamed also leaves
+    # `enforced`, whose refusal alone would let a gate row that answered `neutral` through unseen.
     verdict = _judge(base, tree, tmp_path)
     assert _verdicts(verdict)[key] is Verdict.REFUSED
     assert verdict.refused
@@ -275,13 +288,19 @@ def test_an_advisory_custom_gate_may_change_its_command_or_go(tree: str, tmp_pat
     assert _verdicts(verdict) == {"gates.custom.tests.run": Verdict.NEUTRAL}
 
 
-def test_a_gate_added_to_an_installed_project_enforces_in_the_run_that_adds_it(
-    tmp_path: Path,
-) -> None:
-    verdict = _judge(INSTALLED, INSTALLED + TESTS, tmp_path)
+def test_a_gate_added_and_listed_enforces_in_the_run_that_adds_it(tmp_path: Path) -> None:
+    # A gate added later enforces only when the change lists it, which tightens; added and not
+    # listed, it is advisory, whatever the base enforces.
+    verdict = _judge(EVERY_GATE, EVERY_GATE_AND_TESTS, tmp_path)
     assert not verdict.refused
-    assert _verdicts(verdict)["gates.custom.tests.run"] is Verdict.TIGHTENED
+    assert _verdicts(verdict) == {
+        "gates.custom.tests.run": Verdict.TIGHTENED,
+        "stayfixed.enforced": Verdict.TIGHTENED,
+    }
     assert "tests" in verdict.enforcing
+    unlisted = _judge(EVERY_GATE, EVERY_GATE + TESTS, tmp_path)
+    assert _verdicts(unlisted) == {"gates.custom.tests.run": Verdict.TIGHTENED}
+    assert "tests" not in unlisted.enforcing
 
 
 def _words(delta: int) -> Callable[[dict[str, Any]], None]:
@@ -329,8 +348,7 @@ def test_a_path_moved_while_nothing_enforces_is_noted_and_the_run_uses_it(tmp_pa
 
 
 def test_a_promotion_is_enforced_in_its_own_run_under_the_tree_s_paths(tmp_path: Path) -> None:
-    tree = _state(STRICT, 'state = "adopting"\nenforced = ["bugs"]\n')
-    tree = f'{tree}\n[paths]\nbugs = "elsewhere"\n'
+    tree = f'{_enforced("bugs")}\n[paths]\nbugs = "elsewhere"\n'
     verdict = _judge(LOOSE, tree, tmp_path)
     assert not verdict.refused
     assert verdict.enforcing == {"bugs"}
@@ -338,9 +356,7 @@ def test_a_promotion_is_enforced_in_its_own_run_under_the_tree_s_paths(tmp_path:
 
 
 def test_a_refusal_keeps_the_base_s_configuration_and_enforces_both_sides(tmp_path: Path) -> None:
-    tree = _state(STRICT, 'state = "adopting"\nenforced = ["plan", "docs"]\n').replace(
-        "= 250", "= 260"
-    )
+    tree = _enforced("plan", "docs").replace("= 250", "= 260")
     verdict = _judge(STRICT, tree, tmp_path)
     assert verdict.refused
     assert verdict.config.budgets.effective("agents_md_lines") == 250
@@ -417,7 +433,7 @@ def test_a_version_that_is_not_the_running_stayfixed_s_is_not_an_upgrade(tmp_pat
 
 def test_no_base_copy_is_the_bootstrap_and_the_tree_decides(tmp_path: Path) -> None:
     verdict = _judge(None, STRICT, tmp_path)
-    assert verdict.base_state is None
+    assert verdict.bootstrap
     assert verdict.changes == ()
     assert verdict.enforcing == {"plan"}
     assert not verdict.refused
@@ -426,7 +442,7 @@ def test_no_base_copy_is_the_bootstrap_and_the_tree_decides(tmp_path: Path) -> N
 def test_the_same_document_on_both_sides_changes_nothing(tmp_path: Path) -> None:
     # What a push to the base branch judges: the base against itself.
     verdict = _judge(STRICT, STRICT, tmp_path)
-    assert verdict.base_state == "adopting"
+    assert not verdict.bootstrap
     assert verdict.changes == ()
     assert verdict.enforcing == {"plan"}
 

@@ -53,7 +53,7 @@ BUILTIN_HELP = (
     "from [gates.custom] runs"
 )
 CUSTOM_HELP = "the gates from [gates.custom] only, with no configuration check"
-ADOPT_HELP = "the adoption state machine: promote gates from advisory to enforcing as they pass"
+ADOPT_HELP = "adoption: promote gates from advisory to enforcing as they pass"
 PROMOTE_HELP = "enforce the named gates if all pass now; with none named, each gate that passes"
 PROMOTE_BUILTIN_HELP = (
     "the built-in gates only: no command from [gates.custom] runs, so no custom gate is "
@@ -165,7 +165,6 @@ def run_gate(args: argparse.Namespace) -> Result:
     data = {
         "config": {
             "judged": gate_run.judged,
-            "base_state": verdict.base_state,
             "changes": [{"key": c.key, "verdict": c.verdict.value} for c in verdict.changes],
             "refused": verdict.refused,
             "enforcing": sorted(verdict.enforcing),
@@ -193,15 +192,12 @@ def run_gate(args: argparse.Namespace) -> Result:
 
 
 def _transition(transition: Transition) -> dict[str, object]:
-    """`--json` for `adopt promote`: the state before and after, a row per gate it ran in the
-    shape every gate command gives one, enforcing when this run promoted it, and the same
-    outcomes by name."""
+    """`--json` for `adopt promote`: a row per gate it ran in the shape every gate command gives
+    one, enforcing when this run promoted it, and the same outcomes by name."""
     from stayfixed.assess.report import gate_row
 
     promoted = set(transition.promoted)
     return {
-        "before": transition.before,
-        "after": transition.after,
         "gates": [gate_row(r, enforcing=r.name in promoted) for r in transition.results],
         "promoted": list(transition.promoted),
         "failing": transition.failing,
@@ -243,7 +239,6 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     parts = [f"promoted: {listed(list(transition.promoted)) or 'nothing'}"]
     if advisory:
         parts.append(f"still advisory: {listed(advisory)}")
-    parts.append(f"state {transition.after}")
     lines = ["; ".join(parts)]
     if advisory:
         if _base_missing(root, base, set(transition.unanswered)):

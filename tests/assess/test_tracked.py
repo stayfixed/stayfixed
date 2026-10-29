@@ -76,13 +76,14 @@ def _sha(root: Path, rev: str) -> str:
     return git(root, "rev-parse", rev).strip()
 
 
-def _adopting(root: Path) -> None:
-    """The fixture moved back to `initialised`, so its gates have something to be promoted to."""
+def _unenforced(root: Path) -> None:
+    """The fixture with its `enforced` list dropped, so its gates have something to be promoted
+    to."""
     config = root / "stayfixed.toml"
     text = config.read_text(encoding="utf-8")
-    config.write_text(
-        text.replace('state = "installed"', 'state = "initialised"'), encoding="utf-8"
-    )
+    listed = 'enforced = ["docs", "bugs", "plan", "commit", "trail"]\n'
+    assert text.count(listed) == 1
+    config.write_text(text.replace(listed, ""), encoding="utf-8")
     git(root, "commit", "-qam", "chore: begin again")
 
 
@@ -422,7 +423,7 @@ def test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named(
     # A link target is any name the document wrote. The item's `where` holds it only inside the
     # path grammar, as a gate finding's does; `adopt promote`'s note does the same.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     (root / "a note.md").write_text("# mine\n", encoding="utf-8")
     agents = root / AGENTS
     agents.write_text(
@@ -472,7 +473,7 @@ def test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does(
     # The note is the item's remedy, and names the file as read; `--json` carries it apart from
     # the untracked files. Mutation (declared): the note is not printed.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     _link_in_another_case(root)
     base = _sha(root, "HEAD~1")
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", base)
@@ -548,7 +549,7 @@ def test_a_git_that_gives_no_answer_is_never_read_as_tracked(
     # the checkout — says nothing about what CI will see, so the gate is not judged and is not
     # promoted. Mutation (declared): no answer reads as an empty listing's opposite, "tracked".
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     monkeypatch.setattr(tracked, "git_run", lambda *_a, **_k: (-1, ""))
     assessment = _assess(root, tmp_path)
     assert _row(assessment, "docs").reason == UNASKED_REASON
@@ -565,7 +566,7 @@ def test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file(tmp_pa
     # promoted and it stays advisory. Mutation (declared): `promote` judges the gates as they ran
     # here, and `docs` is enforced.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     _untrack(root, AGENTS)
     machine = tmp_path / "m.toml"
     before = (root / "stayfixed.toml").read_text(encoding="utf-8")
@@ -583,7 +584,7 @@ def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: P
     # passed has earned. `--json` carries the files by gate. Mutation (declared): the note is
     # not printed.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     _untrack(root, AGENTS)
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE))
     assert code == 1, out
@@ -639,7 +640,7 @@ def test_adopt_promote_s_note_on_a_git_that_gives_no_answer_says_how_to_see_why(
     # remedy, so a person learns to ask `git ls-files` here, and `--json` names no file as
     # untracked, since git said nothing either way. Mutation (declared): the note is not printed.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     monkeypatch.setattr(tracked, "git_run", lambda *_a, **_k: (-1, ""))
     base = _sha(root, BASE)
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", base)

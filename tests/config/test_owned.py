@@ -1,4 +1,4 @@
-"""`config.owned.rewrite`: four keys, rewritten in place, every other byte left alone."""
+"""`config.owned.rewrite`: three keys, rewritten in place, every other byte left alone."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ HAND_WRITTEN = (
     "# The project's own configuration; the comments are part of it.\n"
     "[stayfixed]\n"
     'version = "0.1.0"   # bumped by stayfixed upgrade\n'
-    'state = "adopting"\n'
     'enforced = ["plan"]\n'
     'preset = "recommended"\n'
     "\n"
@@ -37,17 +36,17 @@ def test_a_list_of_gates_is_rewritten_as_one_line() -> None:
 
 
 def test_two_keys_in_two_tables_are_rewritten_in_one_call() -> None:
-    after = rewrite(HAND_WRITTEN, {("stayfixed", "state"): "installed", ("ci", "ref"): "b" * 40})
+    after = rewrite(HAND_WRITTEN, {("stayfixed", "enforced"): ("docs",), ("ci", "ref"): "b" * 40})
     document = tomllib.loads(after)
-    assert document["stayfixed"]["state"] == "installed"
+    assert document["stayfixed"]["enforced"] == ["docs"]
     assert document["ci"]["ref"] == "b" * 40
     assert "# never edited by the tool" in after
 
 
 def test_a_missing_key_is_written_under_its_table_header() -> None:
-    text = '[stayfixed]\nstate = "initialised"\n\n[project]\nname = "widget"\n'
+    text = '[stayfixed]\npreset = "recommended"\n\n[project]\nname = "widget"\n'
     after = rewrite(text, {("stayfixed", "version"): "0.2.0"})
-    assert after.startswith('[stayfixed]\nversion = "0.2.0"\nstate = "initialised"\n')
+    assert after.startswith('[stayfixed]\nversion = "0.2.0"\npreset = "recommended"\n')
 
 
 def test_a_missing_table_is_appended_and_nothing_above_it_moves() -> None:
@@ -62,9 +61,9 @@ def test_a_missing_table_is_appended_and_nothing_above_it_moves() -> None:
 @pytest.mark.parametrize(
     ("text", "change"),
     [
-        (HAND_WRITTEN, {("stayfixed", "state"): "installed", ("ci", "ref"): "c" * 40}),
+        (HAND_WRITTEN, {("stayfixed", "enforced"): ("docs",), ("ci", "ref"): "c" * 40}),
         # Inserting under an existing header: the first promotion writes `enforced` this way.
-        ('[stayfixed]\nstate = "adopting"\n', {("stayfixed", "enforced"): ("docs",)}),
+        ('[stayfixed]\npreset = "recommended"\n', {("stayfixed", "enforced"): ("docs",)}),
         # Appending a table the document does not have.
         ('[project]\nname = "widget"\n', {("stayfixed", "version"): "0.2.0"}),
     ],
@@ -81,7 +80,7 @@ def test_a_key_under_a_dotted_subtable_is_not_the_table_s_own() -> None:
     # `[stayfixed.sub]` ends `[stayfixed]` for the editor. Mutation: delete the `current = None`
     # reset after `_ANY_HEADER` and the sub-table's line is rewritten instead, which the
     # read-back refuses, so this reddens with an `OwnedKeyError`.
-    text = '[stayfixed]\nstate = "adopting"\n\n[stayfixed.sub]\nversion = "x"\n'
+    text = '[stayfixed]\npreset = "recommended"\n\n[stayfixed.sub]\nversion = "x"\n'
     after = rewrite(text, {("stayfixed", "version"): "0.2.0"})
     document = tomllib.loads(after)
     assert document["stayfixed"]["version"] == "0.2.0"
@@ -171,7 +170,7 @@ def test_a_document_that_does_not_parse_is_refused_by_position_alone() -> None:
 
 
 def test_only_the_owned_keys_can_be_named() -> None:
-    stayfixed = {("stayfixed", "version"), ("stayfixed", "state"), ("stayfixed", "enforced")}
+    stayfixed = {("stayfixed", "version"), ("stayfixed", "enforced")}
     assert stayfixed | {("ci", "ref")} == OWNED
     with pytest.raises(ValueError, match="not a tool-owned key"):
         rewrite(HAND_WRITTEN, {("project", "name"): "other"})

@@ -181,8 +181,8 @@ def _subcommands(group: str) -> set[str]:
 
 
 def test_adopt_has_promote_and_nothing_else() -> None:
-    # `adopt promote` moves a project out of `initialised` itself, so a second adoption command
-    # would be a ritual step every project pays for. Mutation: registering a `begin` parser in
+    # `adopt promote` writes the one adoption key itself, so a second adoption command would be a
+    # ritual step every project pays for. Mutation: registering a `begin` parser in
     # the adopt group reddens this.
     assert _subcommands("adopt") == {"promote"}
 

@@ -149,16 +149,12 @@ reddens = [
 [[mutation]]
 name = "a gate the base enforces may be dropped from enforced"
 file = "src/stayfixed/assess/rule.py"
-before = "    if backward or not after.enforcing >= before.enforcing:"
-after = "    if backward:"
-reddens = ["tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[gate-dropped]"]
-
-[[mutation]]
-name = "the lifecycle may move back while every gate still enforces"
-file = "src/stayfixed/assess/rule.py"
-before = "    backward = _ORDER[after.state] < _ORDER[before.state]"
-after = "    backward = False"
-reddens = ["tests/assess/test_rule.py::test_state_cannot_move_back_even_when_every_gate_still_enforces"]
+before = "    if not after >= before:"
+after = "    if False:"
+reddens = [
+  "tests/assess/test_rule.py::test_each_row_of_the_table_while_a_gate_enforces[gate-dropped]",
+  "tests/assess/test_rule.py::test_enforced_that_loses_a_gate_the_base_lists_is_refused",
+]
 
 [[mutation]]
 name = "a raised budget is read as a tightening"
@@ -265,7 +261,7 @@ after = "    enforcing = base.stayfixed.enforcing"
 reddens = [
   "tests/assess/test_rule.py::test_a_promotion_is_enforced_in_its_own_run_under_the_tree_s_paths",
   "tests/assess/test_rule.py::test_a_refusal_keeps_the_base_s_configuration_and_enforces_both_sides",
-  "tests/assess/test_rule.py::test_a_gate_added_to_an_installed_project_enforces_in_the_run_that_adds_it",
+  "tests/assess/test_rule.py::test_a_gate_added_and_listed_enforces_in_the_run_that_adds_it",
 ]
 
 [[mutation]]
@@ -539,8 +535,8 @@ reddens = [
   "tests/test_check_workflow.py::test_the_judging_step_judges_the_configuration_whatever_only_names",
 ]
 
-# `stayfixed adopt promote`: the state machine's one write is `stayfixed.toml`'s `state` and
-# `enforced`, and each guard below decides whether it happens.
+# `stayfixed adopt promote`: its one write is `stayfixed.toml`'s `enforced`, and each guard below
+# decides whether it happens.
 [[mutation]]
 name = "a named promotion writes the gates that passed"
 file = "src/stayfixed/assess/state.py"
@@ -560,19 +556,10 @@ reddens = [
 ]
 
 [[mutation]]
-name = "promoting every configured gate never installs the project"
+name = "a promotion writes no list"
 file = "src/stayfixed/assess/state.py"
-before = '    after = "installed" if installed else "adopting"'
-after = '    after = "adopting"'
-reddens = [
-  "tests/assess/test_state.py::test_promoting_every_configured_gate_installs_the_project",
-]
-
-[[mutation]]
-name = "a promotion writes the state and not the list"
-file = "src/stayfixed/assess/state.py"
-before = '        rewrite_owned(root, {("stayfixed", "state"): state, ("stayfixed", "enforced"): enforced})'
-after = '        rewrite_owned(root, {("stayfixed", "state"): state})'
+before = '        rewrite_owned(root, {("stayfixed", "enforced"): enforced})'
+after = "        rewrite_owned(root, {})"
 reddens = [
   "tests/assess/test_state.py::test_a_promotion_is_what_the_gate_enforces_next",
 ]
@@ -586,28 +573,17 @@ reddens = [
   "tests/assess/test_state.py::test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs",
 ]
 
-# The trial rewrite sets values no document holds, so the editor's own refusal, which names the
+# The trial rewrite sets a value no document holds, so the editor's own refusal, which names the
 # value it was setting as the line to write by hand, would tell a person to write
-# `state = "installed"` with no gate earned. The remedy names the values as they stand.
+# `enforced = ["config"]`, which does not load. The remedy names the list as it stands.
 [[mutation]]
 name = "the uneditable-document refusal names the trial's made-up values as the remedy"
 file = "src/stayfixed/assess/state.py"
-before = "        raise OwnedKeyError(UNEDITABLE.format(**values)) from None"
+before = "        raise OwnedKeyError(UNEDITABLE.format(enforced=literal)) from None"
 after = "        raise"
 reddens = [
   "tests/assess/test_state.py::test_an_enforced_list_the_editor_cannot_rewrite_is_refused_before_any_gate_runs",
   "tests/assess/test_state.py::test_an_uneditable_document_s_remedy_names_the_list_as_it_stands",
-]
-
-# An adopting project whose every configured gate already enforces is completed to `installed`;
-# with the branch gone, the completion is the "nothing left" refusal an installed project gets.
-[[mutation]]
-name = "an adopting project whose every gate enforces is refused rather than installed"
-file = "src/stayfixed/assess/state.py"
-before = '        if state == "installed":'
-after = "        if True:"
-reddens = [
-  "tests/assess/test_state.py::test_an_adopting_project_whose_every_gate_enforces_is_completed_to_installed",
 ]
 
 # `adopt promote` exits 1 when a gate it ran failed, beside the two lists it reports.
@@ -638,40 +614,6 @@ before = "    Manifest.read(root)  # the write re-stamps its record, so one it c
 after = "    pass"
 reddens = [
   "tests/assess/test_state.py::test_a_manifest_the_write_cannot_read_is_refused_before_any_gate_runs",
-]
-
-# A project that configures no gate has nothing wanted, which is also the shape of an adopting
-# project whose every gate enforces; only the one with a gate to have earned is completed.
-[[mutation]]
-name = "promote installs a project that configures no gate"
-file = "src/stayfixed/assess/state.py"
-before = "        if not configured:"
-after = "        if False:"
-reddens = [
-  "tests/assess/test_state.py::test_a_project_with_no_gate_is_refused_rather_than_installed",
-]
-
-# A project 0.2.0's `adopt begin` left is `adopting` with no `enforced` line, and promotion takes
-# it from there as it takes an initialised one; refused, that project could never be promoted.
-[[mutation]]
-name = "promote refuses an adopting project that enforces nothing yet"
-file = "src/stayfixed/assess/state.py"
-before = "    state = config.stayfixed.state\n    wanted = ["
-after = "    state = config.stayfixed.state\n    if state == \"adopting\" and not enforcing and configured:\n        raise Refusal(ALL_ENFORCE)\n    wanted = ["
-reddens = [
-  "tests/assess/test_state.py::test_a_named_gate_that_passes_moves_an_initialised_project_to_adopting[adopting]",
-  "tests/assess/test_state.py::test_uninstall_after_a_promotion_takes_stayfixed_toml_back[adopting]",
-]
-
-# The two keys state one fact and the editor edits them one at a time, so its own refusal names
-# only the key it failed on: `enforced = []` alone, which beside `adopting` enforces nothing.
-[[mutation]]
-name = "the state machine's write refusal names one key of the two it sets"
-file = "src/stayfixed/assess/state.py"
-before = "        raise OwnedKeyError(UNWRITTEN.format(**_literals(state, enforced))) from None"
-after = "        raise"
-reddens = [
-  "tests/assess/test_state.py::test_a_completion_the_editor_cannot_write_names_both_keys_as_they_will_be",
 ]
 
 # A promotion enforces what the pull request carrying it runs, and `stayfixed gate` runs a custom

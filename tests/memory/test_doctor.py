@@ -37,7 +37,7 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 OUTSIDE = """
 [stayfixed]
 version = "{version}"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 
 [project]
 name = "p"
@@ -158,7 +158,7 @@ def test_a_bundle_whose_largest_part_is_at_the_platform_cap_is_a_warning(tmp_pat
 HARNESS = """
 [stayfixed]
 version = "{version}"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 
 [project]
 name = "p"

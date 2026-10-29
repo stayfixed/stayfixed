@@ -50,7 +50,6 @@ BRANCH_RULE = (
     "(no '..' or '//', no component starting with '.' or ending in '.lock', no trailing '/' or "
     "'.', and not HEAD)"
 )
-STATES = ("initialised", "adopting", "installed")
 # The built-in gates, in the order every report lists them. `[gates] builtin` chooses among them
 # and `[gates.custom]` adds a project's own. The loader needs the names without importing an
 # area, which is why they live here; the area that runs them pins its objects to this tuple.
@@ -79,7 +78,6 @@ COMMIT_TYPE_RULE = "lowercase ASCII letters"
 @dataclass(frozen=True)
 class Stayfixed:
     version: str
-    state: str
     preset: str
     profile: str
     agents: tuple[str, ...]
@@ -87,15 +85,11 @@ class Stayfixed:
 
     @property
     def enforcing(self) -> frozenset[str]:
-        """The gates that fail a run rather than annotate it.
+        """The gates that fail a run rather than annotate it: exactly the ones `enforced` names.
 
-        `enforced` as loaded, which under `installed` the loader has already filled with every
-        configured gate: `installed` meant "every gate enforces" before the list existed, and a
-        document written then says nothing else.
-
-        The one reading of "which gates enforce": `stayfixed assess` asks it to report each gate's
-        column and `stayfixed gate` asks it per gate. A caller that read `enforced` directly would
-        skip the loader's `installed` rule.
+        Nothing fills the list, so a gate the list does not name never enforces, however the
+        project configures it. The one reading of "which gates enforce": `stayfixed assess` asks it
+        to report each gate's column and `stayfixed gate` asks it per gate.
         """
         return frozenset(self.enforced)
 

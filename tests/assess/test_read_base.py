@@ -33,7 +33,6 @@ pytestmark = needs_git
 
 BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "initialised"
 
 [project]
 name = "widget"

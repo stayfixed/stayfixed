@@ -15,8 +15,8 @@ cleanly rather than on a tree already known to satisfy every gate. The manifest 
 `config` record for it, and that absence is not an edit — `stayfixed.toml` is a create-once
 artifact, this one already existed on the copy that run acted on, and the run reported it
 `skip_modified` and recorded nothing for it, the same as the other write-once artifacts above.
-The `state = "installed"` it declares is the fixture's own and is what makes the gates this
-project runs over it enforce instead of merely warn; `init` itself writes `initialised`.
+The `enforced` list it declares, naming every gate it runs, is the fixture's own and is what makes
+those gates enforce over it instead of merely warn; `init` itself writes no list.
 
 **It is not "the fixture is what the shipped templates render", which is what this module's first
 line used to say.** Measured on a copy: seven footprint artifacts come back `unchanged`, the

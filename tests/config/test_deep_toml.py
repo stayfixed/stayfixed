@@ -75,7 +75,7 @@ READERS = [
         id="personal",
     ),
     pytest.param(
-        lambda t, d: rewrite(d, {("stayfixed", "state"): "adopting"}),
+        lambda t, d: rewrite(d, {("stayfixed", "enforced"): ("docs",)}),
         UnparsedDocument,
         id="owned-rewrite",
     ),

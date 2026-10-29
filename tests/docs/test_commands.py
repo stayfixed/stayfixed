@@ -16,7 +16,7 @@ from tests.crafted import CRAFTED, CRAFTED_TOML, assert_never_raw
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 preset = "recommended"
 profile = ""
 agents = ["claude"]

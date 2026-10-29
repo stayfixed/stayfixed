@@ -55,7 +55,6 @@ BASE_STEP = "The base ref and the project root"
 
 BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "adopting"
 enforced = ["docs"]
 
 [project]

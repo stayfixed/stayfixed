@@ -6,22 +6,20 @@ commit the base is, and where in it the base's copy is, are `stayfixed.assess.ba
 
 **What the change may do.** Each side goes through the loader and the rule compares what it
 derives, key by dotted key: each budget by its effective value, each custom gate as one key per
-field. A comment, a key spelled out at its default, a reordered `enforced` or `[gates] builtin`
-and `installed` beside a list that says the same are therefore no change. Every changed key gets
-one verdict, and a key's class (`config.classes`) is asked first: a preference, the machine
-owner's key and the plugin's are neutral, because no gate judges a pull request by them. The
-change may enforce more gates and move its state forward (`initialised`, `adopting`,
-`installed`); add a gate, and drop or re-command one the base does not enforce; lower a budget, a
-gate's or a session's, which the base branch may set above the preset or below it; and add to
-`[ledger] code_roots` and `evidence_boundary_required_for`. The preset's name, the harnesses and
-the project's name are neutral too, because no gate reads them; every value a preset switch moves
-is judged by its own key. The
-recorded version and the workflow pin move together as an upgrade: to exactly the running
-stayfixed, never below the base's by the reader `stayfixed upgrade` refuses by, and a moved pin
-only at the commit the platform says is running and a public release tag names. Any other key is
-refused while the base enforces any gate, because the rule cannot know which way a free-form key
-moves, and noted while it enforces none; routine upkeep under enforcement lands by a direct push
-to the base branch.
+field. A comment, a key spelled out at its default and a reordered `enforced` or `[gates] builtin`
+are therefore no change. Every changed key gets one verdict, and a key's class (`config.classes`)
+is asked first: a preference, the machine owner's key and the plugin's are neutral, because no
+gate judges a pull request by them. The change may enforce more gates, by listing them in
+`[stayfixed] enforced`; add a gate, and drop or re-command one the base does not enforce; lower a
+budget, a gate's or a session's, which the base branch may set above the preset or below it; and
+add to `[ledger] code_roots` and `evidence_boundary_required_for`. The preset's name, the
+harnesses and the project's name are neutral too, because no gate reads them; every value a preset
+switch moves is judged by its own key. The recorded version and the workflow pin move together as
+an upgrade: to exactly the running stayfixed, never below the base's by the reader `stayfixed
+upgrade` refuses by, and a moved pin only at the commit the platform says is running and a public
+release tag names. Any other key is refused while the base enforces any gate, because the rule
+cannot know which way a free-form key moves, and noted while it enforces none; routine upkeep
+under enforcement lands by a direct push to the base branch.
 
 The run then uses the tree's configuration, or the base's when anything was refused, and
 enforces the gates either side enforces: adding the tree's never loosens, and a refusal already
@@ -42,7 +40,7 @@ from stayfixed.assess.base import read_base as _read_base
 from stayfixed.config.classes import KeyClass, class_of
 from stayfixed.config.loader import CONFIG_FILE, loads
 from stayfixed.config.owner import Owner
-from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
+from stayfixed.config.schema import Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
 from stayfixed.semver import later
 
@@ -82,7 +80,6 @@ class Change:
 
 @dataclass(frozen=True)
 class ConfigVerdict:
-    base_state: str | None  # None: the base has no copy at this path (the bootstrap)
     changes: tuple[Change, ...]  # sorted by key
     config: Config  # the tree's, or the base's when anything was refused
     enforcing: frozenset[str]  # the base's and the tree's
@@ -90,6 +87,7 @@ class ConfigVerdict:
     # gates execute and in what order; none under the bootstrap.
     base_custom: Mapping[str, CustomGate] = field(default_factory=dict)
     base_enforcing: frozenset[str] = frozenset()
+    bootstrap: bool = False  # the base has no copy at this path, so the tree decides
 
     @property
     def refused(self) -> bool:
@@ -121,7 +119,6 @@ class _Sides:
 
 Row = Callable[[str, _Sides], Verdict]
 
-_ORDER = {state: index for index, state in enumerate(STATES)}
 # Lists whose order no reader sees: `enforcing` is a set, and `gate_names` orders built-ins itself.
 _UNORDERED = frozenset({"stayfixed.enforced", "gates.builtin"})
 
@@ -135,15 +132,13 @@ def _other(key: str, sides: _Sides) -> Verdict:
     return Verdict.REFUSED if sides.base.stayfixed.enforcing else Verdict.NOTED
 
 
-def _enforcement(key: str, sides: _Sides) -> Verdict:
-    """`state` and `enforced` are one fact: every gate the base enforces still enforces, and the
-    lifecycle does not move back."""
-    before, after = sides.base.stayfixed, sides.tree.stayfixed
-    backward = _ORDER[after.state] < _ORDER[before.state]
-    if backward or not after.enforcing >= before.enforcing:
+def _enforced(key: str, sides: _Sides) -> Verdict:
+    """`enforced`, the one adoption key: every gate the base lists is still listed, and a list
+    that names more tightens."""
+    before, after = sides.base.stayfixed.enforcing, sides.tree.stayfixed.enforcing
+    if not after >= before:
         return Verdict.REFUSED
-    grew = after.enforcing > before.enforcing or after.state != before.state
-    return Verdict.TIGHTENED if grew else Verdict.NEUTRAL
+    return Verdict.TIGHTENED if after > before else Verdict.NEUTRAL
 
 
 def _builtin_gates(key: str, sides: _Sides) -> Verdict:
@@ -193,8 +188,7 @@ def _upgrade(key: str, sides: _Sides) -> Verdict:
 
 
 ROWS: Mapping[str, Row] = {
-    "stayfixed.state": _enforcement,
-    "stayfixed.enforced": _enforcement,
+    "stayfixed.enforced": _enforced,
     "gates.builtin": _builtin_gates,
     "stayfixed.version": _upgrade,
     "ci.ref": _upgrade,
@@ -301,7 +295,7 @@ def judge(
     """
     tree = loads(tree_text, root, machine=machine, owner=owner)
     if base_text is None:
-        return ConfigVerdict(None, (), tree, tree.stayfixed.enforcing)
+        return ConfigVerdict((), tree, tree.stayfixed.enforcing, bootstrap=True)
     try:
         base = loads(base_text, root, machine=machine, label=BASE_COPY, owner=owner)
     except Failure as exc:
@@ -325,7 +319,6 @@ def judge(
     )
     enforcing = base.stayfixed.enforcing | tree.stayfixed.enforcing
     verdict = ConfigVerdict(
-        base.stayfixed.state,
         changes,
         tree,
         enforcing,

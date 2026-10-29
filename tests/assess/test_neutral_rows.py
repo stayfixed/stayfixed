@@ -36,7 +36,6 @@ pytestmark = needs_git
 # `AGENTS` is five lines, so it breaks this budget and the `docs` gate has a finding.
 BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "initialised"
 
 [project]
 name = "widget"

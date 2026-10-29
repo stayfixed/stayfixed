@@ -30,7 +30,6 @@ hook_output_chars = 10000
 commit_window = 100
 
 [defaults.stayfixed]
-state = "initialised"
 profile = ""
 agents = ["claude", "codex"]
 enforced = []

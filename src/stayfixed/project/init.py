@@ -18,7 +18,7 @@ a convenience.
 absent, never looked inside again. So on a repository that already carries one the engine
 reports `skip_modified` — "create-once, and the file is already there" — and the file comes
 back byte for byte but for one key. What the hand-written document does is decide the whole
-run: it is parsed, merged under stayfixed's own two keys and the preset's defaults, and
+run: it is parsed, merged under stayfixed's own `version` and the preset's defaults, and
 validated by `loads` before a byte is written, and the `Config` that comes out is what every
 target below is built from.
 
@@ -26,9 +26,10 @@ target below is built from.
 requires, with its `[stayfixed]` header when the file has none. It is added through
 `config.owned.rewrite`, which keeps every other line, and the file is checked with `loads` as it
 will then be on disk — before any network call and any write, dry run included — because the
-merged document forces `state`, drops `enforced` and detects a name the file may lack, and so
-loads where the next command's `load` would not. The other tool-owned keys are written only into
-a file stayfixed itself creates, which is the only file whose header claims them.
+merged document drops `enforced` and every other `[stayfixed]` key it does not carry over, and
+detects a name the file may lack, and so loads where the next command's `load` would not. The
+other tool-owned keys are written only into a file stayfixed itself creates, which is the only
+file whose header claims them.
 
 **Every value in the document this writes is stayfixed's own, the repository's own answer read
 back, or an answer a person gave as a flag.** The tool-owned keys are `config.owned.OWNED`;
@@ -64,14 +65,13 @@ from stayfixed.runner import Runner
 from stayfixed.scaffold import MANIFEST_PATH, Manifest, Plan, apply
 from stayfixed.tomlout import dumps
 
-STATE_NEW = "initialised"
 VERSION = ("stayfixed", "version")
 USER_OWNED = ("paths", "memory", "budgets", "ledger", "artifacts", "ci", "gates", "commit_messages")
 HEAD_KEYS = ("preset", "profile", "agents")
 HEADER = (
     "# Written by `stayfixed init`. Every key you leave out takes the preset's default;\n"
-    "# `[stayfixed] version`, `state` and `enforced`, and `[ci] ref`, are stayfixed's to\n"
-    "# rewrite in place; every other key is yours.\n\n"
+    "# `[stayfixed] version` and `enforced`, and `[ci] ref`, are stayfixed's to rewrite in\n"
+    "# place; every other key is yours.\n\n"
 )
 # The pair is spelled literally because the intended reader is an agent relaying this sentence,
 # and `--dry-run` on its own is refused by this same refusal: "pass --yes, and --dry-run to read
@@ -222,9 +222,9 @@ def _existing(root: Path) -> tuple[str, dict[str, object]] | None:
 def _tables(
     root: Path, existing: dict[str, object] | None, *, ci: bool, given: Given
 ) -> tuple[dict[str, dict[str, object]], str]:
-    """The document's tables, in order: stayfixed's two keys, then the repository's own answers
-    or the ones `given` carries; and the note for a detected base branch no remote head named
-    (`_head_note`), empty when `--base-branch` answers it.
+    """The document's tables, in order: stayfixed's own `version`, then the repository's own
+    answers or the ones `given` carries; and the note for a detected base branch no remote head
+    named (`_head_note`), empty when `--base-branch` answers it.
 
     **Detection runs only when no `[project]` table answers for the repository**, and not merely
     when some key of the head is absent; **it is lenient when `--name` answers the name, the one
@@ -240,7 +240,7 @@ def _tables(
     `precheck` guarantees that `given` is `NO_ANSWERS` whenever `existing` carries tables, so
     the answers never overwrite a table a person wrote.
     """
-    head: dict[str, object] = {"version": stayfixed.__version__, "state": STATE_NEW}
+    head: dict[str, object] = {"version": stayfixed.__version__}
     tables: dict[str, dict[str, object]] = {"stayfixed": head}
     old_head = existing.get("stayfixed") if existing else None
     if isinstance(old_head, dict):
@@ -391,8 +391,9 @@ def init(
     config = loads(document, root, machine=machine, owner=owner)
     on_disk, stamped = _as_on_disk(read)
     if on_disk is not None:
-        # What the next command loads is the file, not the merged document: that one forces
-        # `state`, drops `enforced` and detects a name the file may lack.
+        # What the next command loads is the file, not the merged document: that one drops
+        # `enforced` and every other `[stayfixed]` key it does not carry over, and detects a name
+        # the file may lack.
         loads(on_disk, root, machine=machine, owner=owner)
     # Not asked on the adoption path with no `[ci] ref` either: `_ci` answers that path with
     # `NO_REF` before it reads the resolution, and the ask is a network round trip that can take

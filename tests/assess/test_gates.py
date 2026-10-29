@@ -259,6 +259,10 @@ def test_the_configured_set_is_the_kept_built_ins_then_the_custom_gates(tmp_path
     root = tmp_path / "project"
     root.mkdir()
     fixture = (FIXTURE / "stayfixed.toml").read_text(encoding="utf-8")
+    # The fixture lists every built-in in `enforced`; with two of them kept, the list says so.
+    every = 'enforced = ["docs", "bugs", "plan", "commit", "trail"]\n'
+    assert fixture.count(every) == 1
+    fixture = fixture.replace(every, 'enforced = ["docs", "probe"]\n')
     gates = '\n[gates]\nbuiltin = ["docs"]\n\n[gates.custom.probe]\nrun = ["true"]\n'
     (root / "stayfixed.toml").write_text(fixture + gates, encoding="utf-8")
     config = load(root, machine=tmp_path / "m.toml")

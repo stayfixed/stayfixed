@@ -121,15 +121,13 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: the stayfixed adoption design and plan")
 
-    # 6. `adopt promote`, judged against the `init` commit, straight from `initialised`. The
-    # fresh tree passes all five built-ins over that range, so every one is promoted and the
-    # project is installed.
+    # 6. `adopt promote`, judged against the `init` commit, straight from what `init` wrote. The
+    # fresh tree passes all five built-ins over that range, so every one is promoted and listed.
     code, out, err = cli(root, tmp_path, "adopt", "promote", "--base", initialised, "--json")
     assert code == 0, out + err
     promoted = json.loads(out)
     assert promoted["promoted"] == list(BUILTIN_GATES), promoted
-    assert promoted["failing"] == {} and promoted["before"] == "initialised", promoted
-    assert promoted["after"] == "installed", promoted
+    assert promoted["failing"] == {}, promoted
 
     # 7. A hand edit to a whole-file template survives an upgrade, planned and real.
     record = Manifest.read(root).get(POLICY)
@@ -153,10 +151,8 @@ def test_a_fresh_non_main_repository_goes_from_its_answers_to_an_upgrade_that_ke
     assert config.project.base_branch == "develop"
     assert config.project.release_branch == "develop"
     assert config.ci.gate_branch == "develop"
-    # The loaded answer, not the file's: under `installed` the file says `enforced = []`, which
-    # the loader reads as every configured gate.
-    assert config.stayfixed.state == "installed"
-    assert set(config.stayfixed.enforcing) == set(BUILTIN_GATES)
+    # Every gate the promotion earned, listed in the file: nothing reads a shorter list as more.
+    assert config.stayfixed.enforced == BUILTIN_GATES
     workflow = (root / CI_WORKFLOW).read_text(encoding="utf-8")
     assert workflow.count('branches: ["develop"]') == 3 and 'base: "develop"' in workflow
     assert f"@{SHA}" in workflow
@@ -210,4 +206,5 @@ def test_a_versionless_answer_sheet_goes_through_the_same_confirmation(
     # the inventory working, not the file failing to load, which would be a `failed:` line.
     code, out, err = cli(root, tmp_path, "assess")
     assert code == 1 and err == "", out + err
-    assert out.startswith("assessment: state initialised; "), out
+    assert out.startswith("assessment: "), out
+    assert "state" not in out.splitlines()[0], out

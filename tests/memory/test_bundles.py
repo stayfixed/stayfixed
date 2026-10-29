@@ -31,7 +31,7 @@ from tests.gitfixture import git
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 preset = "recommended"
 profile = ""
 agents = ["claude"]
@@ -399,7 +399,7 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 OVERLAY_CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 preset = "recommended"
 profile = ""
 agents = ["claude"]

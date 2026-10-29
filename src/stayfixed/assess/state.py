@@ -1,25 +1,20 @@
-"""The adoption state machine: a project's gates move from advisory to enforcing one at a time,
-each once it passes.
+"""Adoption: a project's gates move from advisory to enforcing one at a time, each once it passes.
 
-`[stayfixed] state` is the lifecycle (`initialised`, `adopting`, `installed`) and `enforced` the
-gates promoted while adopting. `promote` runs gates strictly on the tree as it is and adds those
-that pass to `enforced`, moving an `initialised` project to `adopting` with the first gate it
-promotes. An `adopting` project with an empty `enforced` is a valid shape too, written by hand or
-left by an earlier release, and `promote` takes it from there the same way. A custom gate is
-promoted only once the base has its command, since `stayfixed gate` runs it only then: until it
-lands there it is not run, and waits. Promoting the last configured gate writes `installed` and
-empties the list, which under `installed` means every configured gate, so a gate added later
-enforces from its first run — for a custom gate, the first run after it lands on the base, since
-`stayfixed gate` runs none before. The state never moves back: there is no demotion, and loosening
-is an owner's edit of `stayfixed.toml`, which `stayfixed gate` refuses to a pull request while
-anything enforces.
+`[stayfixed] enforced` is the one adoption key: a gate enforces when the list names it, and
+nothing else says so. `promote` runs gates strictly on the tree as it is and adds those that pass
+to `enforced`, in configured order. A custom gate is promoted only once the base has its command,
+since `stayfixed gate` runs it only then: until it lands there it is not run, and waits. Promoting
+the last configured gate lists every gate; a gate added later is advisory until it is promoted in
+turn, or listed by hand, which `stayfixed gate` admits as a tightening. There is no demotion:
+loosening is an owner's edit of `stayfixed.toml`, which `stayfixed gate` refuses to a pull request
+while anything enforces.
 
 **A gate that reads a file git does not track is never promoted.** The `docs` and `trail` gates
 judge tracked files: CI checks out nothing else, so one that passes here over a file git does not
 track would fail every pull request there. `stayfixed.assess.tracked` turns such a gate's result
 into one that could not judge the tree, and a gate that could not judge is not promoted.
 
-**One write, at one place.** `promote` changes `stayfixed.toml`'s `state` and `enforced` through
+**One write, at one place.** `promote` changes `stayfixed.toml`'s `enforced` through
 `rewrite_owned` and nothing else, so the manifest's record of an untouched document is
 re-stamped with it and `uninstall` still takes the file back. It does not ask the ignore guard:
 `stayfixed.toml` is a fixed name, which that guard exempts so that a person may keep it out of
@@ -56,31 +51,28 @@ NAMED_ENFORCES = (
 ALL_ENFORCE = "every configured gate already enforces; there is nothing left to promote"
 NO_GATE = "this project configures no gate, so there is nothing to promote"
 UNEDITABLE = (
-    "[stayfixed] state or enforced is written in a shape stayfixed does not rewrite in place, so "
-    "no gate ran and nothing was written; write each on one line as it stands now, "
-    "`state = {state}` and `enforced = {enforced}`, and run the command again"
+    "[stayfixed] enforced is written in a shape stayfixed does not rewrite in place, so no gate "
+    "ran and nothing was written; write it on one line as it stands now, `enforced = {enforced}`, "
+    "and run the command again"
 )
 UNWRITTEN = (
-    "[stayfixed] state or enforced is written in a shape stayfixed does not rewrite in place, so "
-    "nothing was written; set both by hand, in one edit, to `state = {state}` and "
-    "`enforced = {enforced}`"
+    "[stayfixed] enforced is written in a shape stayfixed does not rewrite in place, so nothing "
+    "was written; set it by hand to `enforced = {enforced}`"
 )
 
 
-def _literals(state: str, enforced: Sequence[str]) -> dict[str, str]:
-    """`state` and `enforced` as the one-line values a remedy names.
+def _literal(enforced: Sequence[str]) -> str:
+    """`enforced` as the one-line value a remedy names.
 
-    Plain basic strings: a member of the lifecycle and gate names the loader has held to a
-    grammar, so no character in them needs escaping.
+    Plain basic strings: gate names the loader has held to a grammar, so no character in them
+    needs escaping.
     """
     listed = ", ".join(f'"{name}"' for name in enforced)
-    return {"state": f'"{state}"', "enforced": f"[{listed}]"}
+    return f"[{listed}]"
 
 
 @dataclass(frozen=True)
 class Transition:
-    before: str
-    after: str
     promoted: tuple[str, ...] = ()
     results: tuple[GateResult, ...] = ()  # every gate this run ran, in the order it ran them
     waiting: tuple[str, ...] = ()  # custom gates not run: the base does not have their command
@@ -99,47 +91,42 @@ class Transition:
 
 
 def _refuse_an_uneditable_document(root: Path, config: Config) -> None:
-    """Refuse, before any gate runs, a document whose `state` or `enforced` the editor cannot
-    rewrite in place.
+    """Refuse, before any gate runs, a document whose `enforced` the editor cannot rewrite in
+    place.
 
-    A trial edit of both keys, discarded. The values differ from any the document can hold, so
-    the editor meets both lines rather than skipping one already at its value: `config` is never
-    a gate's name, and the loader refuses it in `enforced`. Those values are made up, so the
-    editor's own refusal, which tells the person to write the value it was setting, is not
-    passed on: following it would enforce what no gate earned, or write a list that does not
-    load. The remedy names the values the document holds now, in the one-line shape the editor
-    rewrites. Both are bounded: a member of the lifecycle and gate names the loader has held to
-    a grammar, each written as a plain basic string.
+    A trial edit of the key, discarded. The value differs from any the document can hold, so the
+    editor meets the line rather than skipping it as already at its value: `config` is never a
+    gate's name, and the loader refuses it in `enforced`. That value is made up, so the editor's
+    own refusal, which tells the person to write the value it was setting, is not passed on:
+    following it would write a list that does not load. The remedy names the list the document
+    holds now, in the one-line shape the editor rewrites: gate names the loader has held to a
+    grammar, each written as a plain basic string.
     """
     text = read_document(root)
     if text is None:
         return  # the configuration was loaded from it a moment ago; the write refuses its absence
-    state = config.stayfixed.state
-    other = "installed" if state != "installed" else "adopting"
     try:
-        rewrite(text, {("stayfixed", "state"): other, ("stayfixed", "enforced"): (CONFIG_CHECK,)})
+        rewrite(text, {("stayfixed", "enforced"): (CONFIG_CHECK,)})
     except OwnedKeyError:
-        values = _literals(state, config.stayfixed.enforced)
-        raise OwnedKeyError(UNEDITABLE.format(**values)) from None
+        literal = _literal(config.stayfixed.enforced)
+        raise OwnedKeyError(UNEDITABLE.format(enforced=literal)) from None
 
 
-def _write(root: Path, state: str, enforced: tuple[str, ...]) -> None:
-    """The state machine's two-key write, whose refusal names both keys at once.
+def _write(root: Path, enforced: tuple[str, ...]) -> None:
+    """The promotion's one write, `enforced`, whose refusal names the list it was writing.
 
-    The two keys state one fact, and the editor edits them one at a time, so its own refusal
-    names only the key it failed on: `enforced = []` alone, which is right only beside
-    `installed`, and beside `adopting` enforces nothing. The values named are the ones this
-    write earned, so following the remedy is the transition itself. A document that does not
-    parse at all is refused in the editor's own words, with the parser's position.
+    The editor's own refusal also tells the person to run the command again, which, once the
+    list is set by hand, would run the gates to promote nothing. A document that does not parse
+    at all is refused in the editor's own words, with the parser's position.
     """
     try:
-        rewrite_owned(root, {("stayfixed", "state"): state, ("stayfixed", "enforced"): enforced})
+        rewrite_owned(root, {("stayfixed", "enforced"): enforced})
     except UnparsedDocument:
         # Not a shape: the file does not parse, a custom gate having written into it, say, and
         # the parser's position is the remedy.
         raise
     except OwnedKeyError:
-        raise OwnedKeyError(UNWRITTEN.format(**_literals(state, enforced))) from None
+        raise OwnedKeyError(UNWRITTEN.format(enforced=_literal(enforced))) from None
 
 
 def _not_on_base(
@@ -197,18 +184,11 @@ def promote(
     enforcing = config.stayfixed.enforcing
     if any(name in enforcing for name in names):
         raise Refusal(NAMED_ENFORCES)
-    state = config.stayfixed.state
     wanted = [n for n in configured if n in (names or configured) and n not in enforcing]
     if not wanted:
-        if not configured:
-            # Nothing configured is nothing wanted too, and completing the state would install
-            # a project that never earned a gate, whether it had begun adopting or not.
-            raise Refusal(NO_GATE)
-        if state == "installed":
-            raise Refusal(ALL_ENFORCE)
-        # Every configured gate enforces and the state never said so: complete it.
-        _write(root, "installed", ())
-        return Transition(state, "installed")
+        # Nothing configured is nothing wanted too, and is said as such rather than as a list
+        # that already holds every gate.
+        raise Refusal(NO_GATE if not configured else ALL_ENFORCE)
     _refuse_an_uneditable_document(root, config)  # trial rewrite; before any gate runs
     Manifest.read(root)  # the write re-stamps its record, so one it cannot read refuses here
     skipped = tuple(n for n in wanted if builtin and n in config.gates.custom)
@@ -223,10 +203,7 @@ def promote(
     # With names, every one passes or nothing is written: one that failed, could not run, waits
     # or was not run holds the rest back.
     if (names and (len(promoted) < len(results) or waiting or skipped)) or not promoted:
-        return Transition(state, state, (), results, waiting, skipped, unseen)
+        return Transition((), results, waiting, skipped, unseen)
     enforced = enforcing | set(promoted)
-    installed = enforced >= set(configured)
-    after = "installed" if installed else "adopting"
-    listed = () if installed else tuple(n for n in configured if n in enforced)
-    _write(root, after, listed)
-    return Transition(state, after, promoted, results, waiting, skipped, unseen)
+    _write(root, tuple(n for n in configured if n in enforced))
+    return Transition(promoted, results, waiting, skipped, unseen)

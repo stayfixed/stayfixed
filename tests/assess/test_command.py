@@ -166,12 +166,16 @@ def test_a_link_where_the_inventory_goes_is_replaced_and_its_target_is_untouched
 
 @needs_git
 def test_a_custom_gate_runs_beside_the_built_ins(tmp_path: Path) -> None:
-    # The fixture is `installed`, so the custom gate enforces from the commit that adds it.
-    # Mutation: `config.gates.builtin` passed to `run_gates` in place of `config.gate_names` ->
-    # the custom gate never runs and the last gate is `trail`.
+    # The commit that adds the custom gate lists it in `enforced` too, so it enforces from that
+    # commit. Mutation: `config.gates.builtin` passed to `run_gates` in place of
+    # `config.gate_names` -> the custom gate never runs and the last gate is `trail`.
     root = smoke_repo(tmp_path)
-    with (root / CONFIG_FILE).open("a", encoding="utf-8") as document:
-        document.write(CUSTOM_GATE)
+    text = (root / CONFIG_FILE).read_text(encoding="utf-8")
+    listed = '"trail"]\n'
+    assert text.count(listed) == 1
+    (root / CONFIG_FILE).write_text(
+        text.replace(listed, '"trail", "tests"]\n') + CUSTOM_GATE, encoding="utf-8"
+    )
     git(root, "commit", "-qam", "chore: a gate of our own")
     code, out, _ = cli(root, tmp_path, "assess", "--base", "HEAD~1", "--json")
     assert code == 0

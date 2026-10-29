@@ -1,7 +1,7 @@
 """The two fixture projects the smoke workflow runs against, held to what they claim.
 
-`smoke-project` is a project every gate passes on, with `state = "installed"` so the gates
-enforce; `hostile-project` is the clone the clone-to-exfiltration scenario runs. Both are read
+`smoke-project` is a project every gate passes on, with every gate listed in `enforced` so the
+gates enforce; `hostile-project` is the clone the clone-to-exfiltration scenario runs. Both are read
 by CI from this tree, so a fixture that drifted from what a gate accepts would fail the smoke
 workflow with a message about the fixture rather than about stayfixed.
 """
@@ -164,11 +164,13 @@ def test_plan_check_on_the_fixture_lints_the_plan_it_touched(tmp_path: Path) -> 
     assert PLAN in printed, printed
 
 
-def test_the_smoke_fixture_is_installed_so_the_gates_enforce() -> None:
+def test_the_smoke_fixture_lists_every_gate_so_the_gates_enforce() -> None:
     import tomllib
 
+    from stayfixed.config.schema import BUILTIN_GATES
+
     config = tomllib.loads((SMOKE / "stayfixed.toml").read_text(encoding="utf-8"))
-    assert config["stayfixed"]["state"] == "installed"
+    assert config["stayfixed"]["enforced"] == list(BUILTIN_GATES)
     assert config["project"]["name"] == "smoke"
 
 
@@ -181,10 +183,10 @@ def test_the_hostile_fixture_carries_the_three_properties_the_scenario_depends_o
 
     raw = (HOSTILE / "stayfixed.toml").read_text(encoding="utf-8")
     config = tomllib.loads(raw)
-    # The literal and not only the loaded value: `installed` is not the loader's default, and
-    # a fixture that relied on a default would stop being the hostile case the day it moved.
-    assert 'state = "installed"' in raw
-    assert config["stayfixed"]["state"] == "installed"
+    # The literal and not only the loaded value: the loader's default enforces nothing, and a
+    # fixture that relied on a default would stop being the hostile case the day it moved.
+    assert 'enforced = ["docs", "bugs", "plan", "commit", "trail"]' in raw
+    assert config["stayfixed"]["enforced"] == ["docs", "bugs", "plan", "commit", "trail"]
     # The clone names ANOTHER project, which is the whole of the `mismatch` row.
     assert config["project"]["name"] == "smoke"
     assert config["memory"]["mode"] == "in-repo"
@@ -660,7 +662,10 @@ def _run_base_step(
     return done.returncode, written, done.stdout + done.stderr
 
 
-INSTALLED = '[stayfixed]\nversion = "0.1.0"\nstate = "installed"\n\n[project]\nname = "p"\n'
+ENFORCING = (
+    '[stayfixed]\nversion = "0.1.0"\nenforced = ["docs", "bugs", "plan", "commit", "trail"]\n\n'
+    '[project]\nname = "p"\n'
+)
 
 
 def _main(project: Path) -> str:
@@ -680,9 +685,10 @@ def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_base(tmp_path:
     Mutation (declared): the short `origin/$base^{commit}` in place of the qualified name ->
     `base_sha` is the tag's commit.
     """
-    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
     (project / "stayfixed.toml").write_text(
-        INSTALLED.replace('state = "installed"', 'state = "initialised"'), encoding="utf-8"
+        ENFORCING.replace('enforced = ["docs", "bugs", "plan", "commit", "trail"]\n', ""),
+        encoding="utf-8",
     )
     git(project, "add", "-A")
     git(project, "commit", "-qm", "chore: loosen")
@@ -715,7 +721,7 @@ def test_a_base_input_that_disagrees_with_the_pull_requests_own_base_is_refused(
 
     Mutation (declared): the disagreement test is removed -> this reddens on the exit code.
     """
-    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
     code, written, printed = _run_base_step(
         project, tmp_path, INPUT_BASE="a-branch-the-author-pushed", PR_BASE="main"
     )
@@ -742,7 +748,7 @@ def test_the_base_ref_falls_back_to_the_pull_requests_base_and_then_the_default_
     # under review: the caller's `with:`, the pull request's base as the platform reports it,
     # and the repository's default branch. With none of the three the step refuses rather than
     # guessing a branch name.
-    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
     _code, written, _printed = _run_base_step(project, tmp_path, PR_BASE="main")
     assert written["base_sha"] == _main(project), written
     _code, written, _printed = _run_base_step(project, tmp_path, DEFAULT_BRANCH="main")
@@ -760,7 +766,7 @@ def test_a_path_input_cannot_write_the_steps_own_outputs(tmp_path: Path) -> None
     # `p` is appended to `$GITHUB_OUTPUT`, which the runner parses line by line, so a `path:`
     # carrying a newline would write further `key=value` lines — and `base_sha` is the commit
     # whose configuration governs the gates. A forged one would choose it.
-    project = _project_with_a_base(tmp_path, on_base=INSTALLED)
+    project = _project_with_a_base(tmp_path, on_base=ENFORCING)
     code, written, printed = _run_base_step(
         project, tmp_path, INPUT_BASE="main", INPUT_PATH=f"sub\nbase_sha={'0' * 40}"
     )
