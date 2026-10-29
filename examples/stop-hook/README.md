@@ -35,6 +35,14 @@ The hook's `"timeout"` must stay above the recipe's `--timeout` (540 seconds whe
 so that `prove` ends its own run and answers before Claude Code cuts the hook off. A hook past its
 timeout is a non-blocking error, and the stop goes ahead.
 
+Your own settings file applies in every project; a project's `.claude/settings.json` scopes the hook
+to that one. Before installing it, run the exact hook command once by hand at the top of a green
+tree, `echo '{}' | python3 -I ~/.claude/hooks/prove_on_stop.py --timeout 540 -- pytest -q`, and see
+exit 0. A command `stayfixed prove` does not prove blocks every stop once: in a Go repository
+`pytest -q` is `failed` (`none-ran`), `make test` is `not proven` (`not-recognised`), and a
+`--timeout` too short is `timed-out`. A wrong script path is worse: `python3` itself exits 2, which
+blocks every stop, and the let-through never ends it, since the recipe never runs.
+
 ## What it does on each stop
 
 - It reads the hook's input, the one JSON object Claude Code writes on standard input. Input that
