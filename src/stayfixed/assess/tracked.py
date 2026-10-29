@@ -168,25 +168,15 @@ def _same_file(one: Path, other: Path) -> bool:
         return False
 
 
-def _case_differs(named: str, listing: _Listing) -> bool:
-    """Whether git tracks `named` only under a spelling that differs in case, and here that
-    spelling is the same file: a filesystem that folds case read one for the other. Where the
-    two are different files, the one read is simply untracked."""
-    here = listing.prefix + named
-    spelled = listing.folded.get(here.casefold())
-    if spelled is None or spelled == here:
-        return False
-    return _same_file(listing.top / here, listing.top / spelled)
-
-
 def _parts(path: str) -> list[str]:
     """`path`'s components, as the filesystem reads them: an empty one or `.` names nothing."""
     return [part for part in path.split("/") if part not in ("", os.curdir)]
 
 
-def _not_checked_out(relative: str, listing: _Listing) -> str | None:
+def _not_checked_out(relative: str, listing: _Listing) -> tuple[str, str] | None:
     """What of `relative` a checkout of the tracked tree would not have, named inside the project,
-    or `None` when it would have all of it.
+    with the item it goes to (`UNTRACKED` or `CASE_DIFFERS`), or `None` when it would have all of
+    it.
 
     git tracks a symlink as the link alone, and a checkout writes the link whether or not what it
     names is there, so a tracked link says nothing about what is read through it. The path is
@@ -201,41 +191,50 @@ def _not_checked_out(relative: str, listing: _Listing) -> str | None:
     step to the path it leads to, when that climbs nowhere and stays inside the project, and
     otherwise the last such name stands; a link that leads out of the repository is named itself,
     or, when it is outside the project, the last link inside it that led there.
+
+    A component git lists only under a spelling that differs in case, and that here reaches the
+    same file or directory, is one a filesystem that folds case read for git's: the walk goes on
+    with git's spelling, which is what a checkout has. When the rest of the walk finds every step
+    tracked, respelling is the whole remedy, and the path is `CASE_DIFFERS`, named as the document
+    wrote it; every other end of the walk is `UNTRACKED`, named as above.
     """
     prefix = listing.prefix
     todo = deque(_parts(prefix + relative))
     done: list[str] = []
-    named, leads, hops = relative, relative, 0
+    named, leads, hops, respelled = relative, relative, 0, False
     while todo:
         part = todo.popleft()
         if part == os.pardir:
             if not done:
-                return leads  # a climb above the work tree's top: no checkout has it
+                return leads, UNTRACKED  # a climb above the work tree's top: no checkout has it
             done.pop()
             continue
         done.append(part)
         here = "/".join(done)
         if not _is_tracked(here, listing):
-            return named  # the first untracked step
+            spelled = listing.folded.get(here.casefold())
+            if spelled is None or not _same_file(listing.top / here, listing.top / spelled):
+                return named, UNTRACKED  # the first untracked step
+            done, here, respelled = spelled.split("/"), spelled, True
         link = listing.top / here
         if not fsops.is_symlink(link):
             continue
         if here in listing.changed:
-            return named  # a link changed on disk: a checkout writes the one git has
+            return named, UNTRACKED  # a link changed on disk: a checkout writes the one git has
         if here.startswith(prefix):
             leads = here[len(prefix) :]
         hops += 1
         if hops > LINK_HOPS:
-            return named  # a chain longer than the walk follows
+            return named, UNTRACKED  # a chain longer than the walk follows
         target = os.readlink(link)
         if os.path.isabs(target):
-            return leads  # a target that is absolute: no other checkout has it
+            return leads, UNTRACKED  # a target that is absolute: no other checkout has it
         done.pop()
         todo.extendleft(reversed(_parts(target)))
         step = "/".join([*done, *todo])
         if os.pardir not in todo and step.startswith(prefix):
             named = step[len(prefix) :]
-    return None
+    return (relative, CASE_DIFFERS) if respelled else None
 
 
 def unseen(root: Path, config: Config, gates: tuple[Gate, ...]) -> tuple[Unseen, ...]:
@@ -264,11 +263,11 @@ def unseen(root: Path, config: Config, gates: tuple[Gate, ...]) -> tuple[Unseen,
             result.append(Unseen(name, tuple(files), git_answered=False))
             continue
         missing = tuple(
-            dict.fromkeys(n for f in files if (n := _not_checked_out(f, tracked)) is not None)
+            dict.fromkeys(p for f in files if (p := _not_checked_out(f, tracked)) is not None)
         )
         if missing:
-            cased = tuple(n for n in missing if _case_differs(n, tracked))
-            untracked = tuple(n for n in missing if n not in cased)
+            untracked = tuple(n for n, rule in missing if rule == UNTRACKED)
+            cased = tuple(n for n, rule in missing if rule == CASE_DIFFERS)
             result.append(Unseen(name, untracked, git_answered=True, case_differs=cased))
     return tuple(result)
 

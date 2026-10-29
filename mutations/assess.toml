@@ -1076,7 +1076,7 @@ reddens = [
 [[mutation]]
 name = "a climb above the work tree's top reads as one a checkout has"
 file = "src/stayfixed/assess/tracked.py"
-before = "                return leads  # a climb above the work tree's top: no checkout has it"
+before = "                return leads, UNTRACKED  # a climb above the work tree's top: no checkout has it"
 after = "                return None"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[out-of-the-project]",
@@ -1086,8 +1086,8 @@ reddens = [
 [[mutation]]
 name = "the first untracked step on a path reads as tracked"
 file = "src/stayfixed/assess/tracked.py"
-before = "            return named  # the first untracked step"
-after = "            return None"
+before = "                return named, UNTRACKED  # the first untracked step"
+after = "                return None"
 reddens = [
   "tests/assess/test_tracked.py::test_assess_reports_a_gate_that_reads_an_untracked_file_as_unable_to_judge_it[agents-md]",
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[to-an-ignored-file]",
@@ -1098,7 +1098,7 @@ reddens = [
 [[mutation]]
 name = "a link walk that runs out of hops answers tracked"
 file = "src/stayfixed/assess/tracked.py"
-before = "            return named  # a chain longer than the walk follows"
+before = "            return named, UNTRACKED  # a chain longer than the walk follows"
 after = "            return None"
 reddens = [
   "tests/assess/test_tracked.py::test_a_link_chain_longer_than_the_cap_is_named_where_the_walk_stopped",
@@ -1109,7 +1109,7 @@ reddens = [
 [[mutation]]
 name = "a link to an absolute target reads as one a checkout has"
 file = "src/stayfixed/assess/tracked.py"
-before = "            return leads  # a target that is absolute: no other checkout has it"
+before = "            return leads, UNTRACKED  # a target that is absolute: no other checkout has it"
 after = "            return None"
 reddens = [
   "tests/assess/test_tracked.py::test_a_symlinked_link_target_is_judged_by_where_it_leads_in_a_checkout[absolute]",
@@ -1118,10 +1118,8 @@ reddens = [
 [[mutation]]
 name = "a walk that reaches a tracked file names it all the same"
 file = "src/stayfixed/assess/tracked.py"
-before = """            named = step[len(prefix) :]
-    return None"""
-after = """            named = step[len(prefix) :]
-    return relative"""
+before = "    return (relative, CASE_DIFFERS) if respelled else None"
+after = "    return relative, UNTRACKED"
 reddens = [
   "tests/assess/test_tracked.py::test_a_tree_whose_every_read_file_is_tracked_is_judged_as_it_is",
   "tests/assess/test_tracked.py::test_a_committed_symlinked_directory_on_a_link_s_way_is_followed[to-a-tracked-directory]",
@@ -1234,26 +1232,28 @@ reddens = [
 ]
 
 # A name that differs from the tracked one only in case is the same file on a filesystem that folds
-# case and no file in a Linux checkout. The file is committed, so the remedy is to spell the name
-# as git does, and the test holds on both filesystems: where case is kept apart, a second name for
-# the same file stands in for the fold.
+# case and no file in a Linux checkout. The walk goes on as git spells the step, and only a walk
+# that then finds every step tracked is a case difference, whose remedy is to spell the name as git
+# does; one that meets an untracked step is untracked, since respelling would read a file no
+# checkout has.
 [[mutation]]
-name = "a name git tracks in another case reads as untracked"
+name = "the walk stops at a case-differing component instead of continuing"
 file = "src/stayfixed/assess/tracked.py"
-before = "    return _same_file(listing.top / here, listing.top / spelled)"
-after = "    return False"
+before = "            done, here, respelled = spelled.split(\"/\"), spelled, True"
+after = "            return named, UNTRACKED"
 reddens = [
+  "tests/assess/test_tracked.py::test_a_case_difference_on_a_symlinked_directory_is_case_differs",
   "tests/assess/test_tracked.py::test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so",
   "tests/assess/test_tracked.py::test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does",
 ]
 
 [[mutation]]
-name = "a name git tracks in another case is reported as untracked as well"
+name = "a case difference whose walk later meets an untracked step is reported as `case-differs`"
 file = "src/stayfixed/assess/tracked.py"
-before = "            untracked = tuple(n for n in missing if n not in cased)"
-after = "            untracked = missing"
+before = "                return named, UNTRACKED  # the first untracked step"
+after = "                return named, CASE_DIFFERS if respelled else UNTRACKED"
 reddens = [
-  "tests/assess/test_tracked.py::test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so",
+  "tests/assess/test_tracked.py::test_git_s_spelling_that_leads_to_an_untracked_file_is_untracked",
 ]
 
 [[mutation]]
@@ -1319,12 +1319,12 @@ before = """    except OSError:
         return False
 
 
-def _case_differs("""
+def _parts("""
 after = """    except OSError:
         return True
 
 
-def _case_differs("""
+def _parts("""
 reddens = [
   "tests/assess/test_tracked.py::test_a_name_that_reaches_no_file_is_never_the_same_file_as_another",
 ]
@@ -1334,7 +1334,7 @@ reddens = [
 [[mutation]]
 name = "a link changed on disk is followed as it is on disk"
 file = "src/stayfixed/assess/tracked.py"
-before = "            return named  # a link changed on disk: a checkout writes the one git has"
+before = "            return named, UNTRACKED  # a link changed on disk: a checkout writes the one git has"
 after = "            pass"
 reddens = [
   "tests/assess/test_tracked.py::test_a_link_retargeted_on_disk_and_not_staged_is_named[directory-link]",

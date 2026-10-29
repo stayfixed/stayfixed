@@ -437,17 +437,26 @@ def test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named(
     assert "a note.md" not in out and UNPRINTABLE in out, out
 
 
+def _second_name(path: Path, same: Path) -> None:
+    """`path` made a second name for `same` where case is kept apart, which is what a filesystem
+    that folds case reads it as already: a hard link for a file, a second symlink to the same
+    target for a link, a directory's included."""
+    if path.exists():
+        return
+    if same.is_symlink():
+        path.symlink_to(os.readlink(same))
+    else:
+        os.link(same, path)
+
+
 def _link_in_another_case(root: Path) -> None:
-    """`notes.md` committed, and `AGENTS.md` linking it as `Notes.md`; on a filesystem that keeps
-    case apart, `Notes.md` is made a second name for the same file, which is what a filesystem
-    that folds case, such as macOS's default, reads the link as."""
+    """`notes.md` committed, and `AGENTS.md` linking it as `Notes.md`, its `_second_name`."""
     (root / "notes.md").write_text("# ours\n", encoding="utf-8")
     agents = root / AGENTS
     agents.write_text(agents.read_text(encoding="utf-8") + "\n[notes](Notes.md)\n", "utf-8")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: link the notes in another case")
-    if not (root / "Notes.md").exists():
-        os.link(root / "notes.md", root / "Notes.md")
+    _second_name(root / "Notes.md", root / "notes.md")
 
 
 def test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so(tmp_path: Path) -> None:
@@ -455,8 +464,8 @@ def test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so(tmp_path
     # checkout it reads nothing: `missing-link`. So the gate could not judge the tree as CI will,
     # and the file is committed, so the remedy is to spell the link as git does, not to commit
     # it. The same file under both names stands in for a folding filesystem where case is kept
-    # apart, so this holds on Linux as on macOS. Mutation (declared): a name git tracks in
-    # another case reads as untracked.
+    # apart, so this holds on Linux as on macOS. Mutation (declared): the walk stops at a
+    # case-differing component instead of continuing.
     root = smoke_repo(tmp_path)
     _link_in_another_case(root)
     assessment = _assess(root, tmp_path)
@@ -505,6 +514,48 @@ def test_a_different_file_whose_name_differs_only_in_case_is_untracked(tmp_path:
     assessment = _assess(root, tmp_path)
     assert _items(assessment, UNTRACKED) == {"docs": ("Notes.md",)}
     assert _items(assessment, CASE_DIFFERS) == {}
+
+
+def test_a_case_difference_on_a_symlinked_directory_is_case_differs(tmp_path: Path) -> None:
+    # `alias -> private` and `private/notes.md` are committed, and the document links
+    # `Alias/notes.md`. A filesystem that folds case reads the committed link and the committed
+    # file; a Linux checkout has no `Alias`. Everything the link reaches is committed, so the remedy
+    # is to spell it as git does, not to commit it. The walk once stopped at `Alias` and asked about
+    # the whole path, which git lists under no spelling, and so said "commit it". Mutation
+    # (declared): the walk stops at a case-differing component instead of continuing.
+    root = smoke_repo(tmp_path)
+    _link_through(root, {"alias": "private"}, linked="Alias/notes.md")
+    _second_name(root / "Alias", root / "alias")
+    assessment = _assess(root, tmp_path)
+    assert _row(assessment, "docs").reason == UNSEEN_REASON
+    assert _items(assessment, UNTRACKED) == {}
+    assert _items(assessment, CASE_DIFFERS) == {"docs": ("Alias/notes.md",)}
+
+
+def test_git_s_spelling_that_leads_to_an_untracked_file_is_untracked(tmp_path: Path) -> None:
+    # git tracks `notes.md -> private/notes.md` and ignores `private/`; the document links
+    # `Notes.md`. Spelling the link as git does would still read a file no checkout has, so the
+    # remedy is to commit that file, and it is named, as an untracked step always is. Mutation
+    # (declared): a case difference whose walk later meets an untracked step is reported as
+    # `case-differs`.
+    root = smoke_repo(tmp_path)
+    _link_through(root, {"notes.md": "private/notes.md"}, ("private/",), linked="Notes.md")
+    _second_name(root / "Notes.md", root / "notes.md")
+    assessment = _assess(root, tmp_path)
+    assert _items(assessment, UNTRACKED) == {"docs": ("private/notes.md",)}
+    assert _items(assessment, CASE_DIFFERS) == {}
+
+
+def test_a_case_difference_is_named_as_the_document_wrote_it(tmp_path: Path) -> None:
+    # The document links `alias/Notes.md` through the committed `alias -> private`, and git tracks
+    # `private/notes.md`. The name to respell is the one the document wrote: `private/Notes.md`
+    # is a path the document never holds.
+    root = smoke_repo(tmp_path)
+    _link_through(root, {"alias": "private"}, linked="alias/Notes.md")
+    _second_name(root / "private" / "Notes.md", root / "private" / "notes.md")
+    assessment = _assess(root, tmp_path)
+    assert _items(assessment, UNTRACKED) == {}
+    assert _items(assessment, CASE_DIFFERS) == {"docs": ("alias/Notes.md",)}
 
 
 def test_an_untracked_roadmap_leaves_the_docs_gate_judged(tmp_path: Path) -> None:
