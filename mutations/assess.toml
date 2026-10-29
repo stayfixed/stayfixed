@@ -775,9 +775,7 @@ before = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES - 
 after = "            content, over = read_bounded(path, CODEOWNERS_MAX_BYTES)"
 reddens = ["tests/assess/test_probes.py::test_a_codeowners_file_github_does_not_load_owns_nothing"]
 
-# GitHub splits a code-owners line on ASCII space and tab and not on U+00A0, and a pattern with no
-# owner owns nothing, as a run on GitHub showed: the probe asks only the pattern field, and only
-# beside an owner field.
+# `_codeowners`'s docstring says what a code-owners line must hold; each entry breaks one part.
 [[mutation]]
 name = "the codeowners probe asks the whole line again"
 file = "src/stayfixed/assess/probes.py"
