@@ -3280,8 +3280,8 @@ checkout, with an error that names neither the cause nor the remedy. Give the ca
 **One job, and what it runs.** The job, `gates`, checks out the caller, checks out stayfixed **at
 the commit the `uses:` line pins** — read off the platform's own record of which reusable
 workflow is running, never off the caller's inputs, and asserted against `git rev-parse HEAD`
-before anything else runs — resolves the base to one commit, and runs `stayfixed gate` against it
-in two steps. The first, "The configuration and the built-in gates", judges the configuration and
+before anything else runs — and runs `stayfixed gate` in two steps, each of which resolves the
+base to one commit in the same checkout, which nothing fetches into between them. The first, "The configuration and the built-in gates", judges the configuration and
 runs the built-in gates, and executes nothing your repository wrote. The second, "The project's
 own gates", runs the commands `[gates.custom]` names, and only if the first passed. Each gate is
 advisory or enforcing, with every finding as an annotation, and each step that runs a check
@@ -3359,8 +3359,9 @@ commit and judges the tree's copy against it key by key; the `stayfixed gate` se
 table, what each input rests on, and how an owner lands a change it refuses. What this workflow
 adds: the base's **name** is the pull request's base as the platform reports it, held against
 the caller's `branches:` filter and its literal `base:`; its **commit** is
-`refs/remotes/origin/<base>` in the caller's own checkout, resolved once to a full sha that
-every gate reads; its **copy** is read at `path:`; the **stayfixed that runs** is the one the
+`refs/remotes/origin/<base>` in the caller's own checkout, which each gate step resolves once to
+a full sha that every gate in it reads, the same commit in both since nothing fetches between
+them; its **copy** is read at `path:`; the **stayfixed that runs** is the one the
 caller's `uses:` line pins, whose commit the judging step passes as `--workflow-sha`; and the
 **verdict** is the exit status of the first step.
 

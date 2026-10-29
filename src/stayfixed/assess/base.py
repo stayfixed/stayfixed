@@ -7,26 +7,18 @@ path is the bootstrap, where the change decides its own configuration. So nothin
 did not answer" as "no copy", and every name and path git would resolve on the caller's behalf is
 pinned first.
 
-**Which commit.** In CI it is a full commit id the workflow resolved once from the remote-tracking
-ref of the base branch, whose name comes from the platform or from the caller workflow's literal
-input, which code owners guard (`docs/cli.md#the-reusable-workflow` names the repository
-settings). Locally it is `config.layout.local_base`, the remote-tracking ref of `[project]
-base_branch`, and
-advice only: a local run judges nothing anyone else relies on. Either way `--base` is a full
-commit id or a full `refs/…` name, never a short one, because git resolves a short name through
-the tags first and a tag of the same spelling would stand in for the branch.
+**Which commit.** In CI it is `platform_base`'s, from the platform's values and the caller
+workflow's literal input, which code owners guard (`docs/cli.md#the-reusable-workflow` names the
+repository settings). Locally it is `config.layout.local_base`, the remote-tracking ref of
+`[project] base_branch`, and advice only: a local run judges nothing anyone else relies on. A
+`--base` is a full commit id or a full `refs/…` name, never a short one, because git resolves a
+short name through the tags first and a tag of the same spelling would stand in for the branch.
 
 **Where in it.** At the project root's path inside the repository, as git spells it. A root
 reached through a symlink below the repository's top, or spelled otherwise than git spells it (a
 case-folding disk), is refused rather than guessed at: the base's copy would be looked for at the
 place the link or the spelling names, which a change can make empty. A link above the
 repository is the machine's (`/tmp` on macOS, a symlinked home) and is admitted.
-
-**The platform's values.** The reusable workflow hands `stayfixed gate` what the platform and the
-caller file said, raw: the pull request's base, the caller's `base:` and `path:`, and the
-repository's default branch. `platform_base` turns the first three into the commit, and
-`platform_root` the last into the project root, each checking what the workflow's shell step
-used to check, in its order.
 """
 
 from __future__ import annotations
