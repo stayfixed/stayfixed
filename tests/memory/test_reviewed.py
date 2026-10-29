@@ -25,7 +25,7 @@ from tests.sessions import session_of
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 
 [project]
 name = "widget"

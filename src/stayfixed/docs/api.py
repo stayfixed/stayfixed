@@ -54,7 +54,9 @@ this area's link reader, so the gate and the question cannot disagree about whic
 names. `stayfixed.assess.gates` holds them on the gates' records.
 
 **Three gate functions, for `stayfixed assess`.** `docs_gate`, `plan_gate` and
-`trail_gate` are each `(root, config, base) -> list[Finding]`, one gate's whole composition.
+`trail_gate` are each `(root, config, base) -> list[Finding]`, the shape
+`stayfixed.assess.gates.GateFn` spells, one gate's whole composition, and each raises when it
+cannot judge the tree.
 `stayfixed assess` runs them as values, and this area's own commands answer with the same
 functions (`docs check` with no flag, `docs trail --check`) or with the one call a function
 wraps (`plan check` calls `lint`), so a command and its gate cannot drift apart.

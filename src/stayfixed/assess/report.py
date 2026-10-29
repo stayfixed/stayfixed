@@ -169,7 +169,7 @@ def workflow_commands(run: GateRun, *, cap: int = ANNOTATION_CAP) -> list[str]:
 def config_line(verdict: ConfigVerdict) -> str:
     """The configuration check's printed line: how many keys changed and which were refused, by
     name, or one of the two answers without a key."""
-    if verdict.base_state is None:
+    if verdict.bootstrap:
         return f"config: {BOOTSTRAP}"
     if not verdict.changes:
         return f"config: {UNCHANGED}"
@@ -202,7 +202,7 @@ def summary(run: GateRun) -> str:
             rows.append(f"| {name} | {mode(enforcing)} | not run | {NOT_ON_BASE} |")
         blocks.append(rows)
     if run.judged:
-        if run.verdict.base_state is not None and run.verdict.changes:
+        if not run.verdict.bootstrap and run.verdict.changes:
             rows = ["| stayfixed.toml key | verdict |", "|---|---|"]
             rows += [f"| {c.key} | {c.verdict.value} |" for c in run.verdict.changes]
             blocks.append(rows)

@@ -83,7 +83,7 @@ def module_checks() -> tuple[tuple[str, Callable[[Context], Row]], ...]:
 LOCAL_ONLY = """
 [stayfixed]
 version = "{version}"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 
 [project]
 name = "p"
@@ -96,7 +96,7 @@ groups = ["developer"]
 OVERLAY = """
 [stayfixed]
 version = "{version}"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 
 [project]
 name = "p"

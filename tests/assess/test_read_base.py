@@ -20,19 +20,28 @@ import pytest
 
 import stayfixed
 from stayfixed import committed, gitenv
-from stayfixed.assess.rule import BASE_NOT_UTF8, read_base
+from stayfixed.assess.base import (
+    BASE_NOT_A_BRANCH,
+    BASE_NOT_UTF8,
+    NO_BASE,
+    PATH_LEAVES,
+    platform_base,
+    platform_root,
+    read_base,
+)
+from stayfixed.assess.report import UNCHANGED
 from stayfixed.committed import NOT_A_REPOSITORY, ROOT_UNANSWERED, repository_prefix
 from stayfixed.config.layout import local_base
 from stayfixed.config.loader import load
 from stayfixed.errors import Failure, Refusal
 from tests.assess.baserepo import clone, commit, shadow
+from tests.cli import cli
 from tests.gitfixture import git, needs_git
 
 pytestmark = needs_git
 
 BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "initialised"
 
 [project]
 name = "widget"
@@ -285,7 +294,7 @@ def test_a_real_latin_1_locale_reads_the_base_copy_as_utf_8(
     script = (
         "import sys\n"
         "from pathlib import Path\n"
-        "from stayfixed.assess.rule import read_base\n"
+        "from stayfixed.assess.base import read_base\n"
         "from stayfixed.errors import Failure\n"
         "for root in sys.argv[1:]:\n"
         "    try:\n"
@@ -323,3 +332,227 @@ def test_a_repository_git_will_not_answer_for_is_not_called_no_repository(
     (broken / ".git").write_text(f"gitdir: {tmp_path / 'gone'}\n", encoding="utf-8")
     with pytest.raises(Failure, match=re.escape(ROOT_UNANSWERED)):
         read_base(broken, REMOTE_MAIN, branch="main")
+
+
+# The platform's base and root: what `stayfixed gate` is handed raw by the reusable workflow, and
+# what the workflow's shell step checked before Python did. Each case is the successor of one of
+# that step's cases, against a real clone whose upstream also has a branch the author pushed, so
+# a `base:` naming it meets a ref that exists, which is the attack, and not a missing one that
+# fails for another reason.
+PUSHED = "a-branch-the-author-pushed"
+
+
+def _platform_clone(tmp_path: Path, *, under: str = "") -> Path:
+    project = clone(tmp_path, BASE, under=under)
+    git(tmp_path / "upstream", "branch", PUSHED)
+    git(project, "fetch", "-q")
+    assert git(project, "rev-parse", f"refs/remotes/origin/{PUSHED}").strip()
+    return project
+
+
+def _platform(project: Path, **values: str) -> str:
+    given = {"pr_base": "", "base_input": "", "default_branch": "", **values}
+    return platform_base(project, **given)
+
+
+def _gate(project: Path, tmp_path: Path, *argv: str) -> tuple[int, str]:
+    """`stayfixed gate` with `argv`, its exit code and both streams together."""
+    code, out, err = cli(project, tmp_path, "gate", *argv)
+    return code, out + err
+
+
+def test_a_tag_named_like_the_tracking_branch_does_not_choose_the_platform_base(
+    tmp_path: Path,
+) -> None:
+    """git resolves a short `origin/main` through `refs/tags/` before `refs/remotes/`, and
+    `fetch-depth: 0` fetches every tag, so whoever may push a tag of that name would choose the
+    configuration every pull request is judged against. The base resolves the fully qualified
+    tracking ref. Mutation (declared): `mutations/`'s "the base resolves through a short name".
+    """
+    project = _platform_clone(tmp_path)
+    shadow(project, "origin/main")
+    resolved = _platform(project, pr_base="main")
+    assert resolved == git(project, "rev-parse", REMOTE_MAIN).strip()
+    assert resolved != git(project, "rev-parse", "refs/tags/origin/main").strip()
+
+
+def test_a_base_input_that_disagrees_with_the_pr_base_is_refused_unechoed(tmp_path: Path) -> None:
+    """On a `pull_request` the caller file runs from the merge commit, the author's copy, so a
+    `base:` naming a branch the author pushed would choose the configuration the change is
+    judged against. `github.base_ref` cannot be written from the branch, so where both are given
+    and differ the base is refused, naming the platform's value and never the author's.
+    Mutation (declared): `mutations/`'s "a disagreeing base input is admitted".
+    """
+    project = _platform_clone(tmp_path)
+    with pytest.raises(Refusal) as refused:
+        _platform(project, pr_base="main", base_input=PUSHED)
+    assert "this pull request's base is main" in str(refused.value)
+    assert PUSHED not in str(refused.value)
+    # Through the command too: a refusal, exit 2, where the shell step exited 1.
+    code, said = _gate(
+        project, tmp_path, "--pr-base=main", f"--base-input={PUSHED}", "--default-branch="
+    )
+    assert code == 2, said
+    assert PUSHED not in said, said
+    # Agreeing is not refused, and `base:` still decides on every event that reports no base,
+    # which is what makes the refusal free.
+    main = git(project, "rev-parse", REMOTE_MAIN).strip()
+    assert _platform(project, pr_base="main", base_input="main") == main
+    assert (
+        _platform(project, base_input=PUSHED)
+        == git(project, "rev-parse", f"refs/remotes/origin/{PUSHED}").strip()
+    )
+
+
+def test_the_platform_base_falls_back_to_the_pr_base_then_the_default_branch(
+    tmp_path: Path,
+) -> None:
+    # The three in the workflow's order, none of them the tree under review: the caller's
+    # `base:`, the pull request's base as the platform reports it, and the repository's default
+    # branch. The pull request's base comes before the default branch, so a pull request into
+    # another branch is judged against that branch. Mutation (declared): `mutations/`'s "the
+    # fallback skips the pull request's base".
+    project = _platform_clone(tmp_path)
+    pushed = git(project, "rev-parse", f"refs/remotes/origin/{PUSHED}").strip()
+    git(tmp_path / "upstream", "commit", "-q", "--allow-empty", "-m", "chore: move main")
+    git(project, "fetch", "-q")
+    main = git(project, "rev-parse", REMOTE_MAIN).strip()
+    assert main != pushed
+    assert _platform(project, pr_base="main") == main
+    assert _platform(project, default_branch="main") == main
+    assert _platform(project, pr_base=PUSHED, default_branch="main") == pushed
+    # With none of the three the base is refused rather than guessed.
+    with pytest.raises(Refusal, match=re.escape(NO_BASE)):
+        _platform(project)
+
+
+def test_a_dotdot_path_is_refused_unechoed(tmp_path: Path) -> None:
+    """The adversary is a caller file whose `path:` points the gates at another checkout's
+    configuration: `../upstream` here is a repository beside the checkout, as `../stayfixed`, the
+    workflow's own, is beside CI's.
+
+    Mutation (declared): `mutations/`'s "a root spelled with '..' is refused as a symlink".
+    """
+    project = _platform_clone(tmp_path)
+    platform = ("--pr-base=main", "--base-input=", "--default-branch=")
+    code, said = _gate(project, tmp_path, *platform, "--path=../upstream", "--only=config")
+    assert code == 2, said
+    assert "../upstream" not in said, said
+
+
+@pytest.mark.parametrize("path", ["/the-other-checkout", "/", ".//", ".//the-other-checkout"])
+def test_an_absolute_path_is_refused_unechoed(tmp_path: Path, path: str) -> None:
+    # An absolute `path:` leaves the checkout without a `..`, and so does one that is absolute
+    # once its leading `./` is dropped. Mutation (declared): `mutations/`'s "an absolute path is
+    # admitted".
+    with pytest.raises(Refusal, match=re.escape(PATH_LEAVES)) as refused:
+        platform_root(tmp_path / "project", path)
+    assert "the-other-checkout" not in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("path", "below"),
+    [
+        ("", ""),
+        (".", ""),
+        ("./", ""),
+        ("./sub/project/", "sub/project"),
+        ("sub/project", "sub/project"),
+        ("a dir with a space", "a dir with a space"),
+        ("проект", "проект"),
+    ],
+)
+def test_a_project_root_below_the_checkout_is_the_root(
+    tmp_path: Path, path: str, below: str
+) -> None:
+    # The `path:` input a monorepo and the smoke fixture use. No character is refused: nothing it
+    # is written into reads a line break as a key, so a root with a space or a name outside ASCII
+    # is a root like any other.
+    checkout = tmp_path / "checkout"
+    assert platform_root(checkout, path) == (checkout / below if below else checkout)
+    # And through the command, where the gates run at that root and read the base's copy there.
+    project = _platform_clone(tmp_path, under=below)
+    code, said = _gate(
+        project,
+        tmp_path,
+        "--pr-base=main",
+        "--base-input=",
+        "--default-branch=",
+        f"--path={path}",
+        "--only=config",
+    )
+    assert code == 0, said
+    # Unchanged, and not the bootstrap: the base's copy was read at the same root the tree's was.
+    assert f"config: {UNCHANGED}" in said, said
+
+
+@pytest.mark.parametrize(
+    ("name", "document"),
+    [
+        ("x\n::error file=README.md,line=1::forged", "not toml = ["),
+        ("y\n::warning::forged", "[bogus]\n"),
+    ],
+    ids=["not-toml", "unknown-section"],
+)
+def test_a_path_holding_a_line_break_prints_no_workflow_command(
+    tmp_path: Path, name: str, document: str
+) -> None:
+    # `path:` is admitted whatever its characters, so a root whose name holds a line break
+    # reaches every message that names the tree's `stayfixed.toml`, and a runner reads a workflow
+    # command from any line of the step's output. Printed through `printed.quoted`, the name
+    # stays on its line.
+    project = _platform_clone(tmp_path)
+    (project / name).mkdir()
+    (project / name / "stayfixed.toml").write_text(document, encoding="utf-8")
+    commit(project, "chore: a root named by the pull request")
+    code, said = _gate(
+        project,
+        tmp_path,
+        "--pr-base=main",
+        "--base-input=",
+        "--default-branch=",
+        f"--path={name}",
+        "--annotate",
+    )
+    assert code == 1, said
+    assert [line for line in said.splitlines() if line.startswith("::")] == [], said
+
+
+@pytest.mark.parametrize("branch", ["a..b", "-x"])
+def test_a_branch_check_ref_format_refuses_is_refused(tmp_path: Path, branch: str) -> None:
+    # A plain call with no mutation entry: it refuses no legitimate branch, and the qualified
+    # ref already decides which commit is read. Never echoed, since `base:` may be what it
+    # refuses; and a refusal, where a range or an option-shaped name would otherwise reach
+    # `rev-parse` and fail as a base missing from the checkout.
+    project = _platform_clone(tmp_path)
+    with pytest.raises(Refusal, match=re.escape(BASE_NOT_A_BRANCH)) as refused:
+        _platform(project, base_input=branch)
+    assert branch not in str(refused.value)
+    code, said = _gate(
+        project, tmp_path, "--pr-base=", f"--base-input={branch}", "--default-branch="
+    )
+    assert code == 2, said
+    assert BASE_NOT_A_BRANCH in said, said
+
+
+def test_a_subset_of_the_platform_base_flags_is_refused(tmp_path: Path) -> None:
+    # The three flags are one form: a subset would read the flags left out as empty, and
+    # beside `--base` one of two forms would be ignored. Each is a refusal before any base is read.
+    project = _platform_clone(tmp_path)
+    code, said = _gate(project, tmp_path, "--pr-base=main")
+    assert code == 2, said
+    assert "missing: --base-input, --default-branch" in said, said
+    code, said = _gate(project, tmp_path, "--base-input=", "--default-branch=main")
+    assert code == 2, said
+    assert "missing: --pr-base" in said, said
+    sha = git(project, "rev-parse", REMOTE_MAIN).strip()
+    code, said = _gate(
+        project, tmp_path, "--base", sha, "--pr-base=main", "--base-input=", "--default-branch="
+    )
+    assert code == 2, said
+    assert "two forms of one input" in said, said
+    # `--path` is admitted with either form, and with neither.
+    code, said = _gate(project, tmp_path, "--base", sha, "--path=.", "--only=config")
+    assert code == 0, said
+    code, said = _gate(project, tmp_path, "--path=.", "--only=config")
+    assert code == 0, said

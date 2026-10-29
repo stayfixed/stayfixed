@@ -75,7 +75,7 @@ READERS = [
         id="personal",
     ),
     pytest.param(
-        lambda t, d: rewrite(d, {("stayfixed", "state"): "adopting"}),
+        lambda t, d: rewrite(d, {("stayfixed", "enforced"): ("docs",)}),
         UnparsedDocument,
         id="owned-rewrite",
     ),
@@ -167,7 +167,7 @@ def test_the_refusal_names_the_file_and_says_why_without_a_position() -> None:
     # nested past the parser has none, and the message says what it has instead.
     with pytest.raises(ConfigError) as refused:
         loads(DEEP, Path("/nowhere"), machine=Path("/nowhere/absent.toml"))
-    assert str(refused.value).endswith(f"stayfixed.toml is not valid TOML {TOO_DEEP}")
+    assert str(refused.value).endswith(f"stayfixed.toml' is not valid TOML {TOO_DEEP}")
 
 
 def test_a_number_past_the_parser_is_refused_in_stayfixeds_words_not_the_interpreters() -> None:
@@ -177,7 +177,7 @@ def test_a_number_past_the_parser_is_refused_in_stayfixeds_words_not_the_interpr
     # as it answers a `TOMLDecodeError` -> the suffix is `NO_POSITION`.
     with pytest.raises(ConfigError) as refused:
         loads(LONG, Path("/nowhere"), machine=Path("/nowhere/absent.toml"))
-    assert str(refused.value).endswith(f"stayfixed.toml is not valid TOML {TOO_LONG}")
+    assert str(refused.value).endswith(f"stayfixed.toml' is not valid TOML {TOO_LONG}")
 
 
 def test_an_integer_of_exactly_the_conversion_limit_still_parses() -> None:

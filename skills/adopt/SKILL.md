@@ -66,4 +66,4 @@ harness's ask-the-user tool, and never run this skill in a forked context: a sub
    - the undo: `stayfixed uninstall`.
 
 What this skill does not do: write a gate or edit `stayfixed.toml`. A gate the brainstorm settles
-on is the user's to add, and the promotion step 5 names is what moves `state` and `enforced`.
+on is the user's to add, and the promotion step 5 names is what lists the gate in `enforced`.

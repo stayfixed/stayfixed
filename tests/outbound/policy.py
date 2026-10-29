@@ -104,6 +104,7 @@ LOCAL = frozenset(
         ("git", "archive"),
         ("git", "cat-file"),
         ("git", "check-ignore"),
+        ("git", "check-ref-format", "--branch"),
         ("git", "config", "--type=path", "--get"),
         ("git", "diff"),
         ("git", "grep"),
@@ -240,6 +241,10 @@ VOUCHED_ELEMENTS: dict[tuple[str, str, str], str] = {
         "which `lint` runs before it asks for any plan's lines"
     ),
     ("src/stayfixed/ledger/check.py", "_base_ledger", "fork"): "a merge base git printed",
+    ("src/stayfixed/assess/base.py", "platform_base", "branch"): (
+        "the one operand of `check-ref-format --branch`, which reads no option after `--branch`: "
+        "a name shaped like an option is refused as a branch name, never read as an option"
+    ),
     ("src/stayfixed/guards/attribute.py", "_extract", "str(archive)"): (
         "the value of `git archive -o` and of `tar -f`, a path under the temporary directory "
         "this run made"

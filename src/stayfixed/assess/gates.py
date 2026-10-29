@@ -3,8 +3,8 @@ project's custom gate is the argv its `[gates.custom.<name>] run` configures.
 
 A built-in's composition lives once, in its area, and that area's command answers with the same
 function or with the one call it wraps, so what `run_gates` judges and what a person runs cannot
-drift apart. Every gate takes `(root, config, base)`, so each one is a value here whether it
-reads the base or not.
+drift apart. Every gate is a `GateFn`, `(root, config, base)`, so each one is a value here
+whether it reads the base or not.
 
 A gate that could not judge the tree is not a passing gate: its result is `answered=False`, and
 `failing` counts it. That is the one contract: a gate function that cannot judge raises a
@@ -41,7 +41,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 from stayfixed import processes
 from stayfixed.docs.api import docs_gate, docs_reads, plan_gate, trail_gate, trail_reads
@@ -54,6 +54,9 @@ if TYPE_CHECKING:
     from stayfixed.config.schema import Config
 
 BASE = "<base>"  # where the base goes in a gate's command; the base itself is never printed
+# Every gate's shape, a built-in's and a custom gate's: `(root, config, base)`, whether the gate
+# reads the base or not, to its findings; a gate that cannot judge the tree raises.
+GateFn: TypeAlias = "Callable[[Path, Config, str], list[Finding]]"
 
 COULD_NOT_RUN = "could not judge this tree; `stayfixed {command}` names the cause"
 CUSTOM_COULD_NOT_RUN = (
@@ -100,7 +103,7 @@ class Gate:
     principle: int | None
     remedy: str
     command: str  # what a person runs for this gate, with BASE where the base goes
-    run: Callable[[Path, Config, str], list[Finding]]
+    run: GateFn
     # The files the gate reads by path, there or not, when an absent one changes its verdict: a
     # checkout that lacks one judges otherwise (`stayfixed.assess.tracked`). `None` for a gate that
     # reads none that way: one that reads git, or a custom gate, whose reads stayfixed cannot know.
@@ -160,7 +163,7 @@ class _NotAnswered(Exception):
         self.reason = reason
 
 
-def _custom(name: str, argv: tuple[str, ...]) -> Callable[[Path, Config, str], list[Finding]]:
+def _custom(name: str, argv: tuple[str, ...]) -> GateFn:
     def run(root: Path, config: Config, base: str) -> list[Finding]:
         seconds = config.gates.custom_timeout_seconds
         not_answered = _NotAnswered(CUSTOM_COULD_NOT_RUN.format(name=name, seconds=seconds))

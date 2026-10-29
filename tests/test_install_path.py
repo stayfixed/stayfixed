@@ -67,7 +67,7 @@ NOTE = (
 
 CONFIG = """[stayfixed]
 version = "{version}"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 
 [project]
 name = "{project}"

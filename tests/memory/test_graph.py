@@ -23,7 +23,7 @@ from stayfixed.memory.store import resolve
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 preset = "recommended"
 profile = ""
 agents = ["claude"]

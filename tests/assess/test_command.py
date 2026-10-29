@@ -10,6 +10,7 @@ import pytest
 
 from stayfixed.assess.assessment import SKIPPED
 from stayfixed.assess.commands import BASE_NOT_THERE
+from stayfixed.assess.gates import COULD_NOT_RUN
 from stayfixed.config.loader import CONFIG_FILE
 from stayfixed.config.paths import STAYFIXED_DIRECTORY
 from stayfixed.project.api import ASSESSMENT
@@ -165,12 +166,16 @@ def test_a_link_where_the_inventory_goes_is_replaced_and_its_target_is_untouched
 
 @needs_git
 def test_a_custom_gate_runs_beside_the_built_ins(tmp_path: Path) -> None:
-    # The fixture is `installed`, so the custom gate enforces from the commit that adds it.
-    # Mutation: `config.gates.builtin` passed to `run_gates` in place of `config.gate_names` ->
-    # the custom gate never runs and the last gate is `trail`.
+    # The commit that adds the custom gate lists it in `enforced` too, so it enforces from that
+    # commit. Mutation: `config.gates.builtin` passed to `run_gates` in place of
+    # `config.gate_names` -> the custom gate never runs and the last gate is `trail`.
     root = smoke_repo(tmp_path)
-    with (root / CONFIG_FILE).open("a", encoding="utf-8") as document:
-        document.write(CUSTOM_GATE)
+    text = (root / CONFIG_FILE).read_text(encoding="utf-8")
+    listed = '"trail"]\n'
+    assert text.count(listed) == 1
+    (root / CONFIG_FILE).write_text(
+        text.replace(listed, '"trail", "tests"]\n') + CUSTOM_GATE, encoding="utf-8"
+    )
     git(root, "commit", "-qam", "chore: a gate of our own")
     code, out, _ = cli(root, tmp_path, "assess", "--base", "HEAD~1", "--json")
     assert code == 0
@@ -226,13 +231,15 @@ def test_assess_after_init_with_no_origin_fetched_names_the_gates_that_cannot_ju
 
 
 @needs_git
-def test_a_roadmap_and_agents_md_kept_out_of_git_fail_trail_and_docs_and_say_what_to_drop(
+def test_a_roadmap_and_agents_md_kept_out_of_git_fail_trail_and_docs_and_docs_says_what_to_drop(
     tmp_path: Path,
 ) -> None:
     # Both gates read the committed place, where a file kept out of git is not, so both fail on
-    # every run; the remedy that told the person to commit the roadmap was the wrong one, and the
-    # configuration reference's answer is to drop the gate. The file's own `[artifacts] local`
-    # is the adopted document's to write: `--local` does not offer these two.
+    # every run. For `docs` the remedy that told the person to commit the file was the wrong one,
+    # and the configuration reference's answer is to drop the gate. With no roadmap the `trail`
+    # gate could not run (#33): no finding and so no item, and its reason names the command that
+    # shows the cause. The file's own `[artifacts] local` is the adopted document's to write:
+    # `--local` does not offer these two.
     root = repository(tmp_path)
     (root / CONFIG_FILE).write_text(
         BASE_DOCUMENT + '\n[artifacts]\nlocal = ["roadmap", "agents-skeleton"]\n', encoding="utf-8"
@@ -247,8 +254,10 @@ def test_a_roadmap_and_agents_md_kept_out_of_git_fail_trail_and_docs_and_say_wha
     failing = {g["name"] for g in printed["gates"] if g["failing"]}
     assert {"trail", "docs"} <= failing
     remedies = {i["probe"]: i["remedy"] for i in printed["items"] if i["probe"] in failing}
-    for gate in ("trail", "docs"):
-        assert f"drops {gate} from [gates] builtin" in remedies[gate]
+    assert "drops docs from [gates] builtin" in remedies["docs"]
+    [trail] = [g for g in printed["gates"] if g["name"] == "trail"]
+    assert (trail["answered"], trail["count"]) == (False, 0), trail
+    assert trail["reason"] == COULD_NOT_RUN.format(command="docs trail --check"), trail
 
 
 @needs_git

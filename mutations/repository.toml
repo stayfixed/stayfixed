@@ -894,8 +894,8 @@ reddens = ["tests/test_neutral.py::test_a_token_hit_names_the_offset_of_its_firs
 # listing — is what a stranger reads before the README, and all four of its strings advertised
 # "an adoption state machine" while `stayfixed assess` did not exist and the README listed it
 # under **Not yet**. The release check reads versions, never descriptions, so nothing
-# looked. This put that claim back into the widest-reach of the four until the state machine
-# shipped and left the README's list; it now puts in the memory MCP server, which has not.
+# looked. This put that claim back into the widest-reach of the four until adoption shipped and
+# left the README's list; it now puts in the memory MCP server, which has not.
 [[mutation]]
 name = "the PyPI description advertises the unshipped memory MCP server"
 file = "pyproject.toml"
@@ -916,7 +916,7 @@ reddens = [
 # entry's `before` back out of its file and counting. Re-pointed again when the profile adapters
 # rewrote the sentence to eight items that each leave it in the change that ships them, and again as
 # `upgrade` and then `uninstall` shipped and left it, and again as `assess` shipped, and again as
-# the state machine shipped, and again when the release commands left the sentence before it, and
+# adoption shipped, and again when the release commands left the sentence before it, and
 # again when the paragraph around it was rewrapped; the mutation cuts it back to one.
 [[mutation]]
 name = "the README's not-yet sentence stops naming what has not shipped"

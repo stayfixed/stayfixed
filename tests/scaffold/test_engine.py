@@ -33,7 +33,6 @@ from stayfixed.scaffold.regions import Style, upsert
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "initialised"
 preset = "recommended"
 profile = ""
 agents = ["claude"]

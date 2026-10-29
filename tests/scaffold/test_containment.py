@@ -19,7 +19,6 @@ from tests.runners import LsRemote
 VALID_HEAD = """
 [stayfixed]
 version = "0.1.0"
-state = "initialised"
 preset = "recommended"
 profile = ""
 agents = ["claude"]

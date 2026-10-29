@@ -43,8 +43,7 @@ UNFILED = "Unfiled"
 # document name can cost to place, whatever the repository wrote.
 THEMES_MAX = 32
 TOO_MANY_THEMES = f"a trail.toml holds at most {THEMES_MAX} [[theme]] tables"
-# The `trail` gate's two findings, which `docs trail --check` tells apart by rule.
-ROADMAP_MISSING = "roadmap-missing"
+# The `trail` gate's finding: a listing that is not what `rebuild` would write.
 TRAIL_STALE = "trail-stale"
 DELIVERED = "delivered"
 _ROW = re.compile(r"^- \[`([^`]+)`\]", re.MULTILINE)
@@ -114,7 +113,7 @@ def trail_path(root: Path, config: Config) -> Path:
 def trail_reads(root: Path, config: Config) -> list[Path]:
     """The files the `trail` gate reads by path, there or not: the roadmap, and the `trail.toml`
     whose states the listing is rebuilt from. A CI checkout that lacks the roadmap fails the gate
-    (`roadmap-missing`), and one that lacks `trail.toml` rebuilds the listing without the states.
+    (it could not run), and one that lacks `trail.toml` rebuilds the listing without the states.
     """
     return [contained(root, config.paths.roadmap), trail_path(root, config)]
 
@@ -390,15 +389,16 @@ def rebuild(text: str, root: Path, config: Config, trail: Trail) -> str:
     return head + _PREAMBLE + render_listing(root, config, trail) + tail.lstrip("\n")
 
 
-def trail_gate(root: Path, config: Config, base: str = "") -> list[Finding]:
+def trail_gate(root: Path, config: Config, _base: str = "") -> list[Finding]:
     """The `trail` gate's whole composition: the roadmap's listing, as `rebuild` would write it.
 
-    `docs trail --check` answers with this function. `base` is unread: every gate takes the same
-    three arguments, so `stayfixed.assess.gates` holds each one as a value.
+    `docs trail --check` answers with this function. `_base` is unread: every gate is a
+    `stayfixed.assess.gates.GateFn`, so that module holds each one as a value. A missing roadmap
+    is a gate that cannot judge the tree, and raises as every such gate does.
     """
     roadmap = contained(root, config.paths.roadmap)
     if not fsops.is_file(roadmap):
-        return [Finding(ROADMAP_MISSING, config.paths.roadmap, None, "")]
+        raise Failure(f"{config.paths.roadmap} does not exist")
     current = read_document(roadmap, config.paths.roadmap)
     trail = load_trail(root, config)
     if current == rebuild(current, root, config, trail):

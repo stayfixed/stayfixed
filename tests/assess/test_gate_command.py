@@ -15,17 +15,21 @@ from pathlib import Path
 import pytest
 
 import stayfixed
-from stayfixed.assess import rule
+from stayfixed.assess.change import gate_change
 from stayfixed.assess.gates import STOPPED
 from stayfixed.assess.report import (
     BOOTSTRAP,
     BUILTIN_FINDINGS_ELSEWHERE,
     FINDINGS_ELSEWHERE,
     NOT_ON_BASE,
+    gate_row,
 )
 from stayfixed.cli import build_parser, discover_registrars, run
+from stayfixed.command import command_owner
 from stayfixed.config.loader import CONFIG_FILE
 from tests.assess.baserepo import AGENTS, clone, commit
+from tests.assess.smoke import BASE as SMOKE_BASE
+from tests.assess.smoke import smoke_repo
 from tests.cli import cli, custom_gate
 from tests.gitfixture import git, needs_git
 from tests.parserlimits import LONG_HEX, LONG_NUMBER, PAST_FLOAT
@@ -34,7 +38,6 @@ pytestmark = needs_git
 
 BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "adopting"
 enforced = ["docs"]
 
 [project]
@@ -88,7 +91,7 @@ def test_json_carries_the_verdict_and_each_gate_s_count_and_no_finding(tmp_path:
     code, out, _ = cli(project, tmp_path, "gate", "--only", "config", "--only", "docs", "--json")
     assert code == 1
     printed = json.loads(out)
-    assert set(printed["config"]) == {"judged", "base_state", "changes", "refused", "enforcing"}
+    assert set(printed["config"]) == {"judged", "changes", "refused", "enforcing"}
     assert printed["config"]["changes"] == [{"key": "stayfixed.enforced", "verdict": "refused"}]
     assert printed["config"]["refused"] is True
     assert printed["gates"] == [
@@ -115,16 +118,17 @@ def test_an_enforced_custom_gate_runs_its_command_and_fails_on_its_exit_status(
     assert "tests: enforcing, 1 finding(s)" in out.splitlines()
 
 
-def test_a_built_in_gate_added_under_installed_enforces_in_the_run_that_adds_it(
+def test_a_built_in_gate_added_and_listed_enforces_in_the_run_that_adds_it(
     tmp_path: Path,
 ) -> None:
-    # Under `installed` every gate the project runs enforces, so the pull request that adds a
-    # built-in gate is held to it at once: the enforcing set is the base's and the tree's.
-    # Mutation: `judge` enforcing the base's set alone (declared against the rule's own tests)
-    # -> `docs` is advisory here and the run passes.
-    installed = BASE.replace('state = "adopting"\nenforced = ["docs"]\n', 'state = "installed"\n')
-    project = clone(tmp_path, installed + '\n[gates]\nbuiltin = ["bugs"]\n')
-    _change(project, installed + '\n[gates]\nbuiltin = ["docs", "bugs"]\n', agents=OVER_BUDGET)
+    # The pull request that adds a built-in gate and lists it in `enforced` is held to it at
+    # once: the enforcing set is the base's and the tree's. Mutation: `judge` enforcing the
+    # base's set alone (declared against the rule's own tests) -> `docs` is advisory here and the
+    # run passes.
+    base = BASE.replace('["docs"]', '["bugs"]') + '\n[gates]\nbuiltin = ["bugs"]\n'
+    tree = BASE.replace('["docs"]', '["docs", "bugs"]') + '\n[gates]\nbuiltin = ["docs", "bugs"]\n'
+    project = clone(tmp_path, base)
+    _change(project, tree, agents=OVER_BUDGET)
     code, out, _ = cli(project, tmp_path, "gate")
     assert code == 1
     lines = out.splitlines()
@@ -267,7 +271,6 @@ def test_a_custom_gate_the_base_does_not_enforce_waits_for_its_new_command_to_la
 
 POLICY_BASE = f"""[stayfixed]
 version = "{stayfixed.__version__}"
-state = "adopting"
 enforced = ["policy"]
 
 [project]
@@ -958,7 +961,7 @@ def test_a_base_the_checkout_lacks_fails_the_run_and_names_the_fix(
     # The local remedy, for a clone with no origin, is the base branch this tree configures,
     # spelled out as `assess` and `adopt promote` spell it: the refusal once printed a
     # placeholder for it. The loader holds the name to the branch grammar, so it prints as is.
-    # `develop`, so neither `main` nor a placeholder passes. Mutation (advisory): `run_gate`
+    # `develop`, so neither `main` nor a placeholder passes. Mutation (advisory): `gate_change`
     # passing `branch="main"` to `read_base` -> both cases redden.
     project = clone(tmp_path, BASE)
     _change(project, BASE + 'base_branch = "develop"\n')
@@ -978,11 +981,11 @@ def test_an_unexpected_error_reading_the_base_is_never_the_bootstrap(
     project = clone(tmp_path, BASE)
     _change(project, LOOSENED)
 
-    # Whatever keywords `run_gate` passes, so the error is this one and not a `TypeError`.
+    # Whatever keywords `gate_change` passes, so the error is this one and not a `TypeError`.
     def broken(root: Path, base: str, **_: object) -> str | None:
         raise OSError("disk")
 
-    monkeypatch.setattr(rule, "read_base", broken)
+    monkeypatch.setattr("stayfixed.assess.change.read_base", broken)
     code, _, err = cli(project, tmp_path, "gate", "--only", "config")
     assert code == 2
     assert "internal error: OSError: disk" in err, err
@@ -1086,3 +1089,29 @@ def test_a_timeout_too_large_for_its_reader_fails_the_gate_with_the_configuratio
     assert code == 1, err
     assert "gates.custom_timeout_seconds must be a positive integer below" in out + err
     assert "internal error" not in out + err
+
+
+def test_gate_change_returns_the_run_the_command_prints(tmp_path: Path) -> None:
+    # `stayfixed gate`'s decisions are the domain's (#33): the command parses, asks
+    # `gate_change` once and renders what it returns. So the run the domain returns is the one
+    # the command prints, row for row, under the same arguments.
+    root = smoke_repo(tmp_path)
+    machine = tmp_path / "absent.toml"
+    base = git(root, "rev-parse", SMOKE_BASE).strip()
+    run_ = gate_change(
+        root,
+        base=base,
+        only=None,
+        part=None,
+        machine=machine,
+        owner=command_owner(machine),
+        workflow_sha=None,
+        running=stayfixed.__version__,
+        released=lambda _sha: None,
+    )
+    code, out, err = cli(root, tmp_path, "gate", "--base", base, "--json")
+    assert code == run_.exit_code, err
+    enforcing = run_.verdict.enforcing
+    rows = [gate_row(r, enforcing=r.name in enforcing) for r in run_.results]
+    assert json.loads(out)["gates"] == rows
+    assert [row["name"] for row in rows] == ["docs", "bugs", "plan", "commit", "trail"]

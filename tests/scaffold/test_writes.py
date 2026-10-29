@@ -26,7 +26,6 @@ from stayfixed.scaffold.manifest import MANIFEST_PATH
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "initialised"
 preset = "recommended"
 profile = ""
 agents = ["claude"]

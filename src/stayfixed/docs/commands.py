@@ -47,7 +47,6 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
     from stayfixed.config.paths import contained
     from stayfixed.docs.hygiene import read_document
     from stayfixed.docs.trail import (
-        ROADMAP_MISSING,
         load_trail,
         rebuild,
         trail_gate,
@@ -55,22 +54,20 @@ def run_docs_trail(args: argparse.Namespace) -> Result:
     )
 
     root, config = root_and_config(args)
-    missing = Result(f"{config.paths.roadmap} does not exist", {"stale": None}, exit_code=1)
-    # `--check` is the `trail` gate itself, answered before anything else is read.
+    # The roadmap first, for both: the `trail` gate raises for a missing one, as a gate that
+    # cannot judge the tree does, and this command answers it in its own words.
+    roadmap = contained(root, config.paths.roadmap)
+    if not fsops.is_file(roadmap):
+        return Result(f"{config.paths.roadmap} does not exist", {"stale": None}, exit_code=1)
+    # `--check` is the `trail` gate itself, answered next, before anything else is read.
     if args.check:
-        found = trail_gate(root, config)
-        if not found:
+        if not trail_gate(root, config):
             return Result(f"OK: {config.paths.roadmap} trail listing is current", {"stale": False})
-        if found[0].rule == ROADMAP_MISSING:
-            return missing
         return Result(
             f"{config.paths.roadmap} trail listing is stale; run: stayfixed docs trail",
             {"stale": True},
             exit_code=1,
         )
-    roadmap = contained(root, config.paths.roadmap)
-    if not fsops.is_file(roadmap):
-        return missing
     trail = load_trail(root, config)
     current = read_document(roadmap, config.paths.roadmap)
     updated = rebuild(current, root, config, trail)

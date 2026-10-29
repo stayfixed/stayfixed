@@ -288,7 +288,7 @@ def long_file_of_gates_that_run() -> str:
     `tests/hooks/test_floor.py` times a hook over the same file."""
     names = [f"v{n}" for n in range(ENFORCED_GATES)]
     enforced = ", ".join(f'"{name}"' for name in names)
-    head = HEAD.replace("\n", f'\nstate = "adopting"\nenforced = [{enforced}]\n', 1)
+    head = HEAD.replace("\n", f"\nenforced = [{enforced}]\n", 1)
     gates = "".join(f'{name} = {{ run = ["true"] }}\n' for name in names)
     paths = "".join(f'{name} = "../x"\n' for name in UNCONTAINED)
     return head + '[project]\nname = "sample"\n[paths]\n' + paths + "[gates.custom]\n" + gates

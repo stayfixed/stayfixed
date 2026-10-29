@@ -32,7 +32,7 @@ from tests.snapshot import assert_snapshot_unchanged, snapshot
 CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 preset = "recommended"
 profile = ""
 agents = ["claude"]
@@ -772,7 +772,7 @@ def test_an_index_extra_entry_that_merely_ends_in_a_line_break_is_dropped(tmp_pa
 OVERLAY_CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 preset = "recommended"
 profile = ""
 agents = ["claude"]
@@ -946,7 +946,7 @@ def test_a_machine_owned_notes_curated_line_still_reaches_the_shared_index(
 NESTED_CONFIG = """
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 preset = "recommended"
 profile = ""
 agents = ["claude"]

@@ -1,46 +1,25 @@
-"""The base a change is judged against, where in it the base's `stayfixed.toml` is, and the rule
-that judges the change's own `stayfixed.toml` against it.
+"""The rule that judges a change's `stayfixed.toml` against its base's.
 
 A pull request may tighten what its base branch enforces and may not loosen it, so the base's
-configuration is the one that governs the run and the change's own is judged against it. Both
-halves of that depend on reading the right document, and each way of reading the wrong one ends
-in the same place: a base with no `stayfixed.toml` at the project's path is the bootstrap, where
-the change decides its own configuration. So nothing here reads "git did not answer" as "no
-copy", and every name and path git would resolve on the caller's behalf is pinned first.
-
-**Which commit.** In CI it is a full commit id the workflow resolved once from the remote-tracking
-ref of the base branch, whose name comes from the platform or from the caller workflow's literal
-input, which code owners guard (`docs/cli.md#the-reusable-workflow` names the repository
-settings). Locally it is `config.layout.local_base`, the remote-tracking ref of `[project]
-base_branch`, and
-advice only: a local run judges nothing anyone else relies on. Either way `--base` is a full
-commit id or a full `refs/…` name, never a short one, because git resolves a short name through
-the tags first and a tag of the same spelling would stand in for the branch.
-
-**Where in it.** At the project root's path inside the repository, as git spells it. A root
-reached through a symlink below the repository's top, or spelled otherwise than git spells it (a
-case-folding disk), is refused rather than guessed at: the base's copy would be looked for at the
-place the link or the spelling names, which a change can make empty. A link above the
-repository is the machine's (`/tmp` on macOS, a symlinked home) and is admitted.
+configuration is the one that governs the run and the change's own is judged against it. Which
+commit the base is, and where in it the base's copy is, are `stayfixed.assess.base`'s.
 
 **What the change may do.** Each side goes through the loader and the rule compares what it
 derives, key by dotted key: each budget by its effective value, each custom gate as one key per
-field. A comment, a key spelled out at its default, a reordered `enforced` or `[gates] builtin`
-and `installed` beside a list that says the same are therefore no change. Every changed key gets
-one verdict, and a key's class (`config.classes`) is asked first: a preference, the machine
-owner's key and the plugin's are neutral, because no gate judges a pull request by them. The
-change may enforce more gates and move its state forward (`initialised`, `adopting`,
-`installed`); add a gate, and drop or re-command one the base does not enforce; lower a budget, a
-gate's or a session's, which the base branch may set above the preset or below it; and add to
-`[ledger] code_roots` and `evidence_boundary_required_for`. The preset's name, the harnesses and
-the project's name are neutral too, because no gate reads them; every value a preset switch moves
-is judged by its own key. The
-recorded version and the workflow pin move together as an upgrade: to exactly the running
-stayfixed, never below the base's by the reader `stayfixed upgrade` refuses by, and a moved pin
-only at the commit the platform says is running and a public release tag names. Any other key is
-refused while the base enforces any gate, because the rule cannot know which way a free-form key
-moves, and noted while it enforces none; routine upkeep under enforcement lands by a direct push
-to the base branch.
+field. A comment, a key spelled out at its default and a reordered `enforced` or `[gates] builtin`
+are therefore no change. Every changed key gets one verdict, and a key's class (`config.classes`)
+is asked first: a preference, the machine owner's key and the plugin's are neutral, because no
+gate judges a pull request by them. The change may enforce more gates, by listing them in
+`[stayfixed] enforced`; add a gate, and drop or re-command one the base does not enforce; lower a
+budget, a gate's or a session's, which the base branch may set above the preset or below it; and
+add to `[ledger] code_roots` and `evidence_boundary_required_for`. The preset's name, the
+harnesses and the project's name are neutral too, because no gate reads them; every value a preset
+switch moves is judged by its own key. The recorded version and the workflow pin move together as
+an upgrade: to exactly the running stayfixed, never below the base's by the reader `stayfixed
+upgrade` refuses by, and a moved pin only at the commit the platform says is running and a public
+release tag names. Any other key is refused while the base enforces any gate, because the rule
+cannot know which way a free-form key moves, and noted while it enforces none; routine upkeep
+under enforcement lands by a direct push to the base branch.
 
 The run then uses the tree's configuration, or the base's when anything was refused, and
 enforces the gates either side enforces: adding the tree's never loosens, and a refusal already
@@ -51,40 +30,19 @@ values never do.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, replace
 from enum import StrEnum
 from pathlib import Path
 
-from stayfixed.committed import (
-    committed_document,
-    repository_prefix,
-)
+from stayfixed.assess.base import read_base
 from stayfixed.config.classes import KeyClass, class_of
 from stayfixed.config.loader import CONFIG_FILE, loads
 from stayfixed.config.owner import Owner
-from stayfixed.config.reading import NOT_UTF8
-from stayfixed.config.schema import STATES, Budgets, Config, CustomGate
+from stayfixed.config.schema import Budgets, Config, CustomGate
 from stayfixed.errors import Failure, Refusal
-from stayfixed.gitenv import git_run
 from stayfixed.semver import later
 
-# Formatted with `[project] base_branch`, which the loader holds to the branch grammar.
-BASE_UNREADABLE = (
-    "the base is not in this checkout, or git could not read its stayfixed.toml, so the "
-    "configuration that governs this change cannot be read; check out with full history "
-    "(fetch-depth: 0), or pass a --base that exists, such as refs/heads/{branch} in a clone "
-    "with no origin"
-)
-BASE_SHAPE = (
-    "--base takes a full 40-character commit id or a full ref name starting with refs/: a "
-    "shorter name is resolved by git, and a tag of the same spelling wins"
-)
-# The loader's own sentence for a tree copy that is not UTF-8, so the base's copy is refused in
-# the words the tree's is: git hands the blob over losslessly, with a surrogate escape for each
-# byte that is not UTF-8, and `tomllib` would parse those.
-BASE_NOT_UTF8 = NOT_UTF8.format(path=f"the base's {CONFIG_FILE}")
 # What the loader calls the base's copy, so its reason names the right file: the loader's own
 # words would name `<root>/stayfixed.toml`, which is the change's copy.
 BASE_COPY = f"the base's {CONFIG_FILE}"
@@ -99,56 +57,6 @@ BASE_DOES_NOT_LOAD = (
     "the base's stayfixed.toml governs this change and does not load, so the change cannot be "
     "judged; fix it on the base branch by a direct push ({reason})"
 )
-BASE_REF = re.compile(r"\A(?:[0-9a-f]{40}|refs/[A-Za-z0-9._/-]+)\Z")
-
-
-def _unreadable(branch: str) -> Failure:
-    """ "git did not answer" is never read as "no copy". The failure's remedy names `branch`, the
-    configured base branch."""
-    return Failure(BASE_UNREADABLE.format(branch=branch))
-
-
-def _read(root: Path, *args: str, branch: str) -> str:
-    """git's answer, or the run fails as `_unreadable` says."""
-    code, out = git_run(root, *args)
-    if code != 0:
-        raise _unreadable(branch)
-    return out
-
-
-def read_base(root: Path, base: str, *, branch: str, prefix: str | None = None) -> str | None:
-    """The base's `stayfixed.toml` at the project's own path, or `None` when git listed nothing
-    there: the bootstrap, and the only answer that means it. Any other git failure fails the run,
-    and so does a copy that is not UTF-8 text, which is never parsed. `branch` is `[project]
-    base_branch`, which a base the checkout lacks names as the local remedy. `prefix` is
-    `repository_prefix(root)`, asked here unless the caller already has it.
-    """
-    if not BASE_REF.match(base):
-        raise Refusal(BASE_SHAPE)
-    if prefix is None:
-        prefix = repository_prefix(root)
-    if base.startswith("refs/"):
-        # Exactly this ref: when it is missing, git would take `refs/tags/<base>` instead.
-        _read(root, "show-ref", "--verify", "--quiet", "--end-of-options", base, branch=branch)
-    commit = _read(
-        root,
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        "--end-of-options",
-        f"{base}^{{commit}}",
-        branch=branch,
-    ).strip()
-    raw = committed_document(
-        root, commit, CONFIG_FILE, prefix=prefix, failed=lambda _code: _unreadable(branch)
-    )
-    if raw is None:
-        return None
-    # Read as UTF-8 the way the loader reads the tree's copy.
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise Failure(BASE_NOT_UTF8) from None
 
 
 class Verdict(StrEnum):
@@ -171,7 +79,6 @@ class Change:
 
 @dataclass(frozen=True)
 class ConfigVerdict:
-    base_state: str | None  # None: the base has no copy at this path (the bootstrap)
     changes: tuple[Change, ...]  # sorted by key
     config: Config  # the tree's, or the base's when anything was refused
     enforcing: frozenset[str]  # the base's and the tree's
@@ -179,6 +86,7 @@ class ConfigVerdict:
     # gates execute and in what order; none under the bootstrap.
     base_custom: Mapping[str, CustomGate] = field(default_factory=dict)
     base_enforcing: frozenset[str] = frozenset()
+    bootstrap: bool = False  # the base has no copy at this path, so the tree decides
 
     @property
     def refused(self) -> bool:
@@ -210,7 +118,6 @@ class _Sides:
 
 Row = Callable[[str, _Sides], Verdict]
 
-_ORDER = {state: index for index, state in enumerate(STATES)}
 # Lists whose order no reader sees: `enforcing` is a set, and `gate_names` orders built-ins itself.
 _UNORDERED = frozenset({"stayfixed.enforced", "gates.builtin"})
 
@@ -224,15 +131,13 @@ def _other(key: str, sides: _Sides) -> Verdict:
     return Verdict.REFUSED if sides.base.stayfixed.enforcing else Verdict.NOTED
 
 
-def _enforcement(key: str, sides: _Sides) -> Verdict:
-    """`state` and `enforced` are one fact: every gate the base enforces still enforces, and the
-    lifecycle does not move back."""
-    before, after = sides.base.stayfixed, sides.tree.stayfixed
-    backward = _ORDER[after.state] < _ORDER[before.state]
-    if backward or not after.enforcing >= before.enforcing:
+def _enforced(key: str, sides: _Sides) -> Verdict:
+    """`enforced`, the one adoption key: every gate the base lists is still listed, and a list
+    that names more tightens."""
+    before, after = sides.base.stayfixed.enforcing, sides.tree.stayfixed.enforcing
+    if not after >= before:
         return Verdict.REFUSED
-    grew = after.enforcing > before.enforcing or after.state != before.state
-    return Verdict.TIGHTENED if grew else Verdict.NEUTRAL
+    return Verdict.TIGHTENED if after > before else Verdict.NEUTRAL
 
 
 def _builtin_gates(key: str, sides: _Sides) -> Verdict:
@@ -282,8 +187,7 @@ def _upgrade(key: str, sides: _Sides) -> Verdict:
 
 
 ROWS: Mapping[str, Row] = {
-    "stayfixed.state": _enforcement,
-    "stayfixed.enforced": _enforcement,
+    "stayfixed.enforced": _enforced,
     "gates.builtin": _builtin_gates,
     "stayfixed.version": _upgrade,
     "ci.ref": _upgrade,
@@ -390,7 +294,7 @@ def judge(
     """
     tree = loads(tree_text, root, machine=machine, owner=owner)
     if base_text is None:
-        return ConfigVerdict(None, (), tree, tree.stayfixed.enforcing)
+        return ConfigVerdict((), tree, tree.stayfixed.enforcing, bootstrap=True)
     try:
         base = loads(base_text, root, machine=machine, label=BASE_COPY, owner=owner)
     except Failure as exc:
@@ -414,7 +318,6 @@ def judge(
     )
     enforcing = base.stayfixed.enforcing | tree.stayfixed.enforcing
     verdict = ConfigVerdict(
-        base.stayfixed.state,
         changes,
         tree,
         enforcing,

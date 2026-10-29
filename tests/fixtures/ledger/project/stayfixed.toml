@@ -4,7 +4,7 @@
 # this tree: each of four findings once.
 [stayfixed]
 version = "0.1.0"
-state = "installed"
+enforced = ["docs", "bugs", "plan", "commit", "trail"]
 
 [project]
 name = "ledger"

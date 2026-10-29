@@ -19,6 +19,7 @@ from stayfixed.command import command_owner, common_flags, grammar, root_and_con
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
+    from stayfixed.assess.base import PlatformBase
     from stayfixed.assess.state import Transition
 
 ASSESS_HELP = (
@@ -42,6 +43,31 @@ BASE_REF_HELP = (
     "default refs/remotes/origin/<project.base_branch>"
 )
 ONLY_HELP = "run only this gate, or `config` for the configuration check alone; repeat for several"
+PR_BASE_HELP = (
+    "the pull request's base as the platform reports it, empty on any other event; with "
+    "--base-input and --default-branch, in place of --base"
+)
+BASE_INPUT_HELP = (
+    "the caller workflow's base: input, empty for none; refused when it names another branch "
+    "than --pr-base"
+)
+DEFAULT_BRANCH_HELP = "the repository's default branch, the base when the other two are empty"
+PATH_HELP = (
+    "the project root inside --root, as the caller workflow's path: input gives it; refused "
+    "when it leaves --root"
+)
+# The platform's base is one form: the three flags the reusable workflow passes together, read in
+# one order (`stayfixed.assess.base.platform_base`). A subset would be read as "empty" for the
+# flags left out, and beside `--base` one of the two forms would be silently ignored.
+PLATFORM_FLAGS = ("--pr-base", "--base-input", "--default-branch")
+PLATFORM_SUBSET = (
+    "--pr-base, --base-input and --default-branch are one form, the platform's base, and go "
+    "together; missing: {missing}"
+)
+PLATFORM_AND_BASE = (
+    "--base and the platform's base (--pr-base, --base-input, --default-branch) are two forms of "
+    "one input; pass one"
+)
 WORKFLOW_SHA_HELP = (
     "the commit of the reusable workflow running, which the workflow passes from the platform; "
     "an upgrade's [ci] ref is admitted only when it equals this"
@@ -53,12 +79,7 @@ BUILTIN_HELP = (
     "from [gates.custom] runs"
 )
 CUSTOM_HELP = "the gates from [gates.custom] only, with no configuration check"
-NO_TREE_CONFIG = (
-    "this tree has no stayfixed.toml at the project root, so nothing says which gates run; "
-    "the run fails rather than pass a change it cannot judge"
-)
-NOTHING_TO_RUN = "nothing to run: no configured gate of the kind asked for"
-ADOPT_HELP = "the adoption state machine: promote gates from advisory to enforcing as they pass"
+ADOPT_HELP = "adoption: promote gates from advisory to enforcing as they pass"
 PROMOTE_HELP = "enforce the named gates if all pass now; with none named, each gate that passes"
 PROMOTE_BUILTIN_HELP = (
     "the built-in gates only: no command from [gates.custom] runs, so no custom gate is "
@@ -98,10 +119,6 @@ UNASKED_NOTE = (
     "note: git gave no answer to whether it tracks the files {gate} reads, so {gate} is not "
     "enforced; {remedy}"
 )
-ONLY_UNKNOWN = (
-    "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
-    "the configuration check, and every other name is a gate from [gates]"
-)
 
 
 def _base_missing(root: Path, base: str, unanswered: set[str]) -> bool:
@@ -133,15 +150,31 @@ def run_assess(args: argparse.Namespace) -> Result:
     return Result(summary, document(assessment), exit_code=1 if assessment.would_fail else 0)
 
 
+def _platform(args: argparse.Namespace, checkout: Path) -> PlatformBase | None:
+    """The platform's base `stayfixed gate` was given, `None` when it was given `--base` or
+    neither; a subset of its three flags, or the form beside `--base`, is refused."""
+    from stayfixed.assess.base import PlatformBase
+    from stayfixed.errors import Refusal
+
+    given = (args.pr_base, args.base_input, args.default_branch)
+    if all(value is None for value in given):
+        return None
+    missing = [flag for flag, value in zip(PLATFORM_FLAGS, given, strict=True) if value is None]
+    if missing:
+        raise Refusal(PLATFORM_SUBSET.format(missing=", ".join(missing)))
+    if args.base is not None:
+        raise Refusal(PLATFORM_AND_BASE)
+    return PlatformBase(checkout, args.pr_base, args.base_input, args.default_branch)
+
+
 def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed import __version__
-    from stayfixed.assess import rule
-    from stayfixed.assess.gates import GateContext, run_gates
+    from stayfixed.assess.base import platform_root
+    from stayfixed.assess.change import NOTHING_TO_RUN, gate_change
     from stayfixed.assess.report import (
         BUILTIN_FINDINGS_ELSEWHERE,
         FINDINGS_ELSEWHERE,
         NOT_ON_BASE,
-        GateRun,
         config_line,
         gate_line,
         gate_row,
@@ -149,91 +182,36 @@ def run_gate(args: argparse.Namespace) -> Result:
         summary,
         workflow_commands,
     )
-    from stayfixed.committed import repository_prefix
-    from stayfixed.config.layout import local_base
-    from stayfixed.config.loader import loads, read_document
-    from stayfixed.config.reading import ConfigError
-    from stayfixed.config.schema import CONFIG_CHECK
-    from stayfixed.errors import Refusal
     from stayfixed.release.api import is_released
     from stayfixed.runner import subprocess_runner
 
-    root = Path(args.root).absolute()
-    prefix = repository_prefix(root)
+    checkout = Path(args.root).absolute()
+    platform = _platform(args, checkout)
+    root = checkout if args.path is None else platform_root(checkout, args.path)
     machine = Path(args.machine) if args.machine else None
-    tree_text = read_document(root)
-    if tree_text is None:
-        raise ConfigError(NO_TREE_CONFIG)
-    # The tree's configuration is read here for its default base and the branch a base the
-    # checkout lacks is named by, and kept nowhere: every later decision is the verdict's, and a
-    # name for the tree's copy in scope is one a later line could pick in its place.
-    # The owner's layer, once for the run: the tree's load here and both of the verdict's take it,
-    # so what the machine file read past is said once and not once a document.
+    # The owner's layer, once for the run: the tree's load and both of the verdict's take it, so
+    # what the machine file read past is said once and not once a document.
     owner = command_owner(machine)
-    tree = loads(tree_text, root, machine=machine, owner=owner)
-    default, branch = local_base(tree), tree.project.base_branch
-    del tree
-    base = args.base or default
     runner = subprocess_runner()
-    verdict = rule.judge(
+    gate_run = gate_change(
         root,
-        rule.read_base(root, base, branch=branch, prefix=prefix),
-        tree_text,
+        base=args.base,
+        platform=platform,
+        only=args.only,
+        part=args.part,
         machine=machine,
-        running=__version__,
-        workflow_sha=args.workflow_sha,
-        released=lambda sha: is_released(sha, runner, cwd=root),
         owner=owner,
+        workflow_sha=args.workflow_sha,
+        running=__version__,
+        released=lambda sha: is_released(sha, runner, cwd=root),
     )
-    # The configuration this run uses is the verdict's: the base's when anything was refused, so
-    # the names it runs, which of them are custom, and the paths and commands the gates read are
-    # all the base's then. `enforcing` is both sides', so it can name a gate only the refused
-    # tree defines; that gate is not run, and the refusal already fails the run.
-    configured = verdict.config.gate_names
-    only = tuple(dict.fromkeys(args.only or (CONFIG_CHECK, *configured)))
-    stray = [name for name in only if name != CONFIG_CHECK and name not in configured]
-    if stray:
-        # Counted, never echoed: the names come from the caller workflow, which the pull request
-        # can edit.
-        raise Refusal(ONLY_UNKNOWN.format(count=len(stray)))
-    # The workflow's two steps: the one that judges runs no command the repository wrote, and
-    # the custom gates run in the next, after it passed. A name of the other kind is that
-    # step's to run, so it is skipped here and not refused.
-    custom = verdict.config.gates.custom
-    if args.part == "builtin":
-        only = tuple(name for name in only if name not in custom)
-        # The judging step judges the configuration whatever `--only` names: `--only` comes from
-        # the caller workflow, which the pull request can edit, and a leg that names one gate
-        # would otherwise run it under the base's configuration and never meet the refusal.
-        only = tuple(dict.fromkeys((CONFIG_CHECK, *only)))
-    elif args.part == "custom":
-        only = tuple(name for name in only if name in custom)
-    # A custom gate executes only with the base's own command, and the base's enforced gates
-    # run before any other: a gate the change adds or re-commands runs files it wrote, and run
-    # first it could rewrite what an enforced gate executes. It waits until it lands on the base,
-    # and never fails the run meanwhile, since the base enforces no command it lacks.
-    waiting = tuple(name for name in only if name in custom and name not in verdict.landed)
-    names = [n for n in only if n != CONFIG_CHECK and n not in waiting]
-    context = GateContext(root, verdict.config, base)
-    judged = CONFIG_CHECK in only
-    # A custom gate, one the base enforces included, can run files the change can edit, in the
-    # process that holds the verdict: on a hosted runner with passwordless `sudo`, enough to
-    # rewrite or end that process. So the configuration check and the built-ins decide the run
-    # first, then the base's enforced custom gates, and once it has failed no custom gate starts.
-    results = run_gates(
-        context,
-        names,
-        first=verdict.base_enforcing,
-        failed=lambda done: GateRun(verdict, done, judged=judged).exit_code != 0,
-    )
-    gate_run = GateRun(verdict, results, judged=judged, prefix=prefix, waiting=waiting)
+    verdict, results, waiting = gate_run.verdict, gate_run.results, gate_run.waiting
     lines = [config_line(verdict)] if gate_run.judged else []
     lines += [gate_line(r, enforcing=r.name in verdict.enforcing) for r in results]
     lines += [f"{name}: {mode(name in verdict.enforcing)}, {NOT_ON_BASE}" for name in waiting]
     data = {
         "config": {
             "judged": gate_run.judged,
-            "base_state": verdict.base_state,
             "changes": [{"key": c.key, "verdict": c.verdict.value} for c in verdict.changes],
             "refused": verdict.refused,
             "enforcing": sorted(verdict.enforcing),
@@ -261,15 +239,12 @@ def run_gate(args: argparse.Namespace) -> Result:
 
 
 def _transition(transition: Transition) -> dict[str, object]:
-    """`--json` for `adopt promote`: the state before and after, a row per gate it ran in the
-    shape every gate command gives one, enforcing when this run promoted it, and the same
-    outcomes by name."""
+    """`--json` for `adopt promote`: a row per gate it ran in the shape every gate command gives
+    one, enforcing when this run promoted it, and the same outcomes by name."""
     from stayfixed.assess.report import gate_row
 
     promoted = set(transition.promoted)
     return {
-        "before": transition.before,
-        "after": transition.after,
         "gates": [gate_row(r, enforcing=r.name in promoted) for r in transition.results],
         "promoted": list(transition.promoted),
         "failing": transition.failing,
@@ -311,7 +286,6 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
     parts = [f"promoted: {listed(list(transition.promoted)) or 'nothing'}"]
     if advisory:
         parts.append(f"still advisory: {listed(advisory)}")
-    parts.append(f"state {transition.after}")
     lines = ["; ".join(parts)]
     if advisory:
         if _base_missing(root, base, set(transition.unanswered)):
@@ -337,7 +311,7 @@ def run_adopt_promote(args: argparse.Namespace) -> Result:
 
 
 def register(groups: SubParsers) -> None:
-    from stayfixed.assess.rule import BASE_REF, BASE_SHAPE
+    from stayfixed.assess.base import BASE_REF, BASE_SHAPE
 
     # `--base` for `stayfixed gate`, whose verdict reads the base's `stayfixed.toml`, and `adopt
     # promote`, which writes enforcement off the comparison: refused at the parser unless it is a
@@ -352,6 +326,10 @@ def register(groups: SubParsers) -> None:
     gate = common_flags(groups.add_parser("gate", help=GATE_HELP))
     gate.add_argument("--only", action="append", default=None, metavar="NAME", help=ONLY_HELP)
     gate.add_argument("--base", default=None, type=base_ref, help=BASE_REF_HELP)
+    gate.add_argument("--pr-base", default=None, metavar="BRANCH", help=PR_BASE_HELP)
+    gate.add_argument("--base-input", default=None, metavar="BRANCH", help=BASE_INPUT_HELP)
+    gate.add_argument("--default-branch", default=None, metavar="BRANCH", help=DEFAULT_BRANCH_HELP)
+    gate.add_argument("--path", default=None, metavar="PATH", help=PATH_HELP)
     part = gate.add_mutually_exclusive_group()
     part.add_argument(
         "--builtin", dest="part", action="store_const", const="builtin", help=BUILTIN_HELP

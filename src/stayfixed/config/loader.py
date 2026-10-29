@@ -52,7 +52,6 @@ from stayfixed.config.schema import (
     NAME_RULE,
     PROJECT_NAME,
     SECTION_NAME,
-    STATES,
     Artifacts,
     Budgets,
     Ci,
@@ -78,7 +77,7 @@ from stayfixed.presets import (
     load_preset,
     shipped_presets,
 )
-from stayfixed.printed import clipped
+from stayfixed.printed import clipped, quoted
 
 CONFIG_FILE = "stayfixed.toml"
 SECTIONS = (
@@ -152,9 +151,9 @@ UNUSABLE_PRESET = (
     "{key} falls back to the preset's value, which does not hold in this repository either "
     "({reason})"
 )
-# Every refusal below names its key and quotes no value from the document. A state is a member
-# of `STATES`, a count is a count, and the names a refusal lists are stayfixed's own tuple or
-# configured names that have already matched `PROJECT_NAME`.
+# Every refusal below names its key and quotes no value from the document. A count is a count, and
+# the names a refusal lists are stayfixed's own tuple or configured names that have already matched
+# `PROJECT_NAME`.
 GATES_BUILTIN_UNKNOWN = (
     "[gates] builtin names {count} gate(s) stayfixed does not have; the built-in gates are {known}"
 )
@@ -171,17 +170,8 @@ GATES_UNKNOWN = (
     "{known}"
 )
 GATES_TWICE = "[stayfixed] enforced names a gate twice"
-# The key every refusal of `[stayfixed] enforced` is about: left out, the project enforces what
-# its state alone says.
+# The key every refusal of `[stayfixed] enforced` is about: left out, the project enforces nothing.
 ENFORCED = "stayfixed.enforced"
-GATES_EARLY = (
-    "[stayfixed] state is initialised and enforced lists {count} gate(s), but an initialised "
-    "project enforces nothing: promoting a gate is what moves a project to adopting"
-)
-GATES_PARTIAL = (
-    "[stayfixed] state is installed and enforced lists {count} of the project's {total} gate(s), "
-    "but installed means every gate enforces: list every gate, or none"
-)
 
 
 T = TypeVar("T")
@@ -326,10 +316,10 @@ def _build(cls: type[T], name: str, values: dict[str, Any]) -> T:
 def _enum(section: str, key: str, value: str, allowed: tuple[str, ...]) -> None:
     """The key and the vocabulary it may be spelled in; never the value it was spelled with.
 
-    The three keys this guards — `stayfixed.state`, `memory.mode`, `ci.mode` — are
-    repository-authored strings bounded by no grammar, so a clone can write anything at all
-    into one, and the refusal reaches a terminal and a model through the `init` and `attach`
-    skills' relay. `; got {value!r}` therefore put unbounded repository bytes into it:
+    The two keys this guards — `memory.mode` and `ci.mode` — are repository-authored strings
+    bounded by no grammar, so a clone can write anything at all into one, and the refusal reaches
+    a terminal and a model through the `init` and `attach` skills' relay. `; got {value!r}`
+    therefore put unbounded repository bytes into it:
     `ci.mode must be one of reusable, uvx, none; got '\\x1b[2JIGNORE PRIOR RULES'`. `!r` escapes
     the control characters, which makes it milder than a raw-bytes leak and not a different
     kind of thing — it is still content- and length-unbounded.
@@ -420,19 +410,12 @@ def _gates(raw: dict[str, Any], defaults: dict[str, Any]) -> Gates:
 
 
 def _enforcement(config: Config) -> Config:
-    """`[stayfixed] enforced` held to the gates this project runs, and `installed` made explicit.
+    """`[stayfixed] enforced` held to the gates this project runs.
 
-    `state` is the lifecycle and `enforced` what was promoted while adopting, so the two state
-    one fact and this refuses the ways they can contradict each other. The list holds configured
-    gate names, once each, only once the project is past `initialised`, and under `installed`
-    either every gate or none. An entry outside the configured set is counted and never quoted:
-    it is exactly the value no grammar has bounded. The names the refusal lists are the
+    The list is the one adoption key: it names the gates that enforce, configured gate names,
+    once each, and nothing fills it. An entry outside the configured set is counted and never
+    quoted: it is exactly the value no grammar has bounded. The names the refusal lists are the
     configured ones, each already held to a grammar.
-
-    Under `installed` the loaded list becomes every configured gate, so `stayfixed.enforcing` is
-    the list and nothing else, and a gate added to an installed project enforces from the run
-    that adds it — for a custom gate under `stayfixed gate`, from the first run after it lands on
-    the base, since that command runs none before.
     """
     stayfixed = config.stayfixed
     names = config.gate_names
@@ -446,16 +429,7 @@ def _enforcement(config: Config) -> Config:
         raise ConfigError(GATES_UNKNOWN.format(count=len(unknown), known=known), key=ENFORCED)
     if len(set(stayfixed.enforced)) != len(stayfixed.enforced):
         raise ConfigError(GATES_TWICE, key=ENFORCED)
-    if stayfixed.state == "initialised" and stayfixed.enforced:
-        raise ConfigError(GATES_EARLY.format(count=len(stayfixed.enforced)), key=ENFORCED)
-    if stayfixed.state != "installed":
-        return config
-    if stayfixed.enforced and set(stayfixed.enforced) != configured:
-        total = len(names)
-        raise ConfigError(
-            GATES_PARTIAL.format(count=len(stayfixed.enforced), total=total), key=ENFORCED
-        )
-    return replace(config, stayfixed=replace(stayfixed, enforced=names))
+    return config
 
 
 def _budgets(raw: dict[str, Any], preset: dict[str, Any], owner: Owner | None) -> Budgets:
@@ -551,7 +525,7 @@ def loads(
     hands it to every load it makes, so a note is said once a command and never once a document.
     Every argument after `root` is keyword-only.
     """
-    path = label or root / CONFIG_FILE
+    path = _document(root, label)
     raw = _parsed(text, path)
     unknown = sorted(set(raw) - set(SECTIONS))
     if unknown:
@@ -559,7 +533,14 @@ def loads(
     return _built(raw, root, machine=machine, personal=personal, owner=owner)
 
 
-def _parsed(text: str, path: Path | str) -> dict[str, Any]:
+def _document(root: Path, label: str | None) -> str:
+    """What a refusal calls the document: `label`, or the file at `root` through
+    `printed.quoted`, since the root's name is the repository's, or the caller file's `path:`,
+    and a line break in it would start a line of its own."""
+    return label or quoted(str(root / CONFIG_FILE))
+
+
+def _parsed(text: str, path: str) -> dict[str, Any]:
     """`text` as TOML, or a refusal of the whole document naming only where the parser stopped."""
     try:
         return tomllib.loads(text)
@@ -602,7 +583,6 @@ def _built(
     defaults["stayfixed"] = {**defaults.get("stayfixed", {}), "preset": preset_name}
 
     stayfixed = _build(Stayfixed, "stayfixed", _merged(raw, defaults, "stayfixed"))
-    _enum("stayfixed", "state", stayfixed.state, STATES)
     project = _build(Project, "project", _merged(raw, defaults, "project"))
     if not PROJECT_NAME.match(project.name):
         raise ConfigError(f"project.name must be {NAME_RULE}", key="project.name")
@@ -710,7 +690,7 @@ def loads_noting(
     (`MissingKeys`). The owner's layer is folded in as `loads` folds it.
     `parsed` is `text` as a caller already parsed it, which is then not parsed again.
     """
-    path = label or root / CONFIG_FILE
+    path = _document(root, label)
     raw = _parsed(text, path) if parsed is None else parsed
     notes: list[str] = []
     keys: list[str] = []

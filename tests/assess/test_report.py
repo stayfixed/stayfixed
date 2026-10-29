@@ -35,9 +35,7 @@ def _run(
     prefix: str = "",
     judged: bool = True,
 ) -> GateRun:
-    verdict = ConfigVerdict(
-        "adopting", tuple(changes), preset_defaults("widget"), frozenset(enforcing)
-    )
+    verdict = ConfigVerdict(tuple(changes), preset_defaults("widget"), frozenset(enforcing))
     return GateRun(verdict, tuple(results), judged=judged, prefix=prefix)
 
 
@@ -153,10 +151,10 @@ def test_the_summary_and_the_commands_carry_counts_and_rules_never_a_path_s_deta
 
 def test_the_summary_says_how_the_configuration_was_judged() -> None:
     # Advice, not declared: each branch is fixed text. Mutation: drop `config_line`'s
-    # `base_state is None` branch -> the bootstrap reads as "unchanged from the base" and the
-    # first assertion reddens.
+    # `bootstrap` branch -> the bootstrap reads as "unchanged from the base" and the first
+    # assertion reddens.
     bootstrap = GateRun(
-        ConfigVerdict(None, (), preset_defaults("widget"), frozenset()), (), judged=True
+        ConfigVerdict((), preset_defaults("widget"), frozenset(), bootstrap=True), (), judged=True
     )
     assert summary(bootstrap) == f"config: {BOOTSTRAP}\n"
     assert summary(_run([], [])) == f"config: {UNCHANGED}\n"
@@ -220,7 +218,6 @@ def test_the_config_line_names_at_most_the_listed_limit_of_refused_keys() -> Non
     # config line names every refused key" -> this reddens.
     keys = [f"gates.custom.g{n:02}" for n in range(LISTED_LIMIT + 3)]
     verdict = ConfigVerdict(
-        "installed",
         tuple(Change(key, Verdict.REFUSED) for key in keys),
         preset_defaults("widget"),
         frozenset(),

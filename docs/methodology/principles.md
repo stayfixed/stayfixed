@@ -170,7 +170,7 @@ not take. A gate should run advisory until the repository has been brought to th
 where it would pass, and only then enforce — and the decision to enforce should be read from
 the base branch, never from the change under review.
 
-**What stayfixed does today.** The state machine ships per gate. `stayfixed assess` inventories
+**What stayfixed does today.** Adoption ships per gate. `stayfixed assess` inventories
 what stands between a repository and enforcement, and `stayfixed adopt promote` enforces every
 gate that passes now and names the rest, or enforces the gates it is given only if all of them
 pass; its first promotion is what starts the adoption. The gate a pull request faces

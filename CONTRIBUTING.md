@@ -178,7 +178,7 @@ machine's configuration, and `trust` every approval a person gave on the machine
 with the `stayfixed trust` commands over it. `project` holds the shipped project templates and `init`, the command that
 writes a repository's scaffold from them; `assess` runs the gates and the inventory over a
 repository as it is, judges a change's `stayfixed.toml` against what its base branch enforces
-(`stayfixed gate`), and moves `[stayfixed] state` and `enforced` as a project promotes its gates
+(`stayfixed gate`), and lists each gate in `[stayfixed] enforced` as a project promotes it
 (`stayfixed adopt promote`); and `doctor` reports on what every other area left behind and repairs
 none of it. `assess` publishes no `api.py`: nothing under `src/` or `scripts/` outside it imports
 it, and tests reach its modules directly, as they do every area's. (`config`, `presets`, `profiles`,

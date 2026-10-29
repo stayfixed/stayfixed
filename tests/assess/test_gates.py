@@ -17,6 +17,7 @@ from stayfixed import processes
 from stayfixed.assess.gates import (
     BASE,
     BUILTIN,
+    COULD_NOT_RUN,
     GateContext,
     GateResult,
     configured,
@@ -171,6 +172,19 @@ def test_a_stale_trail_is_a_failing_gate(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_missing_roadmap_makes_the_trail_gate_unanswered(tmp_path: Path) -> None:
+    # A missing roadmap is the trail gate not judging the tree, read one way with every other
+    # gate that cannot (#33): could not run, which fails an enforced gate and leaves an advisory
+    # one advisory, and never a finding of its own.
+    root, config = smoke(tmp_path)
+    (root / config.paths.roadmap).unlink()
+    [trail] = results(root, config, "trail")
+    assert (trail.answered, trail.findings) == (False, ())
+    assert trail.reason == COULD_NOT_RUN.format(command="docs trail --check")
+    assert trail.failing
+
+
+@needs_git
 def test_a_commit_range_git_cannot_read_is_a_gate_that_did_not_answer(tmp_path: Path) -> None:
     # `check_range` refuses a range git cannot read. A gate that could not judge the tree is
     # failing, and its reason names the command with the base's placeholder, never the base:
@@ -245,6 +259,10 @@ def test_the_configured_set_is_the_kept_built_ins_then_the_custom_gates(tmp_path
     root = tmp_path / "project"
     root.mkdir()
     fixture = (FIXTURE / "stayfixed.toml").read_text(encoding="utf-8")
+    # The fixture lists every built-in in `enforced`; with two of them kept, the list says so.
+    every = 'enforced = ["docs", "bugs", "plan", "commit", "trail"]\n'
+    assert fixture.count(every) == 1
+    fixture = fixture.replace(every, 'enforced = ["docs", "probe"]\n')
     gates = '\n[gates]\nbuiltin = ["docs"]\n\n[gates.custom.probe]\nrun = ["true"]\n'
     (root / "stayfixed.toml").write_text(fixture + gates, encoding="utf-8")
     config = load(root, machine=tmp_path / "m.toml")

@@ -33,7 +33,7 @@ repository has earned it. One plugin for Claude Code and Codex, one Python packa
 > the `uvx` form of the gate, and adapters for Cursor or Hermes — each leaves this list in the
 > change that ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start
 > a project by hand, which `init` reads as your answers — a run that writes the file itself writes
-> `[stayfixed] version`, `state` and `agents`, and `profile` when the repository carries a shipped
+> `[stayfixed] version` and `agents`, and `profile` when the repository carries a shipped
 > profile's markers or `--profile` names one, beside `[project] name`, `base_branch` and
 > `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci` asks for
 > none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]` table only
@@ -57,9 +57,9 @@ adds:
 - **A bug ledger as a first-class repository artifact** — one file per bug, a generated
   index, a "what this evidence does not establish" line the tooling insists on, and skills
   that teach the agent how to read an entry.
-- **An enforcement state machine** in which each gate runs advisory until the repository has
+- **Enforcement earned per gate**, in which each gate runs advisory until the repository has
   earned it. `stayfixed assess` says what stands in the way, and `stayfixed adopt promote`
-  enforces a gate once it passes.
+  enforces a gate once it passes, by listing it in `[stayfixed] enforced`.
 - **A personal overlay that is a versioned repository of its own**, named by its identity record
   and with its own upgrade manifest, rather than a dotfiles sync. `stayfixed setup --overlay` renders or generates one and `stayfixed attach`
   binds a repository to it: the hooks, skills, agents and allow rules you keep there reach that

@@ -19,7 +19,7 @@ import pytest
 from stayfixed import gitenv
 from stayfixed.assess import tracked
 from stayfixed.assess.assessment import UNNAMED, Assessment, assess, document, render
-from stayfixed.assess.gates import GateResult
+from stayfixed.assess.gates import COULD_NOT_RUN, GateResult, configured
 from stayfixed.assess.state import promote
 from stayfixed.assess.tracked import (
     CASE_DIFFERS,
@@ -76,13 +76,14 @@ def _sha(root: Path, rev: str) -> str:
     return git(root, "rev-parse", rev).strip()
 
 
-def _adopting(root: Path) -> None:
-    """The fixture moved back to `initialised`, so its gates have something to be promoted to."""
+def _unenforced(root: Path) -> None:
+    """The fixture with its `enforced` list dropped, so its gates have something to be promoted
+    to."""
     config = root / "stayfixed.toml"
     text = config.read_text(encoding="utf-8")
-    config.write_text(
-        text.replace('state = "installed"', 'state = "initialised"'), encoding="utf-8"
-    )
+    listed = 'enforced = ["docs", "bugs", "plan", "commit", "trail"]\n'
+    assert text.count(listed) == 1
+    config.write_text(text.replace(listed, ""), encoding="utf-8")
     git(root, "commit", "-qam", "chore: begin again")
 
 
@@ -422,7 +423,7 @@ def test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named(
     # A link target is any name the document wrote. The item's `where` holds it only inside the
     # path grammar, as a gate finding's does; `adopt promote`'s note does the same.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     (root / "a note.md").write_text("# mine\n", encoding="utf-8")
     agents = root / AGENTS
     agents.write_text(
@@ -472,7 +473,7 @@ def test_adopt_promote_s_note_on_a_case_difference_says_to_spell_it_as_git_does(
     # The note is the item's remedy, and names the file as read; `--json` carries it apart from
     # the untracked files. Mutation (declared): the note is not printed.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     _link_in_another_case(root)
     base = _sha(root, "HEAD~1")
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", base)
@@ -548,7 +549,7 @@ def test_a_git_that_gives_no_answer_is_never_read_as_tracked(
     # the checkout — says nothing about what CI will see, so the gate is not judged and is not
     # promoted. Mutation (declared): no answer reads as an empty listing's opposite, "tracked".
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     monkeypatch.setattr(tracked, "git_run", lambda *_a, **_k: (-1, ""))
     assessment = _assess(root, tmp_path)
     assert _row(assessment, "docs").reason == UNASKED_REASON
@@ -565,7 +566,7 @@ def test_adopt_promote_never_enforces_a_gate_that_reads_an_untracked_file(tmp_pa
     # promoted and it stays advisory. Mutation (declared): `promote` judges the gates as they ran
     # here, and `docs` is enforced.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     _untrack(root, AGENTS)
     machine = tmp_path / "m.toml"
     before = (root / "stayfixed.toml").read_text(encoding="utf-8")
@@ -583,7 +584,7 @@ def test_adopt_promote_s_refusal_says_to_track_the_file_and_names_it(tmp_path: P
     # passed has earned. `--json` carries the files by gate. Mutation (declared): the note is
     # not printed.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     _untrack(root, AGENTS)
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", _sha(root, BASE))
     assert code == 1, out
@@ -609,8 +610,8 @@ def test_stayfixed_gate_judges_the_disk_and_asks_git_nothing(
     # which the gate's own finding covers. So it asks nothing about tracking: here, with the
     # file on disk, `docs` passes as it would have, and the tracked-files check asked git
     # nothing, not even whether this is a work tree. No mutation entry: the defect is a call
-    # added to `run_gate`, not a line changed. Measured by hand instead: passing `run_gate`'s
-    # results through `as_ci_sees` reddens this test.
+    # added to `gate_change`, not a line changed. Measured by hand instead: passing
+    # `gate_change`'s results through `as_ci_sees` reddens this test.
     root = smoke_repo(tmp_path)
     _untrack(root, AGENTS)
     asked: list[str] = []
@@ -639,7 +640,7 @@ def test_adopt_promote_s_note_on_a_git_that_gives_no_answer_says_how_to_see_why(
     # remedy, so a person learns to ask `git ls-files` here, and `--json` names no file as
     # untracked, since git said nothing either way. Mutation (declared): the note is not printed.
     root = smoke_repo(tmp_path)
-    _adopting(root)
+    _unenforced(root)
     monkeypatch.setattr(tracked, "git_run", lambda *_a, **_k: (-1, ""))
     base = _sha(root, BASE)
     code, out, _ = cli(root, tmp_path, "adopt", "promote", "docs", "--base", base)
@@ -673,10 +674,10 @@ def test_a_listing_git_refuses_after_naming_the_top_is_no_answer(
 
 
 def test_a_path_a_gate_answered_without_reaching_is_left_to_its_result(tmp_path: Path) -> None:
-    # With no roadmap, the trail gate answers with its own finding and never asks for
-    # `trail.toml`, which here is a symlink `contained()` refuses. The check asks for it, is
-    # refused, and leaves the gate to that result, which already fails; the refusal never ends
-    # the run. Mutation (declared): the refusal is raised.
+    # With no roadmap, the trail gate could not run (#33) and never asks for `trail.toml`, which
+    # here is a symlink `contained()` refuses. The assessment asks nothing about a gate that did
+    # not answer; asked anyway, the check is refused and leaves the gate to its result, which
+    # already fails; the refusal never ends the run. Mutation (declared): the refusal is raised.
     root = smoke_repo(tmp_path)
     _unlink_roadmap(root)
     git(root, "rm", "-q", ROADMAP)
@@ -687,8 +688,11 @@ def test_a_path_a_gate_answered_without_reaching_is_left_to_its_result(tmp_path:
     git(root, "commit", "-qm", "docs: no roadmap, and the states behind a link")
     assessment = _assess(root, tmp_path)
     row = _row(assessment, "trail")
-    assert row.answered and [f.rule for f in row.findings] == ["roadmap-missing"], row
+    assert not row.answered and row.findings == (), row
+    assert row.reason == COULD_NOT_RUN.format(command="docs trail --check"), row
     assert "trail" not in set(_items(assessment, UNTRACKED)) | set(_items(assessment, UNASKED))
+    config = load(root, machine=tmp_path / "m.toml")
+    assert tracked.unseen(root, config, (configured(config)["trail"],)) == ()
 
 
 def test_a_name_that_reaches_no_file_is_never_the_same_file_as_another(tmp_path: Path) -> None:
