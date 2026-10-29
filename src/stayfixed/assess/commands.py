@@ -195,14 +195,13 @@ def run_gate(args: argparse.Namespace) -> Result:
     # what the machine file read past is said once and not once a document.
     owner = command_owner(machine)
     runner = subprocess_runner()
-    # The adversary is a pull request, which writes every file under `--root` but its `.git`, so
-    # a directory it fills can be one git, asked there, takes for a repository of its own. The
-    # anchor is the checkout's own `.git`, which `actions/checkout` creates and no tree can write:
-    # git checks out no path named `.git`. With the platform's base git is asked once, at
-    # `--root`, for its checkout's top; the workflow's `--root` is that top, where git meets that
-    # `.git` first. Every other git this run asks names that repository, so the project is
-    # `--path`'s directory of it, and the release tags are asked for from its top. A local run's
-    # root is a person's own tree, which git reads as their own git does.
+    # The adversary is a pull request, which writes every file under `--root` but its `.git`, so a
+    # directory it fills can be one git, asked there, takes for a repository of its own. The anchor
+    # is the checkout's own `.git`, which `actions/checkout` creates and no tree can write: git
+    # checks out no path named `.git`. With the platform's base git is asked once, at `--root`, for
+    # its checkout's top, where the workflow's `--root` is and git meets that `.git` first; every
+    # other git this run asks names that repository, and the release tags are listed from its top. A
+    # local run's root is a person's own tree, which git reads as their own git does.
     top = repository_top(checkout) if platform else None
     with named(top):
         gate_run = gate_change(
