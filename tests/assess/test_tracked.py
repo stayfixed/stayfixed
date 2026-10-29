@@ -437,17 +437,26 @@ def test_a_link_target_outside_the_path_grammar_is_withheld_where_it_is_named(
     assert "a note.md" not in out and UNPRINTABLE in out, out
 
 
+def _second_name(path: Path, same: Path) -> None:
+    """`path` made a second name for `same` where case is kept apart, which is what a filesystem
+    that folds case reads it as already: a hard link for a file, a second symlink to the same
+    target for a link, a directory's included."""
+    if path.exists():
+        return
+    if same.is_symlink():
+        path.symlink_to(os.readlink(same))
+    else:
+        os.link(same, path)
+
+
 def _link_in_another_case(root: Path) -> None:
-    """`notes.md` committed, and `AGENTS.md` linking it as `Notes.md`; on a filesystem that keeps
-    case apart, `Notes.md` is made a second name for the same file, which is what a filesystem
-    that folds case, such as macOS's default, reads the link as."""
+    """`notes.md` committed, and `AGENTS.md` linking it as `Notes.md`, its `_second_name`."""
     (root / "notes.md").write_text("# ours\n", encoding="utf-8")
     agents = root / AGENTS
     agents.write_text(agents.read_text(encoding="utf-8") + "\n[notes](Notes.md)\n", "utf-8")
     git(root, "add", "-A")
     git(root, "commit", "-qm", "docs: link the notes in another case")
-    if not (root / "Notes.md").exists():
-        os.link(root / "notes.md", root / "Notes.md")
+    _second_name(root / "Notes.md", root / "notes.md")
 
 
 def test_a_link_that_differs_from_the_tracked_file_only_in_case_says_so(tmp_path: Path) -> None:
@@ -505,18 +514,6 @@ def test_a_different_file_whose_name_differs_only_in_case_is_untracked(tmp_path:
     assessment = _assess(root, tmp_path)
     assert _items(assessment, UNTRACKED) == {"docs": ("Notes.md",)}
     assert _items(assessment, CASE_DIFFERS) == {}
-
-
-def _second_name(path: Path, same: Path) -> None:
-    """`path` made a second name for `same` where case is kept apart, which is what a filesystem
-    that folds case reads it as already: a hard link for a file, a second symlink to the same
-    target for a link, a directory's included."""
-    if path.exists():
-        return
-    if same.is_symlink():
-        path.symlink_to(os.readlink(same))
-    else:
-        os.link(same, path)
 
 
 def test_a_case_difference_on_a_symlinked_directory_is_case_differs(tmp_path: Path) -> None:

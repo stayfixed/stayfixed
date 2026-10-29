@@ -1235,8 +1235,7 @@ reddens = [
 # case and no file in a Linux checkout. The walk goes on as git spells the step, and only a walk
 # that then finds every step tracked is a case difference, whose remedy is to spell the name as git
 # does; one that meets an untracked step is untracked, since respelling would read a file no
-# checkout has. The tests hold on both filesystems: where case is kept apart, a second name for the
-# same file or directory stands in for the fold.
+# checkout has.
 [[mutation]]
 name = "the walk stops at a case-differing component instead of continuing"
 file = "src/stayfixed/assess/tracked.py"
