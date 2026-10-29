@@ -365,8 +365,8 @@ reddens = ["tests/assess/test_report.py::test_the_summary_and_the_commands_carry
 # otherwise rewrite the verdict in this process's memory.
 [[mutation]]
 name = "gate --builtin runs the custom gates too"
-file = "src/stayfixed/assess/commands.py"
-before = '    if args.part == "builtin":'
+file = "src/stayfixed/assess/change.py"
+before = '    if part == "builtin":'
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_command_the_repository_wrote_and_custom_runs_only_those"]
 
@@ -375,7 +375,7 @@ reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_command_the_
 # run under the configuration the verdict chose.
 [[mutation]]
 name = "gate --only passes a name the configuration lacks on to the gates, which quote it"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "    if stray:"
 after = "    if False:"
 reddens = ["tests/assess/test_gate_command.py::test_a_name_the_configuration_does_not_have_is_refused_and_not_quoted"]
@@ -389,7 +389,7 @@ reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_re
 
 [[mutation]]
 name = "gate runs the gates under the tree's configuration when the verdict chose the base's"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "    context = GateContext(root, verdict.config, base)"
 after = "    context = GateContext(root, loads(tree_text, root, machine=machine), base)"
 reddens = [
@@ -405,7 +405,7 @@ reddens = [
 # rewrites `policy`'s script to `exit 0`.
 [[mutation]]
 name = "gate runs a custom gate whose command the base does not have"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "    waiting = tuple(name for name in only if name in custom and name not in verdict.landed)"
 after = "    waiting = ()"
 reddens = [
@@ -425,7 +425,7 @@ reddens = [
 
 [[mutation]]
 name = "gate --builtin reads which gates are custom off the tree, not the verdict's configuration"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "    custom = verdict.config.gates.custom"
 after = "    custom = loads(tree_text, root, machine=machine).gates.custom"
 reddens = ["tests/assess/test_gate_command.py::test_builtin_runs_no_custom_gate_the_base_keeps_when_the_change_drops_it"]
@@ -445,7 +445,7 @@ reddens = [
 
 [[mutation]]
 name = "gate never counts the configuration check as run, so no refusal fails it"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "    judged = CONFIG_CHECK in only"
 after = "    judged = False"
 reddens = [
@@ -485,7 +485,7 @@ reddens = [
 
 [[mutation]]
 name = "gate never asks whether its run has already failed before a later custom gate"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "        failed=lambda done: GateRun(verdict, done, judged=judged).exit_code != 0,"
 after = "        failed=None,"
 reddens = [
@@ -495,7 +495,7 @@ reddens = [
 
 [[mutation]]
 name = "a refused key does not count as the run having failed before a later custom gate"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "        failed=lambda done: GateRun(verdict, done, judged=judged).exit_code != 0,"
 after = "        failed=lambda done: GateRun(verdict, done, judged=False).exit_code != 0,"
 reddens = [
@@ -516,7 +516,7 @@ reddens = [
 
 [[mutation]]
 name = "gate reads the names to run off the tree, so the custom step skips a gate the base keeps"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "    configured = verdict.config.gate_names"
 after = "    configured = loads(tree_text, root, machine=machine).gate_names"
 reddens = [
@@ -531,7 +531,7 @@ reddens = [
 # workflow's shell, so no other caller of the judging step loses it.
 [[mutation]]
 name = "the judging step skips the configuration check when only: names a gate"
-file = "src/stayfixed/assess/commands.py"
+file = "src/stayfixed/assess/change.py"
 before = "        only = tuple(dict.fromkeys((CONFIG_CHECK, *only)))"
 after = "        pass"
 reddens = [

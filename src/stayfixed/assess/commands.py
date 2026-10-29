@@ -53,11 +53,6 @@ BUILTIN_HELP = (
     "from [gates.custom] runs"
 )
 CUSTOM_HELP = "the gates from [gates.custom] only, with no configuration check"
-NO_TREE_CONFIG = (
-    "this tree has no stayfixed.toml at the project root, so nothing says which gates run; "
-    "the run fails rather than pass a change it cannot judge"
-)
-NOTHING_TO_RUN = "nothing to run: no configured gate of the kind asked for"
 ADOPT_HELP = "the adoption state machine: promote gates from advisory to enforcing as they pass"
 PROMOTE_HELP = "enforce the named gates if all pass now; with none named, each gate that passes"
 PROMOTE_BUILTIN_HELP = (
@@ -98,10 +93,6 @@ UNASKED_NOTE = (
     "note: git gave no answer to whether it tracks the files {gate} reads, so {gate} is not "
     "enforced; {remedy}"
 )
-ONLY_UNKNOWN = (
-    "--only names {count} gate(s) the configuration this run uses does not have; `config` is "
-    "the configuration check, and every other name is a gate from [gates]"
-)
 
 
 def _base_missing(root: Path, base: str, unanswered: set[str]) -> bool:
@@ -135,14 +126,11 @@ def run_assess(args: argparse.Namespace) -> Result:
 
 def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed import __version__
-    from stayfixed.assess import rule
-    from stayfixed.assess.base import read_base
-    from stayfixed.assess.gates import GateContext, run_gates
+    from stayfixed.assess.change import NOTHING_TO_RUN, gate_change
     from stayfixed.assess.report import (
         BUILTIN_FINDINGS_ELSEWHERE,
         FINDINGS_ELSEWHERE,
         NOT_ON_BASE,
-        GateRun,
         config_line,
         gate_line,
         gate_row,
@@ -150,84 +138,27 @@ def run_gate(args: argparse.Namespace) -> Result:
         summary,
         workflow_commands,
     )
-    from stayfixed.committed import repository_prefix
-    from stayfixed.config.layout import local_base
-    from stayfixed.config.loader import loads, read_document
-    from stayfixed.config.reading import ConfigError
-    from stayfixed.config.schema import CONFIG_CHECK
-    from stayfixed.errors import Refusal
     from stayfixed.release.api import is_released
     from stayfixed.runner import subprocess_runner
 
     root = Path(args.root).absolute()
-    prefix = repository_prefix(root)
     machine = Path(args.machine) if args.machine else None
-    tree_text = read_document(root)
-    if tree_text is None:
-        raise ConfigError(NO_TREE_CONFIG)
-    # The tree's configuration is read here for its default base and the branch a base the
-    # checkout lacks is named by, and kept nowhere: every later decision is the verdict's, and a
-    # name for the tree's copy in scope is one a later line could pick in its place.
-    # The owner's layer, once for the run: the tree's load here and both of the verdict's take it,
-    # so what the machine file read past is said once and not once a document.
+    # The owner's layer, once for the run: the tree's load and both of the verdict's take it, so
+    # what the machine file read past is said once and not once a document.
     owner = command_owner(machine)
-    tree = loads(tree_text, root, machine=machine, owner=owner)
-    default, branch = local_base(tree), tree.project.base_branch
-    del tree
-    base = args.base or default
     runner = subprocess_runner()
-    verdict = rule.judge(
+    gate_run = gate_change(
         root,
-        read_base(root, base, branch=branch, prefix=prefix),
-        tree_text,
+        base=args.base,
+        only=args.only,
+        part=args.part,
         machine=machine,
-        running=__version__,
-        workflow_sha=args.workflow_sha,
-        released=lambda sha: is_released(sha, runner, cwd=root),
         owner=owner,
+        workflow_sha=args.workflow_sha,
+        running=__version__,
+        released=lambda sha: is_released(sha, runner, cwd=root),
     )
-    # The configuration this run uses is the verdict's: the base's when anything was refused, so
-    # the names it runs, which of them are custom, and the paths and commands the gates read are
-    # all the base's then. `enforcing` is both sides', so it can name a gate only the refused
-    # tree defines; that gate is not run, and the refusal already fails the run.
-    configured = verdict.config.gate_names
-    only = tuple(dict.fromkeys(args.only or (CONFIG_CHECK, *configured)))
-    stray = [name for name in only if name != CONFIG_CHECK and name not in configured]
-    if stray:
-        # Counted, never echoed: the names come from the caller workflow, which the pull request
-        # can edit.
-        raise Refusal(ONLY_UNKNOWN.format(count=len(stray)))
-    # The workflow's two steps: the one that judges runs no command the repository wrote, and
-    # the custom gates run in the next, after it passed. A name of the other kind is that
-    # step's to run, so it is skipped here and not refused.
-    custom = verdict.config.gates.custom
-    if args.part == "builtin":
-        only = tuple(name for name in only if name not in custom)
-        # The judging step judges the configuration whatever `--only` names: `--only` comes from
-        # the caller workflow, which the pull request can edit, and a leg that names one gate
-        # would otherwise run it under the base's configuration and never meet the refusal.
-        only = tuple(dict.fromkeys((CONFIG_CHECK, *only)))
-    elif args.part == "custom":
-        only = tuple(name for name in only if name in custom)
-    # A custom gate executes only with the base's own command, and the base's enforced gates
-    # run before any other: a gate the change adds or re-commands runs files it wrote, and run
-    # first it could rewrite what an enforced gate executes. It waits until it lands on the base,
-    # and never fails the run meanwhile, since the base enforces no command it lacks.
-    waiting = tuple(name for name in only if name in custom and name not in verdict.landed)
-    names = [n for n in only if n != CONFIG_CHECK and n not in waiting]
-    context = GateContext(root, verdict.config, base)
-    judged = CONFIG_CHECK in only
-    # A custom gate, one the base enforces included, can run files the change can edit, in the
-    # process that holds the verdict: on a hosted runner with passwordless `sudo`, enough to
-    # rewrite or end that process. So the configuration check and the built-ins decide the run
-    # first, then the base's enforced custom gates, and once it has failed no custom gate starts.
-    results = run_gates(
-        context,
-        names,
-        first=verdict.base_enforcing,
-        failed=lambda done: GateRun(verdict, done, judged=judged).exit_code != 0,
-    )
-    gate_run = GateRun(verdict, results, judged=judged, prefix=prefix, waiting=waiting)
+    verdict, results, waiting = gate_run.verdict, gate_run.results, gate_run.waiting
     lines = [config_line(verdict)] if gate_run.judged else []
     lines += [gate_line(r, enforcing=r.name in verdict.enforcing) for r in results]
     lines += [f"{name}: {mode(name in verdict.enforcing)}, {NOT_ON_BASE}" for name in waiting]

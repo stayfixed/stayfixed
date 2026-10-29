@@ -609,8 +609,8 @@ def test_stayfixed_gate_judges_the_disk_and_asks_git_nothing(
     # which the gate's own finding covers. So it asks nothing about tracking: here, with the
     # file on disk, `docs` passes as it would have, and the tracked-files check asked git
     # nothing, not even whether this is a work tree. No mutation entry: the defect is a call
-    # added to `run_gate`, not a line changed. Measured by hand instead: passing `run_gate`'s
-    # results through `as_ci_sees` reddens this test.
+    # added to `gate_change`, not a line changed. Measured by hand instead: passing
+    # `gate_change`'s results through `as_ci_sees` reddens this test.
     root = smoke_repo(tmp_path)
     _untrack(root, AGENTS)
     asked: list[str] = []
