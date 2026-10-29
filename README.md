@@ -1,62 +1,56 @@
 # stayfixed
 
-A methodology harness for coding agents: a bug ledger that lives in the repository, a
-working memory whose index is rendered rather than written, guards that fail closed where
-the platform lets them, and an adoption state machine that runs each gate advisory until the
-repository has earned it. One plugin for Claude Code and Codex, one Python package with
-**no runtime dependencies**.
+**CI gates for coding agents that turn on only once your repo passes them.**
 
-> **Pre-1.0.** What ships is a core and three delivery areas. The **core** is what stayfixed does
-> without its private layer: the methodology's gates, the records they check, and a machine's setup.
-> It holds the bug ledger; the documentation and plan lints; the guards over a shell call, a commit
-> message and a test run; the scaffolding engine that writes files into a repository;
-> `stayfixed init`, which writes a repository's scaffold from the shipped project templates,
-> `stayfixed upgrade`, which refreshes it, and `stayfixed uninstall`, which takes it back;
-> `stayfixed assess`, which inventories what stands between a repository and enforcement;
-> `stayfixed gate`, which judges a change against what its base branch enforces; `stayfixed adopt`,
-> which enforces a repository's gates as each one passes; `stayfixed setup`, which configures a
-> machine from a preset; and `stayfixed doctor`, which reports on the result. The **delivery** areas
-> are the private layer: `memory`, the note store; `overlay`, the private overlay
-> — `overlay upgrade`, with `setup --overlay` making it; and `attach`,
-> whose `attach` binds a repository to the overlay and whose `detach` takes back what `attach`
-> wrote, keeping the overlay's record of the binding ([CONTRIBUTING.md](https://github.com/stayfixed/stayfixed/blob/main/CONTRIBUTING.md#areas) says
-> where the line between the two runs). The core is language-neutral, and a stack is a **profile**:
-> one stack's test runner, build artifacts and package manager belong to its profile — data, and
-> optionally the advice to give after that stack's test runner fails — so a repository in several
-> languages gets each stack's advice with no configuration. The first profile, `python`, ships:
-> every agent is handed its rules, `stayfixed assess` runs its checks, and the stale-bytecode line
-> of the note after a failing pytest run is its own. The hooks file that wires all of it into a
-> session ships too, so on Claude Code installing the plugin is enough to make the guards fire and
-> the memory bundles arrive ([what each agent enforces](#what-each-agent-enforces)). The first
-> skills ship with them, and so does one command meant for a machine rather than for you — `hook`,
-> which dispatches one harness event. **Not yet:** the memory MCP server, a hold-the-line baseline,
-> the `uvx` form of the gate, and adapters for Cursor or Hermes — each leaves this list in the
-> change that ships it. The [Quickstart](#quickstart) shows the three keys that are enough to start
-> a project by hand, which `init` reads as your answers — a run that writes the file itself writes
-> `[stayfixed] version`, `state` and `agents`, and `profile` when the repository carries a shipped
-> profile's markers or `--profile` names one, beside `[project] name`, `base_branch` and
-> `release_branch`, a `[ci]` table only when it has a released commit to pin or `--no-ci` asks for
-> none, a `[memory]` table only when `--memory-mode` answers it, and an `[artifacts]` table only
-> when `--local` does. [docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference; the command list below is held
-> to the parser by a test, so it is complete for what ships.
+A coding agent reports "done" in prose. stayfixed asks the test runner instead, and keeps what
+broke fixed:
+
+- **`stayfixed prove -- <test command>`** counts only the report the runner writes (JUnit XML,
+  jest or vitest JSON, `go test -json`), never a printed summary or the agent's "all tests pass":
+  `proved`, `failed`, `not proven` or `refused`. No configuration, and no file of its own in the
+  repository.
+- **Gates adopted one at a time.** Each runs advisory until `stayfixed adopt promote` enforces it,
+  and only once it passes. In CI a pull request is judged by its base branch's policy, key by key,
+  so the change cannot loosen the gate that judges it.
+- **A bug ledger in the repository.** One file per bug; `stayfixed bugs regressions` re-runs each
+  fixed bug's reproduction through `prove`.
+- **Your rules, kept out of the repository.** `stayfixed attach` delivers a private overlay's
+  rules, hooks and skills to a checkout's sessions, with nothing in `git status`.
+
+```bash
+uv tool install stayfixed
+stayfixed prove -- uv run pytest           # or: npx vitest run, go test ./..., node --test
+stayfixed init --yes && stayfixed assess   # the scaffold, then what blocks each gate
+```
+
+**What it does not do.** The agent can still weaken or delete the tests: `proved` means the runner
+reported green on this tree, for the tests this command selected, and nothing more. The session
+hooks add context and refuse nothing; enforcement is CI's, where your own test job runs on the
+merged tree, and running its command through `stayfixed prove --` makes the runner's report the
+verdict. stayfixed works beside process plugins such as superpowers, which shape how the agent
+works in a session; stayfixed is what the repository checks after it.
+
+**Pre-1.0**, for Linux and macOS, Python 3.11 or newer, on Claude Code and Codex
+([what holds on each](#what-each-agent-enforces)). One Python package with **no runtime
+dependencies**, and one plugin. The first stack profile is `python`; other stacks get `prove` and
+the gates without a profile's advice. **Not yet:** the memory MCP server, a hold-the-line baseline,
+the `uvx` form of the gate, and adapters for Cursor or Hermes — each leaves this list in the
+change that ships it.
+[docs/cli.md](https://github.com/stayfixed/stayfixed/blob/main/docs/cli.md) is the reference; the
+command list below is held to the parser by a test, so it is complete for what ships.
 
 ## What this is, and what it is not
 
 Two kinds of tool already exist for working with a coding agent. A process layer such as
 superpowers tells the agent *how* to work — brainstorm, plan, test first, review. A spec
-layer such as spec-kit tells it *what* to build. Neither remembers what went wrong last
-time, and neither has a way to introduce rules into a repository that does not yet follow
-them.
+layer such as spec-kit tells it *what* to build. stayfixed is narrower than either: what the
+repository remembers went wrong, and the checks it holds a change to, introduced into a repository
+that does not yet pass them. Others check an agent's claims too; stayfixed's verdicts are
+finer-grained, each with its reason. What it adds:
 
-This project looked through the community plugin marketplace on 2026-09-05 and counted about
-2,300 plugins listed that day. That is one project's dated count rather than a survey with a
-method — no row in [sources.md](https://github.com/stayfixed/stayfixed/blob/main/docs/methodology/sources.md) backs it, and it says what that
-look found, not what exists. What it did not find anywhere else is the three things stayfixed
-adds:
-
-- **A bug ledger as a first-class repository artifact** — one file per bug, a generated
-  index, a "what this evidence does not establish" line the tooling insists on, and skills
-  that teach the agent how to read an entry.
+- **A bug ledger as a repository artifact** — one file per bug, a generated index, a "what this
+  evidence does not establish" line the tooling insists on, and skills that teach the agent how to
+  read an entry.
 - **An enforcement state machine** in which each gate runs advisory until the repository has
   earned it. `stayfixed assess` says what stands in the way, and `stayfixed adopt promote`
   enforces a gate once it passes.
