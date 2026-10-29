@@ -33,6 +33,8 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -40,7 +42,7 @@ from pathlib import Path
 from stayfixed import fsops
 from stayfixed.errors import Failure
 
-# Everything else is dropped, `GIT_DIR` and `GIT_WORK_TREE` above all.
+# Everything else is dropped, an inherited `GIT_DIR` and `GIT_WORK_TREE` above all.
 GIT_ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "SYSTEMROOT")
 
 # Wall-clock bound on one `git` call: a named cap (CONTRIBUTING.md#named-caps), and no shipped file
@@ -123,10 +125,34 @@ def in_work_tree(root: Path) -> bool:
     return any(os.path.lexists(directory / ".git") for directory in (root, *root.parents))
 
 
+# The checkouts `named` blocks name, innermost last; empty outside every block.
+_NAMED: list[Path] = []
+
+
+@contextmanager
+def named(checkout: Path | None) -> Iterator[None]:
+    """Inside the block every `git_run` answers for `checkout`'s own repository, its `.git` with
+    `checkout` the work tree, whatever directory it is asked in: git looks for no repository.
+    The directory asked still places the question inside the work tree, so `--show-prefix` is
+    its path below `checkout`. `None` names nothing, and git finds the repository as it does
+    outside a block."""
+    if checkout is None:
+        yield
+        return
+    _NAMED.append(checkout)
+    try:
+        yield
+    finally:
+        _NAMED.pop()
+
+
 def scrubbed_env() -> dict[str, str]:
-    """The variables `GIT_ENV_KEEP` names, as this process has them: what `git_run` hands git, and
-    `test attribute` the `tar` it runs."""
-    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
+    """The variables `GIT_ENV_KEEP` names, as this process has them, and inside a `named` block
+    the repository it names: what `git_run` hands git, and `test attribute` the `tar` it runs."""
+    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}
+    if _NAMED:
+        env |= {"GIT_DIR": str(_NAMED[-1] / ".git"), "GIT_WORK_TREE": str(_NAMED[-1])}
+    return env
 
 
 def pipe_encoding() -> str:

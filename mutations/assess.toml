@@ -183,6 +183,22 @@ before = '    if value.startswith("/"):'
 after = "    if False:"
 reddens = ["tests/assess/test_read_base.py::test_an_absolute_path_is_refused_unechoed"]
 
+# With the platform's base, git answers for the checkout's own repository, whose `.git` no tree
+# can write, and never for one it finds from the project root, a directory the tree fills.
+[[mutation]]
+name = "the gate's git discovers the repository again"
+file = "src/stayfixed/assess/commands.py"
+before = "    with named(checkout if platform else None):"
+after = "    with named(None):"
+reddens = ["tests/assess/test_read_base.py::test_a_root_git_would_take_for_a_repository_of_its_own_is_read_as_the_checkout_s_subdirectory"]
+
+[[mutation]]
+name = "the release tags are asked for from the project root"
+file = "src/stayfixed/assess/commands.py"
+before = "            released=lambda sha: is_released(sha, runner, cwd=checkout),"
+after = "            released=lambda sha: is_released(sha, runner, cwd=root),"
+reddens = ["tests/assess/test_gate_command.py::test_the_release_tags_are_asked_for_from_the_checkout_and_not_the_project_root"]
+
 # The tighten-only rule. A verdict other than `refused` lets a pull request's own configuration
 # govern its run, so each guard that says `refused`, and each that picks the configuration and the
 # enforcement the run uses, is a guard.
@@ -419,8 +435,8 @@ reddens = ["tests/assess/test_gate_command.py::test_a_name_the_configuration_doe
 [[mutation]]
 name = "gate admits a moved workflow pin that no release tag names"
 file = "src/stayfixed/assess/commands.py"
-before = "        released=lambda sha: is_released(sha, runner, cwd=root),"
-after = "        released=lambda sha: True,"
+before = "            released=lambda sha: is_released(sha, runner, cwd=checkout),"
+after = "            released=lambda sha: True,"
 reddens = ["tests/assess/test_gate_command.py::test_an_upgrade_at_a_commit_no_release_names_is_refused"]
 
 [[mutation]]

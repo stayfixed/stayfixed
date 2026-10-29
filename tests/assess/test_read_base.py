@@ -486,6 +486,63 @@ def test_a_project_root_below_the_checkout_is_the_root(
     assert f"config: {UNCHANGED}" in said, said
 
 
+PLATFORM = ("--pr-base=main", "--base-input=", "--default-branch=")
+
+
+def test_a_root_git_would_take_for_a_repository_of_its_own_is_read_as_the_checkout_s_subdirectory(
+    tmp_path: Path,
+) -> None:
+    """`HEAD`, `refs/` and `objects/` are names a tree may commit, and git asked in a directory
+    holding them takes it for a repository of its own. With the platform's base `--root` is the
+    checkout, whose repository the run names to git, so `app` is still the checkout's `app/` and
+    the base's copy is read there. Mutation (declared): `mutations/`'s "the gate's git discovers
+    the repository again".
+    """
+    project = _platform_clone(tmp_path, under="app")
+    app = project / "app"
+    (app / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (app / "refs" / "heads").mkdir(parents=True)
+    (app / "refs" / "heads" / "main").write_text(git(project, "rev-parse", REMOTE_MAIN))
+    (app / "objects").mkdir()
+    (app / "objects" / "kept").write_text("", encoding="utf-8")
+    commit(project, "chore: files named like a repository's")
+    # The premise: asked in `app`, git answers for `app` itself.
+    assert git(app, "rev-parse", "--git-dir").strip() == "."
+    code, said = _gate(project, tmp_path, *PLATFORM, "--path=app", "--only=config")
+    assert code == 0, said
+    assert f"config: {UNCHANGED}" in said, said
+
+
+def test_a_path_through_a_committed_link_into_another_repository_is_refused(
+    tmp_path: Path,
+) -> None:
+    # `link -> ../upstream` leads into a repository that holds the base commit and a
+    # `stayfixed.toml` at its top, so both copies would be read there, and neither is the
+    # checkout's. The link is below the checkout, the tree's to write, so it is refused as a link
+    # would be anywhere below the repository's top.
+    project = _platform_clone(tmp_path)
+    os.symlink(os.path.join("..", "upstream"), project / "link")
+    commit(project, "chore: a link out of the checkout")
+    code, said = _gate(project, tmp_path, *PLATFORM, "--path=link", "--only=config")
+    assert code == 2, said
+    assert "symlink" in said, said
+
+
+def test_a_checkout_reached_through_a_linked_parent_is_read_as_the_checkout(
+    tmp_path: Path,
+) -> None:
+    # `/tmp` on macOS, a symlinked home: a link above the checkout is the machine's, and the
+    # repository named to git is the checkout's own however `--root` is spelled.
+    real = tmp_path / "real"
+    real.mkdir()
+    project = _platform_clone(real, under="app")
+    os.symlink(real, tmp_path / "link")
+    through = tmp_path / "link" / project.name
+    code, said = _gate(through, tmp_path, *PLATFORM, "--path=app", "--only=config")
+    assert code == 0, said
+    assert f"config: {UNCHANGED}" in said, said
+
+
 @pytest.mark.parametrize(
     ("name", "document"),
     [
