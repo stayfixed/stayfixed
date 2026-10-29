@@ -143,6 +143,45 @@ reddens = [
   "tests/assess/test_read_base.py::test_the_base_copy_is_read_as_utf_8_whatever_the_locale_decodes_git_s_answers_with[not-utf-8]",
 ]
 
+# The platform's base and root, which the reusable workflow hands `stayfixed gate` raw: each
+# branch decides which commit's configuration governs the gates, or where they read. A pull
+# request's caller file names its own `base:`, and the platform's `github.base_ref` is the anchor
+# it cannot write.
+[[mutation]]
+name = "a disagreeing base input is admitted"
+file = "src/stayfixed/assess/base.py"
+before = "    if pr_base and base_input and base_input != pr_base:"
+after = "    if False:"
+reddens = ["tests/assess/test_read_base.py::test_a_base_input_that_disagrees_with_the_pr_base_is_refused_unechoed"]
+
+# The pull request's base comes before the default branch: skipped, a pull request into another
+# branch would be judged against the default branch's configuration.
+[[mutation]]
+name = "the fallback skips the pull request's base"
+file = "src/stayfixed/assess/base.py"
+before = "    branch = base_input or pr_base or default_branch"
+after = "    branch = base_input or default_branch"
+reddens = ["tests/assess/test_read_base.py::test_the_platform_base_falls_back_to_the_pr_base_then_the_default_branch"]
+
+# A short `origin/<base>` resolves through `refs/tags/` first, and `fetch-depth: 0` fetches every
+# tag: a tag of that name would choose the base. The anchor is the remote-tracking ref
+# `actions/checkout` writes from the remote's branches.
+[[mutation]]
+name = "the base resolves through a short name"
+file = "src/stayfixed/assess/base.py"
+before = '        f"refs/remotes/origin/{branch}^{{commit}}",'
+after = '        f"origin/{branch}^{{commit}}",'
+reddens = ["tests/assess/test_read_base.py::test_a_tag_named_like_the_tracking_branch_does_not_choose_the_platform_base"]
+
+# A `path:` of `../stayfixed` points the gates at the workflow's own checkout and its
+# configuration. The check is lexical, so writing the value does not move it.
+[[mutation]]
+name = "a `..` path is admitted"
+file = "src/stayfixed/assess/base.py"
+before = '    if pure.is_absolute() or ".." in pure.parts:'
+after = "    if pure.is_absolute():"
+reddens = ["tests/assess/test_read_base.py::test_a_dotdot_or_absolute_path_is_refused_unechoed"]
+
 # The tighten-only rule. A verdict other than `refused` lets a pull request's own configuration
 # govern its run, so each guard that says `refused`, and each that picks the configuration and the
 # enforcement the run uses, is a guard.

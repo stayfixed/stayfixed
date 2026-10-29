@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Literal
 
-from stayfixed.assess.base import read_base
+from stayfixed.assess.base import PlatformBase, platform_base, read_base
 from stayfixed.assess.gates import GateContext, run_gates
 from stayfixed.assess.report import GateRun
 from stayfixed.assess.rule import judge
@@ -40,6 +40,7 @@ def gate_change(
     root: Path,
     *,
     base: str | None,
+    platform: PlatformBase | None = None,
     only: Sequence[str] | None,
     part: Literal["builtin", "custom"] | None,
     machine: Path | None,
@@ -51,12 +52,21 @@ def gate_change(
     """The tree's `stayfixed.toml` judged against the base's, and the gates `only` and `part`
     ask for run as the verdict says.
 
-    `base` is `None` for the tree's `local_base`. `only` is `--only`'s names, `None` for the
+    `base` is `None` for the tree's `local_base`, or for `platform`'s base when it is given:
+    the platform's values, resolved here to one commit before anything reads the base, which
+    the verdict and every gate then read. `only` is `--only`'s names, `None` for the
     configuration check and every configured gate; `part` is `--builtin`'s `"builtin"`,
     `--custom`'s `"custom"`, or `None` for both. `owner` is the owner's layer the command
     resolved, which every load here takes. `running` is the stayfixed running, and `workflow_sha`
     and `released` are what `judge` takes to admit a moved workflow pin.
     """
+    if platform is not None:
+        base = platform_base(
+            platform.checkout,
+            pr_base=platform.pr_base,
+            base_input=platform.base_input,
+            default_branch=platform.default_branch,
+        )
     prefix = repository_prefix(root)
     tree_text = read_document(root)
     if tree_text is None:

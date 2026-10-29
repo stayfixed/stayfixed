@@ -19,6 +19,7 @@ from stayfixed.command import command_owner, common_flags, grammar, root_and_con
 from stayfixed.result import Result
 
 if TYPE_CHECKING:
+    from stayfixed.assess.base import PlatformBase
     from stayfixed.assess.state import Transition
 
 ASSESS_HELP = (
@@ -42,6 +43,31 @@ BASE_REF_HELP = (
     "default refs/remotes/origin/<project.base_branch>"
 )
 ONLY_HELP = "run only this gate, or `config` for the configuration check alone; repeat for several"
+PR_BASE_HELP = (
+    "the pull request's base as the platform reports it, empty on any other event; with "
+    "--base-input and --default-branch, in place of --base"
+)
+BASE_INPUT_HELP = (
+    "the caller workflow's base: input, empty for none; refused when it names another branch "
+    "than --pr-base"
+)
+DEFAULT_BRANCH_HELP = "the repository's default branch, the base when the other two are empty"
+PATH_HELP = (
+    "the project root inside --root, as the caller workflow's path: input gives it; refused "
+    "when it leaves --root"
+)
+# The platform's base is one form: the three flags the reusable workflow passes together, read in
+# one order (`stayfixed.assess.base.platform_base`). A subset would be read as "empty" for the
+# flags left out, and beside `--base` one of the two forms would be silently ignored.
+PLATFORM_FLAGS = ("--pr-base", "--base-input", "--default-branch")
+PLATFORM_SUBSET = (
+    "--pr-base, --base-input and --default-branch are one form, the platform's base, and go "
+    "together; missing: {missing}"
+)
+PLATFORM_AND_BASE = (
+    "--base and the platform's base (--pr-base, --base-input, --default-branch) are two forms of "
+    "one input; pass one"
+)
 WORKFLOW_SHA_HELP = (
     "the commit of the reusable workflow running, which the workflow passes from the platform; "
     "an upgrade's [ci] ref is admitted only when it equals this"
@@ -124,8 +150,26 @@ def run_assess(args: argparse.Namespace) -> Result:
     return Result(summary, document(assessment), exit_code=1 if assessment.would_fail else 0)
 
 
+def _platform(args: argparse.Namespace, checkout: Path) -> PlatformBase | None:
+    """The platform's base `stayfixed gate` was given, `None` when it was given `--base` or
+    neither; a subset of its three flags, or the form beside `--base`, is refused."""
+    from stayfixed.assess.base import PlatformBase
+    from stayfixed.errors import Refusal
+
+    given = (args.pr_base, args.base_input, args.default_branch)
+    if all(value is None for value in given):
+        return None
+    missing = [flag for flag, value in zip(PLATFORM_FLAGS, given, strict=True) if value is None]
+    if missing:
+        raise Refusal(PLATFORM_SUBSET.format(missing=", ".join(missing)))
+    if args.base is not None:
+        raise Refusal(PLATFORM_AND_BASE)
+    return PlatformBase(checkout, args.pr_base, args.base_input, args.default_branch)
+
+
 def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed import __version__
+    from stayfixed.assess.base import platform_root
     from stayfixed.assess.change import NOTHING_TO_RUN, gate_change
     from stayfixed.assess.report import (
         BUILTIN_FINDINGS_ELSEWHERE,
@@ -141,7 +185,9 @@ def run_gate(args: argparse.Namespace) -> Result:
     from stayfixed.release.api import is_released
     from stayfixed.runner import subprocess_runner
 
-    root = Path(args.root).absolute()
+    checkout = Path(args.root).absolute()
+    platform = _platform(args, checkout)
+    root = checkout if args.path is None else platform_root(checkout, args.path)
     machine = Path(args.machine) if args.machine else None
     # The owner's layer, once for the run: the tree's load and both of the verdict's take it, so
     # what the machine file read past is said once and not once a document.
@@ -150,6 +196,7 @@ def run_gate(args: argparse.Namespace) -> Result:
     gate_run = gate_change(
         root,
         base=args.base,
+        platform=platform,
         only=args.only,
         part=args.part,
         machine=machine,
@@ -279,6 +326,13 @@ def register(groups: SubParsers) -> None:
     gate = common_flags(groups.add_parser("gate", help=GATE_HELP))
     gate.add_argument("--only", action="append", default=None, metavar="NAME", help=ONLY_HELP)
     gate.add_argument("--base", default=None, type=base_ref, help=BASE_REF_HELP)
+    # The reusable workflow's raw values, each one argv as `--name=value` so that a value
+    # beginning with `-` is still the flag's, and each may be empty. Python checks them, where a
+    # shell step did (`stayfixed.assess.base`).
+    gate.add_argument("--pr-base", default=None, metavar="BRANCH", help=PR_BASE_HELP)
+    gate.add_argument("--base-input", default=None, metavar="BRANCH", help=BASE_INPUT_HELP)
+    gate.add_argument("--default-branch", default=None, metavar="BRANCH", help=DEFAULT_BRANCH_HELP)
+    gate.add_argument("--path", default=None, metavar="PATH", help=PATH_HELP)
     part = gate.add_mutually_exclusive_group()
     part.add_argument(
         "--builtin", dest="part", action="store_const", const="builtin", help=BUILTIN_HELP
