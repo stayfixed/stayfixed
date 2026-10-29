@@ -1347,7 +1347,10 @@ input's value, since on a pull request the caller file is the author's; and the 
 gate then read. `--path=PATH` is the project root inside `--root`, with either form of the base:
 `""`, `.` and `./` are `--root` itself, one leading `./` and one trailing `/` are dropped, and a
 `..` component or an absolute path is refused without echoing the value. Any other character is
-admitted, a space or a name outside ASCII included.
+admitted, a space or a name outside ASCII included. With the platform's base, git is asked once at
+`--root` for the top of its checkout, every other `git` the run asks names that checkout's
+repository rather than finding one from the project root, so the project is always that directory
+of the checkout, and the release tags a moved `ci.ref` is checked against are listed from its top.
 
 **Which custom gates run, and in what order.** A custom gate runs only with the command the
 base's `stayfixed.toml` gives it. One the change adds, or re-commands while the base does not

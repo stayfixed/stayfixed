@@ -2305,10 +2305,10 @@ reddens = [
 [[mutation]]
 name = "gitenv reads the profiles inside a function"
 file = "src/stayfixed/gitenv.py"
-before = "    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
+before = "    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"
 after = """    from stayfixed.profiles.model import Check  # noqa: F401
 
-    return {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
+    env = {key: os.environ[key] for key in GIT_ENV_KEEP if key in os.environ}"""
 reddens = [
   "tests/boundaries/test_layering.py::test_the_modules_import_one_another_without_a_cycle_even_inside_functions",
 ]

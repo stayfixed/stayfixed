@@ -1061,6 +1061,28 @@ def test_an_upgrade_at_a_commit_no_release_names_is_refused(
     assert "ci.ref" in out
 
 
+def test_the_release_tags_are_asked_for_from_the_checkout_and_not_the_project_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # git asked in the project root reads whichever repository it finds from there, and only the
+    # checkout's top holds the checkout's own `.git`. Mutation (declared): `mutations/`'s "the
+    # release tags are asked for from the project root".
+    older = BASE.replace(f'"{stayfixed.__version__}"', '"0.0.1"')
+    project = clone(tmp_path, older + f'\n[ci]\nref = "{"a" * 40}"\n', under="app")
+    _change(project / "app", BASE + f'\n[ci]\nref = "{SHA}"\n')
+    asked: list[Path] = []
+
+    def released(sha: str, runner: object, *, cwd: Path) -> bool:
+        asked.append(cwd)
+        return True
+
+    monkeypatch.setattr("stayfixed.release.api.is_released", released)
+    platform = ("--pr-base=main", "--base-input=", "--default-branch=", "--path=app")
+    code, out, _ = cli(project, tmp_path, "gate", "--only=config", "--workflow-sha", SHA, *platform)
+    assert code == 0, out
+    assert set(asked) == {project}
+
+
 def test_a_local_run_without_the_workflow_sha_refuses_a_moved_pin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
