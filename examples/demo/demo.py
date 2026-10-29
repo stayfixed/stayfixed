@@ -603,7 +603,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _run(demo: Demo, options: argparse.Namespace, started: float) -> int:
-    version = demo.run(["stayfixed", "--version"])
+    # By its absolute path and never through `PATH`: a STAYFIXED that cannot start would let the
+    # acts' bare `stayfixed` fall through to the next one on `PATH`, and pass on its answers.
+    program = os.path.abspath(options.stayfixed)
+    try:
+        version = demo.run([program, "--version"])
+    except ActFailed as failed:
+        print(f"usage error: {failed}", file=sys.stderr)
+        return 2
+    if version.code != 0:
+        print(f"usage error: {program} --version exited {version.code}", file=sys.stderr)
+        return 2
     demo.version = _first_line(version).split()[-1]
     pytest = demo.which("pytest") or ""
     pytest_version = demo.run(["pytest", "--version"])

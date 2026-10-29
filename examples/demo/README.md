@@ -32,7 +32,8 @@ its `pytest` is the one found.
 Every command runs with `HOME` inside the scratch directory, `GIT_CONFIG_NOSYSTEM=1` and a fixed
 author, committer and date, so your own configuration changes nothing it does.
 The script exits `0` when no act failed, `1` when one did or when act 6 was skipped under
-`--require-claude`, and `2` when the program is not an executable file or `git`, `pytest` or
+`--require-claude`, and `2` when the program is not an executable file, cannot start or exits
+non-zero on `--version` (run by its own path, never through `PATH`), or when `git`, `pytest` or
 `python3` is not on `PATH`.
 
 ## The acts
