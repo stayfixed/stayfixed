@@ -1221,11 +1221,14 @@ an absent file fails every pull request. So `assess` reports such a gate as coul
 `reason` saying it could not judge the tree as CI will, and counts it as one that would fail, and
 `stayfixed adopt promote` never enforces it. To keep one of those files out of git, take its gate out
 of `[gates] builtin`. A project that keeps its `AGENTS.md` or its roadmap private keeps them in its
-overlay's per-project directory, `projects/<name>/`, where neither gate judges them: the
-instructions as standing rules under its `claude/rules/`, which `SessionStart` delivers (*The
-overlay's rules*, under [`stayfixed hook <event>`](#stayfixed-hook-event)), and the roadmap beside
-its notes, in `projects/<name>/` and not under `memory/`. A tracked `AGENTS.md` that holds only what
-may be public keeps the `docs` gate, with the rest of the instructions in those rules.
+overlay's per-project directory, `projects/<name>/`: the instructions as standing rules under its
+`claude/rules/`, which `SessionStart` delivers to a Claude Code session (*The overlay's rules*,
+under [`stayfixed hook <event>`](#stayfixed-hook-event)), and the roadmap beside its notes, in
+`projects/<name>/` and not under `memory/`. For the roadmap it takes `trail` out of `[gates] builtin`
+and lists `roadmap` in `[artifacts] local`, and for `AGENTS.md`, unless a tracked one keeps only what
+may be public, it takes `docs` out and lists `agents-skeleton` and `agents-md`: `init` and `upgrade`
+write a listed one under `.stayfixed/local/artifacts/`, which git ignores, and an unlisted one back
+where the file was.
 
 - **The files.** `[paths] agents_md` and every file or directory its links name, for `docs`, and
   `[paths] roadmap` and the `trail.toml` beside it, for `trail`. The roadmap the `docs` gate reads
@@ -1244,11 +1247,12 @@ may be public keeps the `docs` gate, with the rest of the instructions in those 
 - **The items.** An `untracked` item names the files: the first untracked step on a path, a link
   that differs on disk from git's, or a link that leads out of the repository, a directory's
   included, and when that step or link is outside the project, the last link inside it that led
-  there. A name that differs from the one git tracks only in case — a link to `Notes.md` where git
-  tracks `notes.md` — reads the committed file on a filesystem that folds case, as macOS's does by
-  default, and nothing in a Linux checkout, so it goes to a `case-differs` item instead, whose
-  remedy is to spell it as `git ls-files` does; where case is kept apart and the two names are two
-  files, the one read is simply untracked. Each name is inside the path grammar or withheld.
+  there. A step that differs from the one git tracks only in case — a link to `Notes.md` where git
+  tracks `notes.md`, or a directory on the way — reads git's on a filesystem that folds case, as
+  macOS's does by default, and nothing in a Linux checkout. When the rest of the path is tracked,
+  the path goes to a `case-differs` item instead, named as the document wrote it, whose remedy is to
+  spell it as `git ls-files` does; otherwise, or where the two names are two files, it is untracked.
+  Each name is inside the path grammar or withheld.
 - **No answer.** Inside a git work tree, a git that gives no answer is never read as tracked: the
   gate could not run the same way, and its item is `could-not-look`. Outside a work tree nothing is
   asked, since there is no index to ask and no checkout for CI to take, and both gates judge the
@@ -1552,8 +1556,8 @@ under `stayfixed assess`). It could not run, is named `(could not run)`, and a `
 up to eight of the files and counts the rest, each inside the path grammar or withheld, and says
 to commit them — an ignored one needs
 its ignore rule removed, or `git add -f` — and to point a symlink it names at a tracked file in the
-repository, or to keep them out of git and take the gate out of `[gates] builtin`. A file git
-tracks only under a name that differs in case gets a `note:` of its own, saying to spell it as
+repository, or to keep them out of git and take the gate out of `[gates] builtin`. A path
+`assess` lists as `case-differs` gets a `note:` of its own, saying to spell it as
 `git ls-files` does; one git gave no answer about is named with a `note:` saying so.
 
 `--builtin` runs the built-in gates and no custom gate, as `stayfixed assess --builtin` does: for
