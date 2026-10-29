@@ -456,6 +456,9 @@ def test_foreign_workflows_are_listed_and_stayfixed_s_own_is_not(tmp_path: Path)
         ("/.github/ @owner\n", False),
         ("/.github/\t@owner\n", False),
         ("# /.github/ @owner\n", True),
+        ("#/.github/ @owner\n", True),
+        (" \t/.github/ @owner \t\n", False),
+        ("/.github/ \t\n", True),
         ("/.github/\u00a0@owner\n", True),
         ("/.github/\n", True),
         ("/docs/ @acme/.github-admins\n", True),
@@ -466,6 +469,9 @@ def test_foreign_workflows_are_listed_and_stayfixed_s_own_is_not(tmp_path: Path)
         "github-directory",
         "a-tab",
         "a-comment",
+        "a-comment-no-space",
+        "padded",
+        "no-owner-trailing-blank",
         "no-break-space",
         "no-owner",
         "an-owner-names-github",
@@ -474,10 +480,9 @@ def test_foreign_workflows_are_listed_and_stayfixed_s_own_is_not(tmp_path: Path)
 def test_codeowners_is_reported_unless_a_line_names_github(
     tmp_path: Path, codeowners: str | None, reported: bool
 ) -> None:
-    # Advice read as a substring of the pattern, not GitHub's matching. GitHub splits a line on
-    # ASCII space and tab and not on U+00A0, as a run on GitHub showed: `no-break-space` is one
-    # pattern with no owner, and a pattern with no owner owns nothing. Mutation (advisory): the
-    # comment filter dropped -> `a-comment` is silent and reddens. Mutations (declared):
+    # Read as `_codeowners` says, not as GitHub matches. Mutation (advisory): the comment filter
+    # dropped -> `a-comment-no-space` reddens (`a-comment`'s first field is `#`, so it reports
+    # either way); the strip dropped -> `padded` and `no-owner-trailing-blank`. Declared:
     # `mutations/`'s "the codeowners probe asks the whole line again" -> `no-break-space`,
     # `no-owner` and `an-owner-names-github` are silent; "a codeowners line with no owner
     # counts" -> `no-break-space` and `no-owner` are; "a codeowners line is split on U+00A0
