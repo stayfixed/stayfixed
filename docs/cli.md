@@ -1220,7 +1220,12 @@ or ignored — is one those gates read here and CI never sees, and there the gat
 an absent file fails every pull request. So `assess` reports such a gate as could not run, its
 `reason` saying it could not judge the tree as CI will, and counts it as one that would fail, and
 `stayfixed adopt promote` never enforces it. To keep one of those files out of git, take its gate out
-of `[gates] builtin`.
+of `[gates] builtin`. A project that keeps its `AGENTS.md` or its roadmap private keeps them in its
+overlay's per-project directory, `projects/<name>/`, where neither gate judges them: the
+instructions as standing rules under its `claude/rules/`, which `SessionStart` delivers (*The
+overlay's rules*, under [`stayfixed hook <event>`](#stayfixed-hook-event)), and the roadmap beside
+its notes, in `projects/<name>/` and not under `memory/`. A tracked `AGENTS.md` that holds only what
+may be public keeps the `docs` gate, with the rest of the instructions in those rules.
 
 - **The files.** `[paths] agents_md` and every file or directory its links name, for `docs`, and
   `[paths] roadmap` and the `trail.toml` beside it, for `trail`. The roadmap the `docs` gate reads
